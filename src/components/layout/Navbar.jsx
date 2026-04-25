@@ -8,9 +8,10 @@ import { cn } from "@/lib/cn";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 import Button from "@/components/ui/Button";
+import { useAuth } from "./AuthProvider";
 
 const links = [
-  { href: "/generate", label: "Generate" },
+  { href: "/generate", label: "Try" },
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "Workflow" },
   { href: "/#showcase", label: "Showcase" },
@@ -18,6 +19,7 @@ const links = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { user, isAdmin } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -31,6 +33,9 @@ export default function Navbar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard") : "/login";
+  const ctaLabel = user ? "Open dashboard" : "Sign in";
 
   return (
     <header
@@ -68,13 +73,21 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          {!user && (
+            <Link
+              href="/login"
+              className="hidden sm:inline-flex items-center rounded-full px-3 py-1.5 text-sm text-muted hover:text-foreground transition-colors"
+            >
+              Sign in
+            </Link>
+          )}
           <Button
-            href="/generate"
+            href={ctaHref}
             size="md"
             className="hidden sm:inline-flex"
             rightIcon={<ArrowUpRight className="h-3.5 w-3.5" strokeWidth={2.5} />}
           >
-            Start generating
+            {ctaLabel}
           </Button>
           <button
             type="button"
@@ -99,8 +112,8 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
-            <Button href="/generate" size="md" className="mt-2 w-full">
-              Start generating
+            <Button href={ctaHref} size="md" className="mt-2 w-full">
+              {ctaLabel}
             </Button>
           </div>
         </div>

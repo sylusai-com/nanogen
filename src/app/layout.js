@@ -1,8 +1,7 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
-import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
+import { AuthProvider } from "@/components/layout/AuthProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +32,6 @@ export const metadata = {
   },
 };
 
-// Inline script: read stored theme before paint to avoid FOUC.
 const themeBootstrap = `
 (function() {
   try {
@@ -57,11 +55,9 @@ export default function RootLayout({ children }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full">
         <ThemeProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>

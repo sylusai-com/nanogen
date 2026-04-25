@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Nanogen
 
-## Getting Started
+AI-powered banner generation platform. Describe a banner, run multiple image
+models in parallel, score every output, and surface the best one.
 
-First, run the development server:
+This repo currently implements **Phase 1 (MVP)**:
+
+- Prompt-based generation UI (text + optional reference image)
+- Multi-model fan-out (configurable in `src/lib/models.js`)
+- Automated scoring with a configurable quality threshold (default 80)
+- Modern dark-first interface with light/dark toggle
+- API route stubs ready for real provider integration
+
+## Tech stack
+
+- Next.js (App Router) + JSX
+- Tailwind CSS v4
+- Supabase (Postgres) — client placeholder in `src/lib/supabase.js`
+
+## Getting started
 
 ```bash
+npm install
+cp .env.example .env.local   # fill in keys as you wire providers
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Project layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+src/
+  app/
+    layout.js              # Root layout, theme bootstrap, Navbar/Footer
+    page.js                # Landing page
+    generate/page.js       # Generation studio
+    api/
+      generate/route.js    # Multi-model fan-out + scoring (stub)
+      score/route.js       # Standalone scoring endpoint (stub)
+  components/              # UI components (JSX)
+  lib/
+    models.js              # Model catalog, aspect ratios, score threshold
+    supabase.js            # Supabase client placeholder
+```
 
-## Learn More
+## Wiring real providers
 
-To learn more about Next.js, take a look at the following resources:
+Replace `runModel` and `scoreImage` in
+[src/app/api/generate/route.js](src/app/api/generate/route.js) with calls to
+your provider of choice (Replicate, Fal, Stability, OpenAI Images, Imagen,
+etc.) and a vision-based quality evaluator. Each model returned needs:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```js
+{
+  id, modelId, modelLabel, provider,
+  imageUrl,            // hosted URL or data: URL
+  prompt, aspect, style,
+  score,               // 0-100, attached after scoring
+}
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Roadmap
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Phase 2** — HTML banner generation, basic editor, admin dashboard
+- **Phase 3** — Drag-and-drop builder, performance & scaling

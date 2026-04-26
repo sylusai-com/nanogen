@@ -1,39 +1,54 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sparkles, ImageIcon } from "lucide-react";
+import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import BannerThumb from "@/components/dashboard/BannerThumb";
 import BannerFilters from "@/components/dashboard/BannerFilters";
 import EmptyData from "@/components/ui/EmptyData";
+import Skeleton from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
-import { listBanners } from "@/lib/mockData";
+import { listBanners } from "@/lib/db/banners";
 
 export default function BannersList() {
-  const all = listBanners();
+  const { user, supabase } = useAuth();
+  const [all, setAll] = useState(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("all");
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    listBanners(supabase)
+      .then((rows) => !cancelled && setAll(rows))
+      .catch((e) => console.error("banners load", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, supabase]);
+
   const filtered = useMemo(() => {
+    if (!all) return [];
     let list = all;
     if (view === "favourites") list = list.filter((b) => b.favourite);
-    if (view === "passed") list = list.filter((b) => b.score >= 80);
+    if (view === "passed") list = list.filter((b) => (b.score ?? 0) >= 80);
     if (query.trim()) {
       const q = query.toLowerCase();
       list = list.filter(
         (b) =>
-          b.title.toLowerCase().includes(q) ||
-          b.modelLabel.toLowerCase().includes(q) ||
-          b.style.toLowerCase().includes(q),
+          (b.title || "").toLowerCase().includes(q) ||
+          (b.modelLabel || "").toLowerCase().includes(q) ||
+          (b.style || "").toLowerCase().includes(q),
       );
     }
     return list;
   }, [all, view, query]);
 
   const totals = {
-    all: all.length,
-    favs: all.filter((b) => b.favourite).length,
-    passed: all.filter((b) => b.score >= 80).length,
+    all: all?.length ?? 0,
+    favs: (all || []).filter((b) => b.favourite).length,
+    passed: (all || []).filter((b) => (b.score ?? 0) >= 80).length,
   };
 
   return (
@@ -48,7 +63,13 @@ export default function BannersList() {
           total={totals}
         />
 
-        {filtered.length ? (
+        {all === null ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="aspect-video" />
+            ))}
+          </div>
+        ) : filtered.length ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((b, i) => (
               <BannerThumb key={b.id} banner={b} index={i} />
@@ -57,8 +78,12 @@ export default function BannersList() {
         ) : (
           <EmptyData
             icon={<ImageIcon className="h-5 w-5" />}
-            title="No matches"
-            body="Try a different search or generate something new."
+            title={query ? "No matches" : "No banners yet"}
+            body={
+              query
+                ? "Try a different search or generate something new."
+                : "Generate your first banner to see it here."
+            }
             action={
               <Button href="/dashboard/create" leftIcon={<Sparkles className="h-3.5 w-3.5" />}>
                 Create banner

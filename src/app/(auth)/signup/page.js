@@ -11,7 +11,7 @@ import { Input, Label } from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 export default function SignupPage() {
-  const { signUp } = useAuth();
+  const { signIn, supabase } = useAuth();
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -26,10 +26,27 @@ export default function SignupPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const u = await signUp({ email, name });
-      router.push(u.role === "admin" ? "/admin" : "/dashboard");
+      // 1. Server-side create with email_confirm: true (bypasses confirmation).
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `Signup failed (${res.status})`);
+
+      // 2. Establish a browser session.
+      const { user } = await signIn({ email, password });
+
+      // 3. Route by role (admin_emails trigger may have already promoted us).
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      router.push(profile?.role === "admin" ? "/admin" : "/dashboard");
     } catch (e) {
-      setError(e.message || "Sign-up failed");
+      setError(e?.message || "Sign-up failed");
     } finally {
       setSubmitting(false);
     }

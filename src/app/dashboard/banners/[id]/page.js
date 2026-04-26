@@ -2,42 +2,112 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, Edit3, Share2, Star, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  Download,
+  Edit3,
+  Loader2,
+  Share2,
+  Star,
+  Trash2,
+} from "lucide-react";
+import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
-import { getBanner } from "@/lib/mockData";
+import Skeleton from "@/components/ui/Skeleton";
+import EmptyData from "@/components/ui/EmptyData";
 import { cn } from "@/lib/cn";
+import {
+  deleteBanner,
+  getBanner,
+  toggleFavourite,
+} from "@/lib/db/banners";
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
   if (a === "4:5") return "aspect-[4/5]";
   if (a === "9:16") return "aspect-[9/16]";
-  return "aspect-[16/9]";
+  return "aspect-video";
 }
 
 export default function BannerDetail({ params }) {
   const { id } = use(params);
+  const { user, supabase } = useAuth();
+  const router = useRouter();
   const [banner, setBanner] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setBanner(getBanner(id));
-  }, [id]);
+    if (!user) return;
+    let cancelled = false;
+    setLoading(true);
+    getBanner(supabase, id)
+      .then((b) => !cancelled && setBanner(b))
+      .catch((e) => console.error("banner load", e))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user, supabase]);
+
+  const onToggleFavourite = async () => {
+    if (!banner) return;
+    setBusy(true);
+    try {
+      const next = await toggleFavourite(supabase, banner.id, !banner.favourite);
+      if (next) setBanner(next);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDelete = async () => {
+    if (!banner) return;
+    if (!confirm("Delete this banner? This cannot be undone.")) return;
+    setBusy(true);
+    try {
+      await deleteBanner(supabase, banner.id);
+      router.push("/dashboard/banners");
+    } catch (e) {
+      alert(e.message || "Failed to delete");
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <>
+        <TopBar />
+        <div className="mx-auto w-full max-w-7xl space-y-6 px-5 py-8 md:px-8 md:py-10">
+          <Skeleton className="aspect-video" />
+        </div>
+      </>
+    );
+  }
 
   if (!banner) {
     return (
       <>
         <TopBar />
-        <div className="px-5 py-10 text-sm text-muted">Banner not found.</div>
+        <div className="mx-auto w-full max-w-3xl px-5 py-10">
+          <EmptyData
+            title="Banner not found"
+            body="It may have been deleted, or you don't have access."
+            action={<Button href="/dashboard/banners">Back to banners</Button>}
+          />
+        </div>
       </>
     );
   }
 
   const meta = [
-    { label: "Model", value: banner.modelLabel },
-    { label: "Style", value: banner.style },
-    { label: "Aspect", value: banner.aspect },
+    { label: "Model", value: banner.modelLabel || "—" },
+    { label: "Style", value: banner.style || "—" },
+    { label: "Aspect", value: banner.aspect || "—" },
     { label: "Created", value: new Date(banner.createdAt).toLocaleDateString() },
   ];
 
@@ -56,22 +126,33 @@ export default function BannerDetail({ params }) {
           <Card elevated className="p-3">
             <div
               className={cn(aspectClass(banner.aspect), "rounded-xl")}
-              style={{ background: banner.gradient }}
-            />
+              style={{ background: banner.gradient || undefined }}
+            >
+              {banner.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={banner.imageUrl}
+                  alt={banner.title}
+                  className="h-full w-full rounded-xl object-cover"
+                />
+              )}
+            </div>
           </Card>
 
           <div className="space-y-4">
             <Card elevated className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <h1 className="text-lg font-semibold tracking-tight">{banner.title}</h1>
-                <Badge tone={banner.score >= 80 ? "success" : "warning"} dot>
-                  Score {banner.score}
-                </Badge>
+                {banner.score != null && (
+                  <Badge tone={banner.score >= 80 ? "success" : "warning"} dot>
+                    Score {banner.score}
+                  </Badge>
+                )}
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {meta.map((m) => (
                   <div key={m.label}>
-                    <dt className="text-[11px] uppercase tracking-[0.1em] text-muted">{m.label}</dt>
+                    <dt className="text-[11px] uppercase tracking-widest text-muted">{m.label}</dt>
                     <dd className="mt-0.5 text-foreground">{m.value}</dd>
                   </div>
                 ))}
@@ -94,42 +175,34 @@ export default function BannerDetail({ params }) {
                 <Button variant="secondary" leftIcon={<Share2 className="h-3.5 w-3.5" />}>
                   Share
                 </Button>
-                <Button variant="secondary" leftIcon={<Star className="h-3.5 w-3.5" />}>
+                <Button
+                  variant="secondary"
+                  onClick={onToggleFavourite}
+                  disabled={busy}
+                  leftIcon={
+                    <Star
+                      className="h-3.5 w-3.5"
+                      strokeWidth={banner.favourite ? 0 : 2}
+                      fill={banner.favourite ? "currentColor" : "none"}
+                    />
+                  }
+                >
                   {banner.favourite ? "Unfavourite" : "Favourite"}
                 </Button>
               </div>
               <button
                 type="button"
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                onClick={onDelete}
+                disabled={busy}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
                 Delete banner
               </button>
-            </Card>
-
-            <Card elevated className="p-5">
-              <h3 className="text-sm font-semibold tracking-tight">Score breakdown</h3>
-              <ul className="mt-3 space-y-3 text-xs">
-                {[
-                  { label: "Composition", value: 88 },
-                  { label: "Brand alignment", value: 84 },
-                  { label: "Clarity", value: 92 },
-                  { label: "On-brief accuracy", value: 81 },
-                ].map((s) => (
-                  <li key={s.label}>
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-muted">{s.label}</span>
-                      <span className="font-mono text-foreground">{s.value}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${s.value}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
             </Card>
           </div>
         </div>

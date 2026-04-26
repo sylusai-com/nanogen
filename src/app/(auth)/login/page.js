@@ -11,7 +11,7 @@ import { Input, Label } from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 function LoginForm() {
-  const { signIn } = useAuth();
+  const { signIn, supabase } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
@@ -27,10 +27,16 @@ function LoginForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const u = await signIn({ email });
-      router.push(u.role === "admin" ? "/admin" : next);
+      const { user } = await signIn({ email, password });
+      // Look up role to decide where to land. RLS allows reading own profile.
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      router.push(profile?.role === "admin" ? "/admin" : next);
     } catch (e) {
-      setError(e.message || "Sign-in failed");
+      setError(e?.message || "Sign-in failed");
     } finally {
       setSubmitting(false);
     }
@@ -92,11 +98,6 @@ function LoginForm() {
       >
         {submitting ? "Signing in" : "Sign in"}
       </Button>
-
-      <p className="text-center text-[11px] text-muted">
-        Tip: any email works in this preview · use{" "}
-        <code className="font-mono text-muted-strong">admin@nanogen.io</code> for admin access
-      </p>
     </form>
   );
 }

@@ -34,8 +34,8 @@ export default function Navbar() {
     setMobileOpen(false);
   }, [pathname]);
 
-  const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard") : "/login";
-  const ctaLabel = user ? "Open dashboard" : "Sign in";
+  const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard") : "/signup";
+  const ctaLabel = user ? "Open dashboard" : "Sign up";
 
   return (
     <header

@@ -2,39 +2,63 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, RefreshCw, Save } from "lucide-react";
+import { ArrowLeft, Check, Loader2, RefreshCw, Save } from "lucide-react";
+import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
+import EmptyData from "@/components/ui/EmptyData";
 import EditorPreview from "@/components/editor/EditorPreview";
 import EditorPanel from "@/components/editor/EditorPanel";
-import { getBanner } from "@/lib/mockData";
+import { getBanner, updateBanner } from "@/lib/db/banners";
 
 export default function BannerEditor({ params }) {
   const { id } = use(params);
+  const { user, supabase } = useAuth();
+
   const [banner, setBanner] = useState(null);
   const [template, setTemplate] = useState(null);
   const [fields, setFields] = useState([]);
   const [alignment, setAlignment] = useState("left");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState(null);
-  const [saved, setSaved] = useState(false);
 
+  // 1. Load banner from DB
   useEffect(() => {
-    setBanner(getBanner(id));
-  }, [id]);
+    if (!user) return;
+    let cancelled = false;
+    setLoading(true);
+    getBanner(supabase, id)
+      .then((b) => {
+        if (cancelled) return;
+        setBanner(b);
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user, supabase]);
 
+  // 2. Hydrate the editor: use stored html/css/fields if present, otherwise
+  //    request a fresh template from /api/banners/html.
   useEffect(() => {
     if (!banner) return;
+    if (banner.html && banner.css && Array.isArray(banner.fields)) {
+      setTemplate({ html: banner.html, css: banner.css });
+      setFields(banner.fields);
+      setAlignment(banner.alignment || "left");
+      return;
+    }
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setError(null);
       try {
         const res = await fetch("/api/banners/html", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: banner.title,
+            prompt: banner.prompt || banner.title,
             style: banner.style,
             aspect: banner.aspect,
           }),
@@ -47,37 +71,70 @@ export default function BannerEditor({ params }) {
         setAlignment(data.alignment || "left");
       } catch (e) {
         if (!cancelled) setError(e.message || "Failed to load template");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [banner]);
 
-  const onFieldChange = (id, value) => {
-    setFields((prev) => prev.map((f) => (f.id === id ? { ...f, value } : f)));
-    setSaved(false);
+  const onFieldChange = (fieldId, value) => {
+    setFields((prev) => prev.map((f) => (f.id === fieldId ? { ...f, value } : f)));
+    setSavedAt(null);
   };
-
   const onAlignmentChange = (a) => {
     setAlignment(a);
-    setSaved(false);
+    setSavedAt(null);
   };
 
-  const onSave = () => {
-    // TODO: POST to /api/banners/[id] with { fields, alignment }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+  const onSave = async () => {
+    if (!banner || !template) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await updateBanner(supabase, banner.id, {
+        html: template.html,
+        css: template.css,
+        fields,
+        alignment,
+      });
+      if (updated) setBanner(updated);
+      setSavedAt(Date.now());
+    } catch (e) {
+      setError(e.message || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <>
+        <TopBar />
+        <div className="px-5 py-10 text-sm text-muted">
+          <Loader2 className="mr-2 inline h-3.5 w-3.5 animate-spin" />
+          Loading editor…
+        </div>
+      </>
+    );
+  }
 
   if (!banner) {
     return (
       <>
         <TopBar />
-        <div className="px-5 py-10 text-sm text-muted">Banner not found.</div>
+        <div className="mx-auto w-full max-w-3xl px-5 py-10">
+          <EmptyData
+            title="Banner not found"
+            body="It may have been deleted, or you don't have access."
+            action={<Button href="/dashboard/banners">Back to banners</Button>}
+          />
+        </div>
       </>
     );
   }
+
+  const justSaved = savedAt && Date.now() - savedAt < 1500;
 
   return (
     <>
@@ -86,9 +143,18 @@ export default function BannerEditor({ params }) {
         action={
           <Button
             onClick={onSave}
-            leftIcon={saved ? <Save className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            disabled={saving}
+            leftIcon={
+              saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : justSaved ? (
+                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )
+            }
           >
-            {saved ? "Saved" : "Save changes"}
+            {saving ? "Saving" : justSaved ? "Saved" : "Save changes"}
           </Button>
         }
       />
@@ -117,7 +183,7 @@ export default function BannerEditor({ params }) {
 
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="lg:sticky lg:top-24 lg:self-start">
-            {loading && !template ? (
+            {!template ? (
               <div className="flex items-center gap-2 text-xs text-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating HTML banner template…
               </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Images, Sparkles, Trophy, Clock, ArrowRight, ImageIcon } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
@@ -9,20 +10,52 @@ import BannerThumb from "@/components/dashboard/BannerThumb";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
-import { recentBanners, listBanners } from "@/lib/mockData";
+import Skeleton from "@/components/ui/Skeleton";
+import { listBanners, userStats } from "@/lib/db/banners";
 
 const iconCls = "h-4 w-4";
 
 export default function DashboardOverview() {
-  const { user } = useAuth();
-  const banners = listBanners();
-  const recent = recentBanners(8);
+  const { user, supabase } = useAuth();
+  const [recent, setRecent] = useState(null);
+  const [stats, setStats] = useState(null);
 
-  const stats = [
-    { label: "Banners created", value: banners.length, delta: "+4 this week", positive: true, icon: <Images className={iconCls} /> },
-    { label: "This month", value: 8, delta: "+2", positive: true, icon: <Sparkles className={iconCls} /> },
-    { label: "Avg quality", value: "86.4", delta: "+1.2", positive: true, icon: <Trophy className={iconCls} /> },
-    { label: "Median time", value: "5.8s", delta: "-0.4s", positive: true, icon: <Clock className={iconCls} /> },
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    Promise.all([listBanners(supabase, { limit: 8 }), userStats(supabase)])
+      .then(([banners, s]) => {
+        if (cancelled) return;
+        setRecent(banners);
+        setStats(s);
+      })
+      .catch((e) => console.error("dashboard load", e));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, supabase]);
+
+  const cards = [
+    {
+      label: "Banners created",
+      value: stats?.total ?? "—",
+      icon: <Images className={iconCls} />,
+    },
+    {
+      label: "This month",
+      value: stats?.thisMonth ?? "—",
+      icon: <Sparkles className={iconCls} />,
+    },
+    {
+      label: "Avg quality",
+      value: stats?.avgScore ?? "—",
+      icon: <Trophy className={iconCls} />,
+    },
+    {
+      label: "Median time",
+      value: stats?.p50ms ? `${(stats.p50ms / 1000).toFixed(1)}s` : "—",
+      icon: <Clock className={iconCls} />,
+    },
   ];
 
   return (
@@ -48,7 +81,7 @@ export default function DashboardOverview() {
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((s, i) => (
+          {cards.map((s, i) => (
             <StatCard key={s.label} {...s} delay={i * 0.05} />
           ))}
         </section>
@@ -68,7 +101,13 @@ export default function DashboardOverview() {
             </Link>
           </div>
 
-          {recent.length ? (
+          {recent === null ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="aspect-video" />
+              ))}
+            </div>
+          ) : recent.length ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {recent.map((b, i) => (
                 <BannerThumb key={b.id} banner={b} index={i} />

@@ -1,12 +1,15 @@
 "use client";
 
+import { useState } from "react";
+import { useAuth } from "@/components/layout/AuthProvider";
+
 function GoogleIcon(props) {
   return (
     <svg viewBox="0 0 24 24" {...props}>
-      <path fill="#EA4335" d="M12 10.2v3.8h5.3c-.2 1.4-1.7 4.2-5.3 4.2-3.2 0-5.8-2.6-5.8-5.9S8.8 6.4 12 6.4c1.8 0 3 .8 3.7 1.4l2.5-2.5C16.6 3.8 14.5 3 12 3 6.9 3 2.8 7.1 2.8 12.3S6.9 21.6 12 21.6c6.9 0 9.4-4.9 9.4-7.4 0-.5-.1-.9-.1-1.3H12z"/>
-      <path fill="#34A853" d="M3.6 7.6l3.2 2.4C7.5 8.2 9.6 6.8 12 6.8c1.8 0 3 .8 3.7 1.4l2.5-2.5C16.6 4.2 14.5 3.4 12 3.4 8.3 3.4 5.1 5.1 3.6 7.6z"/>
-      <path fill="#4285F4" d="M21.4 12.5c0-.5-.1-.9-.1-1.3H12v3.8h5.3c-.2 1-.9 2.4-2.6 3.3l3.2 2.4c1.9-1.7 3.5-4.4 3.5-8.2z"/>
-      <path fill="#FBBC05" d="M6.8 14.3c-.2-.6-.4-1.3-.4-2 0-.7.1-1.4.4-2L3.6 7.9C2.9 9.2 2.5 10.7 2.5 12.3c0 1.6.4 3.1 1.1 4.4l3.2-2.4z"/>
+      <path fill="#EA4335" d="M12 10.2v3.8h5.3c-.2 1.4-1.7 4.2-5.3 4.2-3.2 0-5.8-2.6-5.8-5.9S8.8 6.4 12 6.4c1.8 0 3 .8 3.7 1.4l2.5-2.5C16.6 3.8 14.5 3 12 3 6.9 3 2.8 7.1 2.8 12.3S6.9 21.6 12 21.6c6.9 0 9.4-4.9 9.4-7.4 0-.5-.1-.9-.1-1.3H12z" />
+      <path fill="#34A853" d="M3.6 7.6l3.2 2.4C7.5 8.2 9.6 6.8 12 6.8c1.8 0 3 .8 3.7 1.4l2.5-2.5C16.6 4.2 14.5 3.4 12 3.4 8.3 3.4 5.1 5.1 3.6 7.6z" />
+      <path fill="#4285F4" d="M21.4 12.5c0-.5-.1-.9-.1-1.3H12v3.8h5.3c-.2 1-.9 2.4-2.6 3.3l3.2 2.4c1.9-1.7 3.5-4.4 3.5-8.2z" />
+      <path fill="#FBBC05" d="M6.8 14.3c-.2-.6-.4-1.3-.4-2 0-.7.1-1.4.4-2L3.6 7.9C2.9 9.2 2.5 10.7 2.5 12.3c0 1.6.4 3.1 1.1 4.4l3.2-2.4z" />
     </svg>
   );
 }
@@ -20,24 +23,48 @@ function GithubIcon(props) {
 }
 
 export default function SocialAuth({ disabled }) {
+  const { signInWithOAuth } = useAuth();
+  const [pending, setPending] = useState(null);
+  const [error, setError] = useState(null);
+
+  const onClick = async (provider) => {
+    setPending(provider);
+    setError(null);
+    try {
+      await signInWithOAuth(provider);
+    } catch (e) {
+      setError(e?.message || `${provider} sign-in failed`);
+      setPending(null);
+    }
+  };
+
   return (
-    <div className="grid grid-cols-2 gap-2.5">
-      <button
-        type="button"
-        disabled={disabled}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
-      >
-        <GoogleIcon className="h-4 w-4" />
-        Google
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
-      >
-        <GithubIcon className="h-4 w-4" />
-        GitHub
-      </button>
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          onClick={() => onClick("google")}
+          disabled={disabled || pending === "google"}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
+        >
+          <GoogleIcon className="h-4 w-4" />
+          {pending === "google" ? "Opening…" : "Google"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onClick("github")}
+          disabled={disabled || pending === "github"}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
+        >
+          <GithubIcon className="h-4 w-4" />
+          {pending === "github" ? "Opening…" : "GitHub"}
+        </button>
+      </div>
+      {error && (
+        <p className="text-center text-[11px] text-red-400">
+          {error} — make sure the provider is enabled in Supabase Auth.
+        </p>
+      )}
     </div>
   );
 }

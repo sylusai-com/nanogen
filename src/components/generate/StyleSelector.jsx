@@ -1,13 +1,14 @@
 "use client";
 
-import { STYLES } from "@/lib/models";
 import Field from "./Field";
 import ChipGroup from "./ChipGroup";
 
-export default function StyleSelector({ value, onChange }) {
+export default function StyleSelector({ options, value, onChange }) {
+  // `options` come from public.banner_styles — caller fetches them.
+  const labels = (options || []).map((s) => s.label);
   return (
     <Field label="Style">
-      <ChipGroup options={STYLES} value={value} onChange={onChange} />
+      <ChipGroup options={labels} value={value} onChange={onChange} />
     </Field>
   );
 }

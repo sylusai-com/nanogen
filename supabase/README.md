@@ -10,6 +10,8 @@ Numbered SQL files under [migrations/](migrations/). Apply in order.
 | --- | --- |
 | `0001_initial_schema.sql` | profiles, generations, banners, RLS, triggers |
 | `0002_banners_profiles_fk.sql` | re-points user_id FKs to profiles so admin embeds work |
+| `0003_models.sql` | DB-driven model registry (image + text) + admin CRUD policies |
+| `0004_canvas_and_catalog.sql` | adds `canvas` jsonb to banners; moves aspect ratios + styles into admin-managed tables |
 
 When you add a new schema change, create the next file as `0002_<name>.sql`,
 `0003_<name>.sql`, etc. Each file should be **append-only** — never edit a

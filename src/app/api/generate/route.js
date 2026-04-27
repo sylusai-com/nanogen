@@ -1,23 +1,26 @@
 import { NextResponse } from "next/server";
-import { MODELS, SCORE_THRESHOLD } from "@/lib/models";
+import { SCORE_THRESHOLD } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-// Phase 1+2 stub: simulates the multi-model fan-out + scoring pipeline,
+// Phase 1+2+3 stub: simulates the multi-model fan-out + scoring pipeline,
 // then persists the run + results + auto-saves the winning banner.
-// Replace `runModel` and `scoreImage` with real provider calls when keys are
-// in place — the persistence layer below stays the same.
-async function runModel(modelId, payload) {
+//
+// The model catalog now lives in the DB (`public.models`). Wire real
+// provider calls inside `runModel` — provider-specific adapters can be
+// switched on `model.provider`.
+async function runModel(model, payload) {
   const latency = 600 + Math.random() * 1400;
   await new Promise((r) => setTimeout(r, latency));
-  const meta = MODELS.find((m) => m.id === modelId);
   return {
-    modelId,
-    modelLabel: meta?.label ?? modelId,
-    provider: meta?.provider ?? "Unknown",
-    previewGradient: meta?.previewGradient ?? "from-violet-500/30 to-cyan-400/30",
-    imageUrl: null, // TODO: real provider returns a hosted URL or data URL
+    modelSlug: model.slug,
+    modelLabel: model.label,
+    provider: model.provider,
+    providerModelId: model.modelId,
+    previewGradient:
+      model.previewGradient || "from-violet-500/30 to-cyan-400/30",
+    imageUrl: null, // TODO: wire provider call (Replicate / Stability / etc.)
     latencyMs: Math.round(latency),
     prompt: payload.prompt,
     aspect: payload.aspect,
@@ -48,34 +51,55 @@ export async function POST(req) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { prompt, aspect = "16:9", style, models = [] } = body || {};
+  const { prompt, aspect = "16:9", style, models: requested = [] } = body || {};
   if (!prompt || typeof prompt !== "string") {
     return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
   }
-
-  const enabledIds = MODELS.filter((m) => m.enabled).map((m) => m.id);
-  const selected = models.filter((id) => enabledIds.includes(id));
-  if (selected.length === 0) {
+  if (!Array.isArray(requested) || requested.length === 0) {
     return NextResponse.json(
-      { error: "Select at least one enabled model" },
+      { error: "Select at least one model" },
       { status: 400 },
     );
   }
 
-  // 1. Run models in parallel.
+  // 1. Resolve models from the DB. Only enabled image models.
+  const { data: dbModels, error: modelsErr } = await supabase
+    .from("models")
+    .select(
+      "slug, label, provider, modelId:model_id, previewGradient:preview_gradient",
+    )
+    .eq("kind", "image")
+    .eq("enabled", true)
+    .in("slug", requested);
+
+  if (modelsErr) {
+    return NextResponse.json(
+      { error: `Failed to load models: ${modelsErr.message}` },
+      { status: 500 },
+    );
+  }
+
+  if (!dbModels || dbModels.length === 0) {
+    return NextResponse.json(
+      { error: "None of the selected models are enabled" },
+      { status: 400 },
+    );
+  }
+
+  // 2. Run models in parallel.
   const generated = await Promise.all(
-    selected.map((id) => runModel(id, { prompt, aspect, style })),
+    dbModels.map((m) => runModel(m, { prompt, aspect, style })),
   );
-  // 2. Score in parallel.
+  // 3. Score in parallel.
   const scored = await Promise.all(
     generated.map(async (r) => ({ ...r, score: await scoreImage(r) })),
   );
-  // 3. Pick winner from passing outputs.
+  // 4. Pick winner from passing outputs.
   const passing = scored.filter((r) => r.score >= SCORE_THRESHOLD);
   const ranked = [...passing].sort((a, b) => b.score - a.score);
   const winner = ranked[0] ?? null;
 
-  // 4. Persist (only if signed in — anonymous /generate page still works).
+  // 5. Persist (only if signed in — anonymous /generate page still works).
   let runId = null;
   let resultsWithIds = scored;
   let winnerBannerId = null;
@@ -88,7 +112,7 @@ export async function POST(req) {
         prompt,
         aspect,
         style,
-        models: selected,
+        models: dbModels.map((m) => m.slug),
       })
       .select("id")
       .single();
@@ -104,14 +128,16 @@ export async function POST(req) {
     const rows = scored.map((r) => ({
       run_id: runId,
       user_id: user.id,
-      model_id: r.modelId,
+      model_id: r.modelSlug,
       model_label: r.modelLabel,
       provider: r.provider,
       image_url: r.imageUrl,
       preview_gradient: r.previewGradient,
       score: r.score,
       latency_ms: r.latencyMs,
-      is_winner: winner ? r.modelId === winner.modelId && r.score === winner.score : false,
+      is_winner: winner
+        ? r.modelSlug === winner.modelSlug && r.score === winner.score
+        : false,
     }));
 
     const { data: resultRows, error: resultsErr } = await supabase
@@ -126,15 +152,17 @@ export async function POST(req) {
       );
     }
 
-    // Map server-assigned ids back into the response payload.
     resultsWithIds = scored.map((r) => {
       const match = resultRows.find(
-        (row) => row.model_id === r.modelId && row.score === r.score,
+        (row) => row.model_id === r.modelSlug && row.score === r.score,
       );
-      return { ...r, id: match?.id ?? `${r.modelId}-${Date.now()}` };
+      return {
+        ...r,
+        id: match?.id ?? `${r.modelSlug}-${Date.now()}`,
+        modelId: r.modelSlug, // keep camelCase shape that BannerCard expects
+      };
     });
 
-    // 5. Auto-save the winner as a banner.
     if (winner) {
       const winningRow = resultRows.find((row) => row.is_winner);
       const { data: banner, error: bannerErr } = await supabase
@@ -146,7 +174,7 @@ export async function POST(req) {
           prompt,
           style,
           aspect,
-          model_id: winner.modelId,
+          model_id: winner.modelSlug,
           model_label: winner.modelLabel,
           image_url: winner.imageUrl,
           preview_gradient: winner.previewGradient,
@@ -158,10 +186,10 @@ export async function POST(req) {
       if (!bannerErr) winnerBannerId = banner.id;
     }
   } else {
-    // Anonymous run — fabricate ids so the UI keys stay stable.
     resultsWithIds = scored.map((r) => ({
       ...r,
-      id: `${r.modelId}-${Math.random().toString(36).slice(2, 9)}`,
+      id: `${r.modelSlug}-${Math.random().toString(36).slice(2, 9)}`,
+      modelId: r.modelSlug,
     }));
   }
 
@@ -173,7 +201,9 @@ export async function POST(req) {
     threshold: SCORE_THRESHOLD,
     results: resultsWithIds.sort((a, b) => b.score - a.score),
     winnerId: winner
-      ? resultsWithIds.find((r) => r.modelId === winner.modelId && r.score === winner.score)?.id
+      ? resultsWithIds.find(
+          (r) => r.modelSlug === winner.modelSlug && r.score === winner.score,
+        )?.id
       : null,
     winnerBannerId,
   });

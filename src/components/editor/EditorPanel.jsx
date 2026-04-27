@@ -1,47 +1,97 @@
 "use client";
 
-import { Type, Palette, LayoutPanelLeft } from "lucide-react";
 import { useState } from "react";
+import { LayoutPanelLeft, Palette, Sliders, Type } from "lucide-react";
 import Tabs from "@/components/ui/Tabs";
 import Card from "@/components/ui/Card";
 import TextField from "./TextField";
 import ColorField from "./ColorField";
+import RangeField from "./RangeField";
+import SelectField from "./SelectField";
+import ToggleField from "./ToggleField";
 import AlignmentField from "./AlignmentField";
 
-export default function EditorPanel({ fields, alignment, onFieldChange, onAlignmentChange }) {
+const TABS = [
+  { id: "text", icon: Type, label: "Text" },
+  { id: "colors", icon: Palette, label: "Colors" },
+  { id: "advanced", icon: Sliders, label: "Advanced" },
+  { id: "layout", icon: LayoutPanelLeft, label: "Layout" },
+];
+
+export default function EditorPanel({
+  fields,
+  alignment,
+  onFieldChange,
+  onAlignmentChange,
+}) {
   const [tab, setTab] = useState("text");
-  const textFields = fields.filter((f) => f.type === "text");
-  const colorFields = fields.filter((f) => f.type === "color");
+  const text = fields.filter((f) => f.type === "text");
+  const colors = fields.filter((f) => f.type === "color");
+  const advanced = fields.filter((f) =>
+    ["range", "select", "toggle"].includes(f.type),
+  );
 
   return (
-    <Card elevated className="p-5 space-y-5">
+    <Card elevated className="space-y-5 p-5">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold tracking-tight">Properties</h3>
         <Tabs
           size="sm"
           value={tab}
           onChange={setTab}
-          tabs={[
-            { id: "text", label: <span className="inline-flex items-center gap-1.5"><Type className="h-3.5 w-3.5" /> Text</span> },
-            { id: "colors", label: <span className="inline-flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" /> Colors</span> },
-            { id: "layout", label: <span className="inline-flex items-center gap-1.5"><LayoutPanelLeft className="h-3.5 w-3.5" /> Layout</span> },
-          ]}
+          tabs={TABS.map((t) => ({
+            id: t.id,
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                <t.icon className="h-3.5 w-3.5" /> {t.label}
+              </span>
+            ),
+          }))}
         />
       </div>
 
       {tab === "text" && (
         <div className="space-y-4">
-          {textFields.map((f) => (
-            <TextField key={f.id} field={f} onChange={onFieldChange} />
-          ))}
+          {text.length ? (
+            text.map((f) => (
+              <TextField key={f.id} field={f} onChange={onFieldChange} />
+            ))
+          ) : (
+            <p className="text-xs text-muted">No text fields in this template.</p>
+          )}
         </div>
       )}
 
       {tab === "colors" && (
         <div className="space-y-4">
-          {colorFields.map((f) => (
-            <ColorField key={f.id} field={f} onChange={onFieldChange} />
-          ))}
+          {colors.length ? (
+            colors.map((f) => (
+              <ColorField key={f.id} field={f} onChange={onFieldChange} />
+            ))
+          ) : (
+            <p className="text-xs text-muted">No color fields in this template.</p>
+          )}
+        </div>
+      )}
+
+      {tab === "advanced" && (
+        <div className="space-y-4">
+          {advanced.length ? (
+            advanced.map((f) => {
+              if (f.type === "range")
+                return <RangeField key={f.id} field={f} onChange={onFieldChange} />;
+              if (f.type === "select")
+                return <SelectField key={f.id} field={f} onChange={onFieldChange} />;
+              if (f.type === "toggle")
+                return <ToggleField key={f.id} field={f} onChange={onFieldChange} />;
+              return null;
+            })
+          ) : (
+            <p className="text-xs text-muted">
+              No advanced controls in this template. Re-generate or edit the
+              prompt to ask the model for typography or visibility controls.
+            </p>
+          )}
         </div>
       )}
 

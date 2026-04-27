@@ -1,54 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, Sparkles } from "lucide-react";
 import TopBar from "@/components/dashboard/TopBar";
 import Eyebrow from "@/components/ui/Eyebrow";
+import Card from "@/components/ui/Card";
 import PromptForm from "@/components/generate/PromptForm";
-import ResultsPanel from "@/components/generate/ResultsPanel";
 
 export default function DashboardCreate() {
-  const [status, setStatus] = useState("idle");
-  const [results, setResults] = useState([]);
-  const [winnerId, setWinnerId] = useState(null);
-  const [aspect, setAspect] = useState("16:9");
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
   const onSubmit = async (payload) => {
-    setStatus("generating");
-    setResults([]);
-    setWinnerId(null);
+    setSubmitting(true);
     setError(null);
-    setAspect(payload.aspect);
     try {
-      const res = await fetch("/api/generate", {
+      const res = await fetch("/api/banners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const data = await res.json();
-      setResults(data.results || []);
-      setWinnerId(data.winnerId || null);
-      setStatus("done");
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      // Land in the editor — the canvas builder is one click away from there.
+      router.push(`/dashboard/banners/${data.banner.id}/edit`);
     } catch (e) {
-      setError(e.message || "Something went wrong");
-      setStatus("error");
+      setError(e?.message || "Generation failed");
+      setSubmitting(false);
     }
   };
 
   return (
     <>
       <TopBar title="Create banner" action={null} />
-      <div className="mx-auto w-full max-w-7xl px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8 md:py-10">
         <header className="mb-8 max-w-2xl">
-          <Eyebrow tone="primary">Generation studio</Eyebrow>
+          <Eyebrow tone="primary">Banner studio</Eyebrow>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
             Generate a <span className="text-primary-gradient">new banner</span>
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Describe the banner. Nanogen fans your prompt out across multiple models,
-            scores each result, and surfaces the best one.
+            Describe the banner. Nanogen calls the admin-configured text model
+            via OpenRouter, saves the result, and drops you into the editor.
           </p>
         </header>
 
@@ -62,16 +57,34 @@ export default function DashboardCreate() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[440px_1fr]">
-          <div className="lg:sticky lg:top-24 lg:self-start">
-            <PromptForm onSubmit={onSubmit} isGenerating={status === "generating"} />
-          </div>
-          <ResultsPanel
-            status={status}
-            results={results}
-            winnerId={winnerId}
-            aspect={aspect}
-          />
+        <div className="grid gap-6 md:grid-cols-[1fr_280px]">
+          <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
+
+          <Card elevated className="h-fit p-5">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--primary)_14%,transparent)] text-primary ring-1 ring-inset ring-[color-mix(in_oklab,var(--primary)_25%,transparent)]">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <h3 className="mt-4 text-sm font-semibold tracking-tight">
+              How it works
+            </h3>
+            <ol className="mt-3 space-y-3 text-xs text-muted">
+              <li className="flex gap-2">
+                <span className="font-mono text-muted-strong">1.</span>
+                Your prompt is sent to the default text model (Admin →
+                Models).
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono text-muted-strong">2.</span>
+                The model returns an HTML/CSS banner template with editable
+                fields.
+              </li>
+              <li className="flex gap-2">
+                <span className="font-mono text-muted-strong">3.</span>
+                Banner is saved to your library — fine-tune in the editor or
+                rearrange in the visual builder.
+              </li>
+            </ol>
+          </Card>
         </div>
       </div>
     </>

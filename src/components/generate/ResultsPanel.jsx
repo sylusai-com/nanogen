@@ -1,3 +1,4 @@
+// src/components/generate/ResultsPanel.jsx
 "use client";
 
 import { AnimatePresence } from "motion/react";

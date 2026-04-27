@@ -1,3 +1,4 @@
+// src/components/dashboard/Sidebar.jsx
 "use client";
 
 import Link from "next/link";

@@ -1,3 +1,4 @@
+// src/app/api/generate/route.js
 import { NextResponse } from "next/server";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";

@@ -1,3 +1,4 @@
+// src/app/(marketing)/generate/page.js
 "use client";
 
 import { useState } from "react";

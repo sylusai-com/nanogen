@@ -1,3 +1,4 @@
+// src/app/admin/models/page.js
 "use client";
 
 import { useEffect, useState } from "react";

@@ -1,3 +1,4 @@
+// src/lib/models.js
 // Static config that doesn't belong in the DB. Everything else (model
 // catalog, aspect ratios, banner styles) is managed by admins via SQL tables.
 //

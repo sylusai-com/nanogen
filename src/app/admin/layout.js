@@ -1,3 +1,4 @@
+// src/app/admin/layout.js
 "use client";
 
 import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, Users } from "lucide-react";

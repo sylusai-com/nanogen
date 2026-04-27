@@ -1,3 +1,4 @@
+// src/lib/db/models.js
 // Models table queries. RLS allows everyone (incl. anon) to read enabled
 // rows; only admins can write. Admin pages can pass an admin-scoped client
 // (or use the secret-key client server-side) to see disabled rows too.

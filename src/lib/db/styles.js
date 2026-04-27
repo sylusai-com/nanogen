@@ -1,3 +1,4 @@
+// src/lib/db/styles.js
 // Banner styles — admin-managed. Drives the prompt-form Style chip group
 // AND the color preset that the HTML banner generator applies.
 

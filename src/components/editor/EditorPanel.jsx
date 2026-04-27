@@ -1,3 +1,4 @@
+// src/components/editor/EditorPanel.jsx
 "use client";
 
 import { useState } from "react";

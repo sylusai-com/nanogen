@@ -1,3 +1,4 @@
+// src/app/dashboard/banners/page.js
 "use client";
 
 import { useEffect, useMemo, useState } from "react";

@@ -1,3 +1,4 @@
+// src/app/api/banners/html/route.js
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateBannerTemplate } from "@/lib/bannerTemplate";

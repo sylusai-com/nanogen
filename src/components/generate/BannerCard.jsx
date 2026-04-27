@@ -1,3 +1,4 @@
+// src/components/generate/BannerCard.jsx
 "use client";
 
 import { motion } from "motion/react";

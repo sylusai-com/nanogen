@@ -1,3 +1,4 @@
+// src/components/generate/PromptForm.jsx
 "use client";
 
 import { useEffect, useState } from "react";

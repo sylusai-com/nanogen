@@ -1,3 +1,4 @@
+// src/lib/db/banners.js
 // Browser-side banner queries. Each takes a supabase client (from useAuth()).
 // RLS guarantees the caller can only read/write their own rows.
 //

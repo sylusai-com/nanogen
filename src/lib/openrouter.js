@@ -1,3 +1,4 @@
+// src/lib/openrouter.js
 // OpenRouter chat completions client. Used by /api/banners/html to drive
 // the AI HTML banner generator with whichever text model the admin marked
 // as default in the `models` table.

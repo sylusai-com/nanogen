@@ -1,3 +1,4 @@
+// src/app/dashboard/layout.js
 "use client";
 
 import { Home, Sparkles, Images, Settings, Shield } from "lucide-react";

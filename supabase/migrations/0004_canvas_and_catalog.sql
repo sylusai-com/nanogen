@@ -1,3 +1,4 @@
+-- supabase/migrations/0004_canvas_and_catalog.sql
 -- ============================================================================
 -- 0004_canvas_and_catalog.sql
 --

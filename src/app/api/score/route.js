@@ -1,3 +1,4 @@
+// src/app/api/score/route.js
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";

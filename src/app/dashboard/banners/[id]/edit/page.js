@@ -1,3 +1,4 @@
+// src/app/dashboard/banners/[id]/edit/page.js
 "use client";
 
 import { use, useEffect, useState } from "react";

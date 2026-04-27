@@ -1,3 +1,4 @@
+// src/lib/db/aspects.js
 // Aspect ratios — admin-managed. Anyone (incl. anon) can read enabled rows.
 
 const COLUMNS = `

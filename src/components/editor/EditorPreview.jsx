@@ -1,3 +1,4 @@
+// src/components/editor/EditorPreview.jsx
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";

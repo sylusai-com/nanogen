@@ -1,3 +1,4 @@
+// src/lib/bannerTemplate.js
 // Shared HTML banner template generator — used by /api/banners/html (returns
 // the template for the editor) and /api/banners (persists a banner in one shot).
 //

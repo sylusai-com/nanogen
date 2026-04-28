@@ -1,3 +1,4 @@
+// src/components/dashboard/RouteGuard.jsx
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";

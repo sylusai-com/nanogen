@@ -1,3 +1,4 @@
+// src/components/generate/StyleSelector.jsx
 "use client";
 
 import Field from "./Field";

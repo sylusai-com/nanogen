@@ -12,20 +12,37 @@ import PromptForm from "@/components/generate/PromptForm";
 export default function DashboardCreate() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError]           = useState(null);
 
   const onSubmit = async (payload) => {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/banners", {
+      const res  = await fetch("/api/banners", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      // Land in the editor — the canvas builder is one click away from there.
+      if (!res.ok) {
+        throw new Error(data.error || `Request failed (${res.status})`);
+      }
+
+      // If the API surfaced a `reason`, the generator fell back. Stop here
+      // and surface that to the user instead of silently redirecting — they
+      // need to know the model wasn't actually called and admin needs to fix
+      // the configuration.
+      if (data.reason) {
+        setError(
+          `Banner saved using the fallback template. Reason: ${data.reason}`,
+        );
+        // Still redirect so the user can see what was created.
+        setTimeout(() => {
+          router.push(`/dashboard/banners/${data.banner.id}/edit`);
+        }, 2200);
+        return;
+      }
+
       router.push(`/dashboard/banners/${data.banner.id}/edit`);
     } catch (e) {
       setError(e?.message || "Generation failed");
@@ -43,17 +60,17 @@ export default function DashboardCreate() {
             Generate a <span className="text-primary-gradient">new banner</span>
           </h1>
           <p className="mt-2 text-sm text-muted">
-            Describe the banner. Nanogen calls the admin-configured text model
-            via OpenRouter, saves the result, and drops you into the editor.
+            Describe the banner. Nanogen calls the admin-configured text model,
+            saves the result, and drops you into the editor.
           </p>
         </header>
 
         {error && (
-          <div className="mb-6 flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              <div className="font-medium">Generation failed</div>
-              <div className="text-red-300/80">{error}</div>
+              <div className="font-medium">Heads up</div>
+              <div className="text-amber-300/80">{error}</div>
             </div>
           </div>
         )}
@@ -71,8 +88,7 @@ export default function DashboardCreate() {
             <ol className="mt-3 space-y-3 text-xs text-muted">
               <li className="flex gap-2">
                 <span className="font-mono text-muted-strong">1.</span>
-                Your prompt is sent to the default text model (Admin →
-                Models).
+                Your prompt is sent to the default text model (Admin → Models).
               </li>
               <li className="flex gap-2">
                 <span className="font-mono text-muted-strong">2.</span>

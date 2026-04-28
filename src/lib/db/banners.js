@@ -21,6 +21,7 @@ const COLUMNS = `
   css,
   fields,
   alignment,
+  canvas,
   favourite,
   createdAt:created_at,
   updatedAt:updated_at
@@ -93,7 +94,9 @@ export async function userStats(supabase) {
     total: allRes.count ?? 0,
     thisMonth: monthRes.count ?? 0,
     avgScore: scores.length
-      ? Math.round((scores.reduce((s, n) => s + n, 0) / scores.length) * 10) / 10
+      ? Math.round(
+          (scores.reduce((s, n) => s + n, 0) / scores.length) * 10
+        ) / 10
       : null,
     p50ms: lats.length ? lats[Math.floor(lats.length * 0.5)] : null,
   };

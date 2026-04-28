@@ -2,7 +2,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Cpu, Edit3, Plus, Sparkles, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Cpu,
+  Edit3,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Card from "@/components/ui/Card";
@@ -18,7 +26,6 @@ import {
   listAllModels,
   updateModel,
 } from "@/lib/db/models";
-import { PROVIDER_KEY_ENV } from "@/lib/models";
 
 function bar(percent, color) {
   return (
@@ -31,12 +38,18 @@ function bar(percent, color) {
   );
 }
 
+// Whether the model has an API key set in its config blob.
+function hasApiKey(model) {
+  const c = model?.config || {};
+  return !!(c.apiKey || c.api_key);
+}
+
 export default function AdminModels() {
   const { user, supabase } = useAuth();
   const [models, setModels] = useState(null);
-  const [share, setShare] = useState({});
-  const [error, setError] = useState(null);
-  const [modal, setModal] = useState({ open: false, model: null });
+  const [share, setShare]   = useState({});
+  const [error, setError]   = useState(null);
+  const [modal, setModal]   = useState({ open: false, model: null });
   const [busyId, setBusyId] = useState(null);
 
   const reload = async () => {
@@ -55,10 +68,10 @@ export default function AdminModels() {
         if (r.score != null) map[r.model_id].score += r.score;
         if (r.latency_ms != null) map[r.model_id].lats.push(r.latency_ms);
       }
-      const total = (data || []).length || 1;
+      const total   = (data || []).length || 1;
       const summary = {};
       for (const k of Object.keys(map)) {
-        const m = map[k];
+        const m    = map[k];
         const lats = m.lats.sort((a, b) => a - b);
         summary[k] = {
           runs: m.runs,
@@ -85,6 +98,13 @@ export default function AdminModels() {
 
   const onUpdate = async (form) => {
     if (!modal.model?.id) return;
+    // If the API key field is empty AND the existing model has a key,
+    // preserve the existing one so the admin can edit other fields without
+    // re-pasting the key every time.
+    if (!form.config?.apiKey && modal.model?.config) {
+      const existing = modal.model.config.apiKey || modal.model.config.api_key;
+      if (existing) form.config = { ...form.config, apiKey: existing };
+    }
     await updateModel(supabase, modal.model.id, form);
     await reload();
   };
@@ -121,7 +141,7 @@ export default function AdminModels() {
   };
 
   const imageModels = (models || []).filter((m) => m.kind === "image");
-  const textModels = (models || []).filter((m) => m.kind === "text");
+  const textModels  = (models || []).filter((m) => m.kind === "text");
 
   return (
     <>
@@ -142,9 +162,9 @@ export default function AdminModels() {
             Model registry
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Image models drive generation. Text models drive the HTML banner generator
-            via OpenRouter. Performance numbers come from{" "}
-            <code className="font-mono text-muted-strong">generation_results</code>.
+            Image models drive generation. Text models drive the HTML banner
+            generator. API keys are stored per model — set them when adding
+            or editing a model below.
           </p>
         </header>
 
@@ -176,7 +196,7 @@ export default function AdminModels() {
             <ModelGroup
               kind="text"
               title="Text models (HTML generator)"
-              subtitle="Drive /api/banners/html via OpenRouter. Mark one as default."
+              subtitle="Drive /api/banners and /api/banners/html. Mark one as default."
               models={textModels}
               share={share}
               busyId={busyId}
@@ -227,8 +247,8 @@ function ModelGroup({
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {models.map((m) => {
-            const live = share[m.slug];
-            const envVar = PROVIDER_KEY_ENV[m.provider];
+            const live   = share[m.slug];
+            const keySet = hasApiKey(m);
             return (
               <Card elevated key={m.id} className="p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -274,10 +294,20 @@ function ModelGroup({
                   </div>
                   <div>
                     <dt className="text-[10px] uppercase tracking-widest text-muted">
-                      API key env
+                      API key
                     </dt>
-                    <dd className="mt-1 truncate font-mono text-foreground">
-                      {envVar || "—"}
+                    <dd className="mt-1 inline-flex items-center gap-1.5 text-foreground">
+                      {keySet ? (
+                        <>
+                          <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                          <span className="text-emerald-400">Configured</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="h-3 w-3 text-amber-400" />
+                          <span className="text-amber-400">Not set</span>
+                        </>
+                      )}
                     </dd>
                   </div>
                   <div>

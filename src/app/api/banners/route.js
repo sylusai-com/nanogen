@@ -32,7 +32,7 @@ export async function POST(req) {
     return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
   }
 
-  // 1. Generate template via shared lib (OpenRouter w/ fallback).
+  // 1. Generate template via shared lib (admin-configured model w/ fallback).
   const template = await generateBannerTemplate({
     supabase,
     prompt,
@@ -41,7 +41,7 @@ export async function POST(req) {
   });
 
   // 2. Persist as a banner.
-  const bg = bgFromTemplate(template);
+  const bg       = bgFromTemplate(template);
   const headline = template.fields.find((f) => f.id === "headline");
   const title = headline?.value
     ? headline.value.length > 60
@@ -52,22 +52,26 @@ export async function POST(req) {
   const { data: banner, error } = await supabase
     .from("banners")
     .insert({
-      user_id: user.id,
+      user_id:          user.id,
       title,
       prompt,
       style,
       aspect,
-      model_id: template.modelId || null,
-      model_label: template.generator || "fallback",
+      // model_id stores the provider model identifier (e.g. anthropic/claude-3.5-sonnet)
+      // when an actual model was used; null on fallback.
+      model_id:         template.modelId || null,
+      model_label:      template.generator || "fallback",
       preview_gradient: template.styleRow?.gradient || null,
-      score: 90, // AI-generated templates pass quality threshold by definition
-      html: template.html,
-      css: template.css,
-      fields: template.fields,
-      alignment: template.alignment,
-      canvas: { background: bg, elements: [] },
+      // AI-generated templates pass quality threshold by definition.
+      // Fallback gets a slightly lower score to signal it's a placeholder.
+      score:            template.modelId ? 90 : 75,
+      html:             template.html,
+      css:              template.css,
+      fields:           template.fields,
+      alignment:        template.alignment,
+      canvas:           { background: bg, elements: [] },
     })
-    .select("id, title, generator:model_label")
+    .select("id, title, model_label")
     .single();
 
   if (error) {
@@ -80,6 +84,8 @@ export async function POST(req) {
   return NextResponse.json({
     banner,
     generator: template.generator,
-    reason: template.reason,
+    // Pass `reason` through so the UI can show "fell back because…" when a
+    // model failed (helps admins diagnose missing API keys, etc).
+    reason:    template.reason || null,
   });
 }

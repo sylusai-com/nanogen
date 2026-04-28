@@ -1,5 +1,6 @@
 // src/lib/db/aspects.js
 // Aspect ratios — admin-managed. Anyone (incl. anon) can read enabled rows.
+// Only admins can write (RLS enforced server-side).
 
 const COLUMNS = `
   id, slug, label, ratio, enabled,
@@ -49,16 +50,19 @@ export async function updateAspectRatio(supabase, id, patch) {
 }
 
 export async function deleteAspectRatio(supabase, id) {
-  const { error } = await supabase.from("aspect_ratios").delete().eq("id", id);
+  const { error } = await supabase
+    .from("aspect_ratios")
+    .delete()
+    .eq("id", id);
   if (error) throw error;
 }
 
 function toRow(p) {
   const out = {};
-  if (p.slug !== undefined) out.slug = p.slug;
-  if (p.label !== undefined) out.label = p.label;
-  if (p.ratio !== undefined) out.ratio = p.ratio;
-  if (p.enabled !== undefined) out.enabled = p.enabled;
+  if (p.slug      !== undefined) out.slug       = p.slug;
+  if (p.label     !== undefined) out.label      = p.label;
+  if (p.ratio     !== undefined) out.ratio      = p.ratio;
+  if (p.enabled   !== undefined) out.enabled    = p.enabled;
   if (p.sortOrder !== undefined) out.sort_order = p.sortOrder;
   return out;
 }

@@ -9,6 +9,7 @@ import {
   Download,
   Edit3,
   Loader2,
+  PenTool,
   Share2,
   Star,
   Trash2,
@@ -21,11 +22,7 @@ import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import { cn } from "@/lib/cn";
-import {
-  deleteBanner,
-  getBanner,
-  toggleFavourite,
-} from "@/lib/db/banners";
+import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
@@ -34,13 +31,49 @@ function aspectClass(a) {
   return "aspect-video";
 }
 
+// Build a minimal srcDoc to render the stored HTML banner template.
+function buildSrcDoc(html, css, fields, alignment) {
+  if (!html || !css) return null;
+  let cssWithVars = css;
+  const varOverrides = (fields || [])
+    .filter((f) => f.cssVar)
+    .map((f) => {
+      const val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      return `  ${f.cssVar}: ${val};`;
+    })
+    .join("\n");
+  if (varOverrides) {
+    cssWithVars = cssWithVars.includes(":root")
+      ? cssWithVars.replace(/:root\s*{/, `:root {\n${varOverrides}`)
+      : `:root {\n${varOverrides}\n}\n` + cssWithVars;
+  }
+  let htmlWithText = html;
+  for (const f of fields || []) {
+    if (f.type === "text" && f.slot) {
+      htmlWithText = htmlWithText.replace(
+        new RegExp(`(data-slot="${f.slot}"[^>]*)>([^<]*)`, "g"),
+        `$1>${f.value ?? ""}`
+      );
+    }
+  }
+  const alignedHtml = htmlWithText.replace(
+    /data-align="[^"]*"/,
+    `data-align="${alignment || "left"}"`
+  );
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:transparent}
+${cssWithVars}
+</style></head><body>${alignedHtml}</body></html>`;
+}
+
 export default function BannerDetail({ params }) {
   const { id } = use(params);
   const { user, supabase } = useAuth();
   const router = useRouter();
-  const [banner, setBanner] = useState(null);
+  const [banner, setBanner]   = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy]       = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -50,9 +83,7 @@ export default function BannerDetail({ params }) {
       .then((b) => !cancelled && setBanner(b))
       .catch((e) => console.error("banner load", e))
       .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id, user, supabase]);
 
   const onToggleFavourite = async () => {
@@ -105,11 +136,18 @@ export default function BannerDetail({ params }) {
     );
   }
 
+  const srcDoc = buildSrcDoc(banner.html, banner.css, banner.fields, banner.alignment);
+
   const meta = [
-    { label: "Model", value: banner.modelLabel || "—" },
-    { label: "Style", value: banner.style || "—" },
-    { label: "Aspect", value: banner.aspect || "—" },
-    { label: "Created", value: new Date(banner.createdAt).toLocaleDateString() },
+    { label: "Model",   value: banner.modelLabel || "—" },
+    { label: "Style",   value: banner.style       || "—" },
+    { label: "Aspect",  value: banner.aspect       || "—" },
+    {
+      label: "Created",
+      value: banner.createdAt
+        ? new Date(banner.createdAt).toLocaleDateString()
+        : "—",
+    },
   ];
 
   return (
@@ -124,23 +162,34 @@ export default function BannerDetail({ params }) {
         </Link>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+          {/* Preview */}
           <Card elevated className="p-3">
-            <div
-              className={cn(aspectClass(banner.aspect), "rounded-xl")}
-              style={{ background: banner.gradient || undefined }}
-            >
-              {banner.imageUrl && (
+            <div className={cn(aspectClass(banner.aspect), "rounded-xl overflow-hidden")}>
+              {srcDoc ? (
+                <iframe
+                  title={banner.title}
+                  srcDoc={srcDoc}
+                  sandbox="allow-scripts"
+                  className="h-full w-full border-0"
+                />
+              ) : banner.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={banner.imageUrl}
                   alt={banner.title}
                   className="h-full w-full rounded-xl object-cover"
                 />
+              ) : (
+                <div
+                  className="h-full w-full rounded-xl"
+                  style={{ background: banner.gradient || "#0c0c10" }}
+                />
               )}
             </div>
           </Card>
 
           <div className="space-y-4">
+            {/* Meta */}
             <Card elevated className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <h1 className="text-lg font-semibold tracking-tight">{banner.title}</h1>
@@ -153,31 +202,55 @@ export default function BannerDetail({ params }) {
               <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {meta.map((m) => (
                   <div key={m.label}>
-                    <dt className="text-[11px] uppercase tracking-widest text-muted">{m.label}</dt>
+                    <dt className="text-[11px] uppercase tracking-widest text-muted">
+                      {m.label}
+                    </dt>
                     <dd className="mt-0.5 text-foreground">{m.value}</dd>
                   </div>
                 ))}
               </dl>
             </Card>
 
+            {/* Actions */}
             <Card elevated className="p-5">
               <h3 className="text-sm font-semibold tracking-tight">Actions</h3>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button
-                  href={`/dashboard/banners/${banner.id}/edit`}
-                  variant="primary"
-                  leftIcon={<Edit3 className="h-3.5 w-3.5" />}
-                >
-                  Edit
-                </Button>
-                <Button variant="secondary" leftIcon={<Download className="h-3.5 w-3.5" />}>
-                  Download
-                </Button>
-                <Button variant="secondary" leftIcon={<Share2 className="h-3.5 w-3.5" />}>
-                  Share
-                </Button>
+              <div className="mt-3 space-y-2">
+                {/* Primary: editor and builder side by side */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    href={`/dashboard/banners/${banner.id}/edit`}
+                    variant="primary"
+                    leftIcon={<Edit3 className="h-3.5 w-3.5" />}
+                  >
+                    Edit fields
+                  </Button>
+                  <Button
+                    href={`/dashboard/builder/${banner.id}`}
+                    variant="secondary"
+                    leftIcon={<PenTool className="h-3.5 w-3.5" />}
+                  >
+                    Open in builder
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="secondary"
+                    leftIcon={<Download className="h-3.5 w-3.5" />}
+                  >
+                    Download
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    leftIcon={<Share2 className="h-3.5 w-3.5" />}
+                  >
+                    Share
+                  </Button>
+                </div>
+
                 <Button
                   variant="secondary"
+                  className="w-full"
                   onClick={onToggleFavourite}
                   disabled={busy}
                   leftIcon={
@@ -191,6 +264,7 @@ export default function BannerDetail({ params }) {
                   {banner.favourite ? "Unfavourite" : "Favourite"}
                 </Button>
               </div>
+
               <button
                 type="button"
                 onClick={onDelete}

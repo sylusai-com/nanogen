@@ -1,3 +1,4 @@
+// src/components/generate/AspectSelector.jsx
 "use client";
 
 import Field from "./Field";

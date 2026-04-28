@@ -1,3 +1,4 @@
+// src/components/layout/AuthProvider.jsx
 "use client";
 
 import {

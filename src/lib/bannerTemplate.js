@@ -2,21 +2,18 @@
 // Shared HTML banner template generator — used by /api/banners/html (returns
 // the template for the editor) and /api/banners (persists a banner in one shot).
 //
-// The flow:
+// Flow:
 //   1. Pull the admin-configured default text model from the `models` table.
-//   2. Pull the requested style row from the `banner_styles` table.
-//   3. Ask OpenRouter for a strict JSON banner template.
-//   4. Validate the response shape; fall back to a built-in template (with the
-//      DB style colors applied) if the key is missing, no model is configured,
-//      or the model output fails validation.
+//   2. Read the model's API key from its `config.apiKey` column (admin sets
+//      it in Admin → Models).
+//   3. Pull the requested style row from the `banner_styles` table.
+//   4. Ask OpenRouter for a strict JSON banner template.
+//   5. Validate the response shape; fall back to a built-in template (with
+//      the DB style colors applied) on any failure.
 
 import { getDefaultTextModel } from "@/lib/db/models";
 import { getStyleByName } from "@/lib/db/styles";
-import {
-  callOpenRouter,
-  extractJson,
-  isOpenRouterConfigured,
-} from "@/lib/openrouter";
+import { callOpenRouter, extractJson } from "@/lib/openrouter";
 
 const SYSTEM_PROMPT = `You are an expert HTML/CSS banner designer for the Nanogen platform.
 
@@ -77,15 +74,15 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
 .banner__cta { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 600; width: fit-content; }`,
   alignment: "left",
   fields: [
-    { id: "eyebrow", type: "text", slot: "eyebrow", label: "Eyebrow", value: "NEW" },
-    { id: "headline", type: "text", slot: "headline", label: "Headline", value: "Launch day is here" },
-    { id: "subhead", type: "text", slot: "subhead", label: "Subhead", value: "Auto-generated from your prompt — edit any field to fine-tune." },
-    { id: "cta", type: "text", slot: "cta", label: "CTA", value: "Get started" },
-    { id: "bg", type: "color", cssVar: "--bg", label: "Background", value: "#0c0c10" },
-    { id: "fg", type: "color", cssVar: "--fg", label: "Text", value: "#ffffff" },
-    { id: "accent", type: "color", cssVar: "--accent", label: "Accent", value: "#a78bfa" },
-    { id: "headline_size", type: "range", cssVar: "--headline-size", label: "Headline size", value: 56, min: 24, max: 96, step: 2, unit: "px" },
-    { id: "show_eyebrow", type: "toggle", selector: ".banner__eyebrow", label: "Show eyebrow", value: true },
+    { id: "eyebrow",       type: "text",   slot: "eyebrow",        label: "Eyebrow",       value: "NEW" },
+    { id: "headline",      type: "text",   slot: "headline",       label: "Headline",      value: "Launch day is here" },
+    { id: "subhead",       type: "text",   slot: "subhead",        label: "Subhead",       value: "Auto-generated from your prompt — edit any field to fine-tune." },
+    { id: "cta",           type: "text",   slot: "cta",            label: "CTA",           value: "Get started" },
+    { id: "bg",            type: "color",  cssVar: "--bg",         label: "Background",    value: "#0c0c10" },
+    { id: "fg",            type: "color",  cssVar: "--fg",         label: "Text",          value: "#ffffff" },
+    { id: "accent",        type: "color",  cssVar: "--accent",     label: "Accent",        value: "#a78bfa" },
+    { id: "headline_size", type: "range",  cssVar: "--headline-size", label: "Headline size", value: 56, min: 24, max: 96, step: 2, unit: "px" },
+    { id: "show_eyebrow",  type: "toggle", selector: ".banner__eyebrow", label: "Show eyebrow", value: true },
   ],
 };
 
@@ -124,8 +121,21 @@ export function bgFromTemplate(template) {
   return f?.value || "#0c0c10";
 }
 
-// Generates a banner template — calls OpenRouter when configured, otherwise
-// returns the styled fallback. Always returns a valid template.
+// Pull the API key out of model.config — supports a few common keys so it's
+// forgiving to whatever the admin types in.
+function pickApiKey(model) {
+  const c = model?.config || {};
+  return (
+    c.apiKey ||
+    c.api_key ||
+    c.openrouterApiKey ||
+    c.openrouter_api_key ||
+    null
+  );
+}
+
+// Generates a banner template — calls the configured model when a key is set,
+// otherwise returns the styled fallback. Always returns a valid template.
 //
 // Returns: { html, css, alignment, fields, generator, modelId?, reason?, styleRow? }
 export async function generateBannerTemplate({
@@ -136,33 +146,46 @@ export async function generateBannerTemplate({
 }) {
   // Pull style row from DB so the colors come from admin-managed catalog.
   const styleRow = await getStyleByName(supabase, style);
-  const styled = applyStyleRow(FALLBACK_TEMPLATE, styleRow);
-
-  if (!isOpenRouterConfigured()) {
-    return {
-      ...styled,
-      generator: "fallback",
-      reason: "OPENROUTER_API_KEY not configured",
-      styleRow,
-    };
-  }
+  const styled   = applyStyleRow(FALLBACK_TEMPLATE, styleRow);
 
   const textModel = await getDefaultTextModel(supabase);
   if (!textModel) {
     return {
       ...styled,
       generator: "fallback",
-      reason: "No enabled text model in the catalog",
+      reason: "No default text model is configured. Add one in Admin → Models.",
+      styleRow,
+    };
+  }
+
+  const apiKey = pickApiKey(textModel);
+  if (!apiKey) {
+    return {
+      ...styled,
+      generator: "fallback",
+      reason: `Model "${textModel.label}" has no API key. Set it in Admin → Models.`,
+      styleRow,
+    };
+  }
+
+  // Currently only OpenRouter is wired up. Other providers can be added by
+  // branching on textModel.provider and calling the right adapter.
+  if (textModel.provider !== "openrouter") {
+    return {
+      ...styled,
+      generator: "fallback",
+      reason: `Provider "${textModel.provider}" not supported yet for HTML generation. Use an OpenRouter model.`,
       styleRow,
     };
   }
 
   try {
     const { content } = await callOpenRouter({
+      apiKey,
       model: textModel.modelId,
       jsonMode: true,
-      temperature: 0.7,
-      maxTokens: 4000,
+      temperature: textModel.config?.temperature ?? 0.7,
+      maxTokens: textModel.config?.maxTokens ?? 4000,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -173,12 +196,12 @@ export async function generateBannerTemplate({
     });
 
     const parsed = extractJson(content);
-    const valid = validateTemplate(parsed);
+    const valid  = validateTemplate(parsed);
     if (!valid) {
       return {
         ...styled,
         generator: "fallback",
-        reason: "Model output failed validation",
+        reason: "Model output failed validation. Try again or pick a different model.",
         styleRow,
       };
     }
@@ -193,7 +216,7 @@ export async function generateBannerTemplate({
     return {
       ...styled,
       generator: "fallback",
-      reason: e?.message || "OpenRouter request failed",
+      reason: e?.message || "Model request failed",
       styleRow,
     };
   }

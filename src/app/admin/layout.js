@@ -1,7 +1,7 @@
 // src/app/admin/layout.js
 "use client";
 
-import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, Users } from "lucide-react";
+import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, LayoutTemplate, Palette, Users } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/layout/AuthProvider";
 import RouteGuard from "@/components/dashboard/RouteGuard";
@@ -18,16 +18,52 @@ export default function AdminLayout({ children }) {
     {
       title: "Admin",
       items: [
-        { href: "/admin", label: "Overview", icon: <LayoutDashboard className={iconCls} />, exact: true },
-        { href: "/admin/users", label: "Users", icon: <Users className={iconCls} /> },
-        { href: "/admin/models", label: "Models", icon: <Cpu className={iconCls} /> },
-        { href: "/admin/outputs", label: "Outputs", icon: <ImageIcon className={iconCls} /> },
+        {
+          href: "/admin",
+          label: "Overview",
+          icon: <LayoutDashboard className={iconCls} />,
+          exact: true,
+        },
+        {
+          href: "/admin/users",
+          label: "Users",
+          icon: <Users className={iconCls} />,
+        },
+        {
+          href: "/admin/models",
+          label: "Models",
+          icon: <Cpu className={iconCls} />,
+        },
+        {
+          href: "/admin/outputs",
+          label: "Outputs",
+          icon: <ImageIcon className={iconCls} />,
+        },
+      ],
+    },
+    {
+      title: "Catalog",
+      items: [
+        {
+          href: "/admin/aspects",
+          label: "Aspect Ratios",
+          icon: <LayoutTemplate className={iconCls} />,
+        },
+        {
+          href: "/admin/styles",
+          label: "Banner Styles",
+          icon: <Palette className={iconCls} />,
+        },
       ],
     },
     {
       title: "Workspace",
       items: [
-        { href: "/dashboard", label: "Back to studio", icon: <Boxes className={iconCls} /> },
+        {
+          href: "/dashboard",
+          label: "Back to studio",
+          icon: <Boxes className={iconCls} />,
+        },
       ],
     },
   ];
@@ -40,7 +76,9 @@ export default function AdminLayout({ children }) {
       <Avatar name={user.name} size={32} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
+          <div className="truncate text-sm font-medium text-foreground">
+            {user.name}
+          </div>
           <Badge tone="primary" className="px-1.5 py-0 text-[9px]">
             Admin
           </Badge>

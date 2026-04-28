@@ -1,7 +1,9 @@
 // src/lib/openrouter.js
-// OpenRouter chat completions client. Used by /api/banners/html to drive
-// the AI HTML banner generator with whichever text model the admin marked
-// as default in the `models` table.
+// OpenRouter chat completions client.
+//
+// API keys are NOT read from environment variables — they live in the
+// `models.config.apiKey` column and are passed in by the caller. Admins
+// configure them through Admin → Models.
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -14,22 +16,18 @@ export class OpenRouterError extends Error {
   }
 }
 
-export function isOpenRouterConfigured() {
-  return !!process.env.OPENROUTER_API_KEY;
-}
-
 export async function callOpenRouter({
+  apiKey,
   model,
   messages,
   jsonMode = false,
   maxTokens = 4096,
   temperature = 0.7,
 }) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new OpenRouterError(
-      "OPENROUTER_API_KEY is not configured. Add it to .env.local.",
-      { status: 500 },
+      "Missing API key for this model. Set it in Admin → Models.",
+      { status: 401 },
     );
   }
   if (!model) throw new OpenRouterError("Model is required", { status: 400 });
@@ -43,7 +41,8 @@ export async function callOpenRouter({
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       // OpenRouter recommends these for traffic attribution:
-      "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+      "HTTP-Referer":
+        process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title": "Nanogen",
     },
     body: JSON.stringify({

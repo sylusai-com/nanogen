@@ -1,5 +1,7 @@
+// src/lib/db/admin.js
 // Admin-side queries. Caller must be an admin — RLS gates access via the
-// is_admin() function set up in 0001_initial_schema.sql.
+// is_admin() function set up in 0001_initial_schema.sql, and the admin
+// layout wraps everything in <RouteGuard requireAdmin>.
 
 export async function listAllUsers(supabase) {
   const { data, error } = await supabase
@@ -10,11 +12,33 @@ export async function listAllUsers(supabase) {
   return data || [];
 }
 
+// Pulls every banner across the platform with its creator profile embedded.
+// Includes html/css/fields/alignment so the admin outputs page can render the
+// actual banner thumbnail in an iframe (same approach as user-side BannerThumb).
 export async function listAllBanners(supabase, { limit = 200 } = {}) {
   const { data, error } = await supabase
     .from("banners")
     .select(
-      "id, user_id, title, style, aspect, model_id, model_label, image_url, preview_gradient, score, favourite, created_at, profiles ( name, email )",
+      `
+        id,
+        user_id,
+        title,
+        prompt,
+        style,
+        aspect,
+        model_id,
+        model_label,
+        image_url,
+        preview_gradient,
+        score,
+        favourite,
+        html,
+        css,
+        fields,
+        alignment,
+        created_at,
+        profiles ( name, email, avatar_url )
+      `,
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -32,9 +56,9 @@ export async function getKpis(supabase) {
       .not("score", "is", null),
   ]);
 
-  const users = usersRes.count ?? 0;
-  const banners = bannersRes.count ?? 0;
-  const scores = (resultsRes.data || []).map((r) => r.score).filter((n) => n != null);
+  const users     = usersRes.count ?? 0;
+  const banners   = bannersRes.count ?? 0;
+  const scores    = (resultsRes.data || []).map((r) => r.score).filter((n) => n != null);
   const latencies = (resultsRes.data || [])
     .map((r) => r.latency_ms)
     .filter((n) => n != null)
@@ -73,7 +97,7 @@ export async function getDailyActivity(supabase, days = 14) {
     if (buckets.has(day)) buckets.set(day, buckets.get(day) + 1);
   }
   return Array.from(buckets.entries()).map(([day, count]) => ({
-    date: day.slice(5),
+    date:        day.slice(5),
     generations: count,
   }));
 }
@@ -88,14 +112,14 @@ export async function getModelShare(supabase) {
   for (const r of data || []) {
     const key = r.model_id;
     const cur = byModel.get(key) || {
-      id: r.model_id,
-      label: r.model_label,
-      runs: 0,
-      scoreSum: 0,
+      id:        r.model_id,
+      label:     r.model_label,
+      runs:      0,
+      scoreSum:  0,
       latencies: [],
     };
     cur.runs++;
-    if (r.score != null) cur.scoreSum += r.score;
+    if (r.score      != null) cur.scoreSum += r.score;
     if (r.latency_ms != null) cur.latencies.push(r.latency_ms);
     byModel.set(key, cur);
   }
@@ -105,12 +129,12 @@ export async function getModelShare(supabase) {
     .map((m) => {
       const lats = m.latencies.sort((a, b) => a - b);
       return {
-        id: m.id,
-        label: m.label,
-        runs: m.runs,
-        share: m.runs / total,
+        id:       m.id,
+        label:    m.label,
+        runs:     m.runs,
+        share:    m.runs / total,
         avgScore: m.runs ? Math.round(m.scoreSum / m.runs) : null,
-        p50ms: lats.length ? lats[Math.floor(lats.length * 0.5)] : null,
+        p50ms:    lats.length ? lats[Math.floor(lats.length * 0.5)] : null,
       };
     })
     .sort((a, b) => b.runs - a.runs);

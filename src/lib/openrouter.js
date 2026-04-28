@@ -1,27 +1,29 @@
 // src/lib/openrouter.js
-// OpenRouter chat completions client.
+// Generic OpenAI-compatible chat completions client.
 //
-// API keys are NOT read from environment variables — they live in the
-// `models.config.apiKey` column and are passed in by the caller. Admins
-// configure them through Admin → Models.
+// Despite the name, this works with any provider that exposes an OpenAI-style
+// /v1/chat/completions endpoint — OpenRouter, vLLM, Together, Groq, OpenAI
+// itself, an internal proxy, etc. The endpoint and API key are passed in
+// from the caller (which reads them from the model row in the DB).
 
-const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
 export class OpenRouterError extends Error {
   constructor(message, { status, body } = {}) {
     super(message);
-    this.name = "OpenRouterError";
+    this.name   = "OpenRouterError";
     this.status = status;
-    this.body = body;
+    this.body   = body;
   }
 }
 
 export async function callOpenRouter({
   apiKey,
+  endpoint,
   model,
   messages,
-  jsonMode = false,
-  maxTokens = 4096,
+  jsonMode    = false,
+  maxTokens   = 4096,
   temperature = 0.7,
 }) {
   if (!apiKey) {
@@ -35,12 +37,15 @@ export async function callOpenRouter({
     throw new OpenRouterError("Messages are required", { status: 400 });
   }
 
-  const res = await fetch(ENDPOINT, {
+  const url = endpoint || DEFAULT_ENDPOINT;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization:  `Bearer ${apiKey}`,
       "Content-Type": "application/json",
-      // OpenRouter recommends these for traffic attribution:
+      // OpenRouter recommends these for traffic attribution; harmless for
+      // other OpenAI-compatible providers.
       "HTTP-Referer":
         process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title": "Nanogen",
@@ -48,7 +53,7 @@ export async function callOpenRouter({
     body: JSON.stringify({
       model,
       messages,
-      max_tokens: maxTokens,
+      max_tokens:  maxTokens,
       temperature,
       ...(jsonMode && { response_format: { type: "json_object" } }),
     }),
@@ -56,13 +61,13 @@ export async function callOpenRouter({
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new OpenRouterError(`OpenRouter ${res.status}: ${text}`, {
-      status: res.status,
-      body: text,
-    });
+    throw new OpenRouterError(
+      `Upstream ${res.status} from ${url}: ${text}`,
+      { status: res.status, body: text },
+    );
   }
 
-  const data = await res.json();
+  const data    = await res.json();
   const content = data?.choices?.[0]?.message?.content || "";
   return { content, raw: data };
 }
@@ -70,11 +75,11 @@ export async function callOpenRouter({
 // Strips ```json ... ``` fences and trailing prose so JSON.parse succeeds.
 export function extractJson(text) {
   if (!text) return null;
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const fenced    = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : text;
   // Find the first { and the last } so we ignore any pre/post commentary.
   const first = candidate.indexOf("{");
-  const last = candidate.lastIndexOf("}");
+  const last  = candidate.lastIndexOf("}");
   if (first === -1 || last === -1 || last < first) return null;
   try {
     return JSON.parse(candidate.slice(first, last + 1));

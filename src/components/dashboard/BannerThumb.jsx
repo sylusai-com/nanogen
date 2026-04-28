@@ -19,58 +19,79 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// Build a minimal iframe srcDoc that applies initial field values so the
-// thumbnail looks exactly like the saved state — no postMessage needed.
+// Build a srcDoc that pre-applies all field values so the thumbnail looks
+// correct on first render — no postMessage handshake needed. Supports color,
+// range, select, and image field types via CSS variable overrides; text via
+// HTML substitution; toggle via inline display:none.
 function buildSrcDoc(html, css, fields, alignment) {
   if (!html || !css) return null;
 
-  // Inline initial field values directly into CSS vars / text nodes so the
-  // thumbnail is correct on first render without JS.
   let cssWithVars = css;
 
-  // Collect CSS var overrides from color/range/select fields.
   const varOverrides = (fields || [])
-    .filter((f) => f.cssVar && (f.type === "color" || f.type === "range" || f.type === "select"))
+    .filter(
+      (f) =>
+        f.cssVar &&
+        (f.type === "color" ||
+         f.type === "range" ||
+         f.type === "select" ||
+         f.type === "image"),
+    )
     .map((f) => {
-      const val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      let val = f.value;
+      if (f.type === "range")  val = `${f.value}${f.unit || ""}`;
+      // For image, the model is supposed to provide "url('https://...')" but
+      // be forgiving if it's just a raw URL.
+      if (f.type === "image") {
+        const v = String(f.value || "").trim();
+        if (v && !v.startsWith("url(")) val = `url("${v}")`;
+        else val = v || "none";
+      }
       return `  ${f.cssVar}: ${val};`;
     })
     .join("\n");
 
   if (varOverrides) {
-    // Inject overrides into :root block or prepend a new one.
-    if (cssWithVars.includes(":root")) {
-      cssWithVars = cssWithVars.replace(/:root\s*{/, `:root {\n${varOverrides}`);
-    } else {
-      cssWithVars = `:root {\n${varOverrides}\n}\n` + cssWithVars;
-    }
+    cssWithVars = cssWithVars.includes(":root")
+      ? cssWithVars.replace(/:root\s*{/, `:root {\n${varOverrides}`)
+      : `:root {\n${varOverrides}\n}\n` + cssWithVars;
   }
+
+  // Append toggle hides as additional CSS.
+  const toggleCss = (fields || [])
+    .filter((f) => f.type === "toggle" && f.selector && f.value === false)
+    .map((f) => `${f.selector} { display: none !important; }`)
+    .join("\n");
 
   // Replace data-slot text content via regex substitution in HTML string.
   let htmlWithText = html;
   for (const f of fields || []) {
     if (f.type === "text" && f.slot) {
-      // Replace content between data-slot open tag and first </
       htmlWithText = htmlWithText.replace(
         new RegExp(`(data-slot="${f.slot}"[^>]*)>([^<]*)`, "g"),
-        `$1>${f.value ?? ""}`
+        `$1>${escapeHtml(f.value ?? "")}`,
       );
-    }
-    if (f.type === "toggle" && f.selector && f.value === false) {
-      // We'll handle via inline style via a small script — too complex for regex
     }
   }
 
   const alignedHtml = htmlWithText.replace(
     /data-align="[^"]*"/,
-    `data-align="${alignment || "left"}"`
+    `data-align="${alignment || "left"}"`,
   );
 
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent}
 ${cssWithVars}
+${toggleCss}
 </style></head><body>${alignedHtml}</body></html>`;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export default function BannerThumb({ banner, href, index = 0 }) {
@@ -79,7 +100,7 @@ export default function BannerThumb({ banner, href, index = 0 }) {
   const srcDoc = useMemo(
     () =>
       buildSrcDoc(banner.html, banner.css, banner.fields, banner.alignment),
-    [banner.html, banner.css, banner.fields, banner.alignment]
+    [banner.html, banner.css, banner.fields, banner.alignment],
   );
 
   return (
@@ -87,7 +108,11 @@ export default function BannerThumb({ banner, href, index = 0 }) {
       initial={{ opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.4, delay: index * 0.04, ease: [0.21, 0.47, 0.32, 0.98] }}
+      transition={{
+        duration: 0.4,
+        delay: index * 0.04,
+        ease: [0.21, 0.47, 0.32, 0.98],
+      }}
     >
       <Link
         href={link}
@@ -101,9 +126,8 @@ export default function BannerThumb({ banner, href, index = 0 }) {
             <iframe
               title={banner.title}
               srcDoc={srcDoc}
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-same-origin"
               className="pointer-events-none h-full w-full border-0 bg-transparent"
-              style={{ transform: "scale(1)", transformOrigin: "top left" }}
             />
           ) : banner.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -113,7 +137,6 @@ export default function BannerThumb({ banner, href, index = 0 }) {
               className="h-full w-full object-cover"
             />
           ) : (
-            // Gradient placeholder
             <div className="h-full w-full" />
           )}
 
@@ -127,7 +150,7 @@ export default function BannerThumb({ banner, href, index = 0 }) {
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
-                  banner.score >= 80 ? "bg-emerald-400" : "bg-amber-400"
+                  banner.score >= 80 ? "bg-emerald-400" : "bg-amber-400",
                 )}
               />
               {banner.score}

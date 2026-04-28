@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, KeyRound, Loader2, Save } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Link2, Loader2, Save } from "lucide-react";
 import { PROVIDERS } from "@/lib/models";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
@@ -15,6 +15,19 @@ const KIND_OPTIONS = [
   { value: "text",  label: "Text (HTML banner generator)" },
 ];
 
+// Default endpoint hints per provider, shown as placeholder text. The admin
+// can override or leave blank — blank means "use the built-in default for
+// this provider" which is OpenRouter's URL.
+const ENDPOINT_HINTS = {
+  openrouter: "https://openrouter.ai/api/v1/chat/completions",
+  openai:     "https://api.openai.com/v1/chat/completions",
+  anthropic:  "https://api.anthropic.com/v1/messages (not OpenAI-compatible)",
+  google:     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  stability:  "https://api.stability.ai/v2beta/...",
+  replicate:  "https://api.replicate.com/v1/predictions",
+  fal:        "https://fal.run/...",
+};
+
 const EMPTY = {
   slug: "",
   label: "",
@@ -26,17 +39,22 @@ const EMPTY = {
   sortOrder: 0,
   previewGradient: "from-violet-500/40 via-fuchsia-500/20 to-indigo-700/40",
   apiKey: "",
-  configExtra: "", // JSON, sans apiKey
+  endpoint: "",
+  configExtra: "", // JSON, sans apiKey & endpoint
 };
 
-// Split an existing config blob into the dedicated apiKey field + the rest.
+// Split an existing config blob into the dedicated fields + the rest.
 function fromModel(m) {
   if (!m) return EMPTY;
   const cfg     = m.config || {};
-  const apiKey  = cfg.apiKey || cfg.api_key || "";
+  const apiKey  = cfg.apiKey   || cfg.api_key  || "";
+  const endpoint = cfg.endpoint || cfg.baseUrl || cfg.url || "";
   const rest    = { ...cfg };
   delete rest.apiKey;
   delete rest.api_key;
+  delete rest.endpoint;
+  delete rest.baseUrl;
+  delete rest.url;
 
   return {
     slug:            m.slug || "",
@@ -49,6 +67,7 @@ function fromModel(m) {
     sortOrder:       m.sortOrder ?? 0,
     previewGradient: m.previewGradient || "",
     apiKey,
+    endpoint,
     configExtra: Object.keys(rest).length ? JSON.stringify(rest, null, 2) : "",
   };
 }
@@ -79,7 +98,7 @@ export default function ModelFormModal({
     setSubmitting(true);
     setError(null);
     try {
-      // Merge dedicated apiKey + free-form extras into a single config blob.
+      // Merge dedicated fields + free-form extras into a single config blob.
       let extras = {};
       if (form.configExtra?.trim()) {
         try {
@@ -89,7 +108,8 @@ export default function ModelFormModal({
         }
       }
       const config = { ...extras };
-      if (form.apiKey.trim()) config.apiKey = form.apiKey.trim();
+      if (form.apiKey.trim())   config.apiKey   = form.apiKey.trim();
+      if (form.endpoint.trim()) config.endpoint = form.endpoint.trim();
 
       await onSubmit({
         slug:      form.slug.trim(),
@@ -112,10 +132,10 @@ export default function ModelFormModal({
     }
   };
 
-  // Show a hint when API key is required but missing.
-  const apiKeyMissing = !form.apiKey.trim() && !!model?.modelId === false; // only hint on new
   const hasExistingKey =
     !!(model?.config?.apiKey || model?.config?.api_key);
+  const endpointPlaceholder =
+    ENDPOINT_HINTS[form.provider] || "https://api.example.com/v1/chat/completions";
 
   return (
     <Modal
@@ -126,7 +146,7 @@ export default function ModelFormModal({
       description={
         model
           ? `Editing ${model.label}`
-          : "Register a new model in the catalog. The API key is stored on this row — admins manage it here."
+          : "Register a new model in the catalog. API key + endpoint are stored on this row — admins manage them here."
       }
       footer={
         <>
@@ -160,9 +180,7 @@ export default function ModelFormModal({
               onChange={(e) => set({ kind: e.target.value })}
             >
               {KIND_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </Select>
           </div>
@@ -174,14 +192,12 @@ export default function ModelFormModal({
               onChange={(e) => set({ provider: e.target.value })}
             >
               {PROVIDERS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
+                <option key={p} value={p}>{p}</option>
               ))}
             </Select>
-            {form.kind === "text" && form.provider !== "openrouter" && (
+            {form.kind === "text" && form.provider !== "openrouter" && !form.endpoint && (
               <p className="text-[11px] text-amber-400/90">
-                Only OpenRouter is wired up for HTML banner generation today.
+                Set the endpoint URL below so this provider can be called.
               </p>
             )}
           </div>
@@ -232,11 +248,31 @@ export default function ModelFormModal({
             required
           />
           <p className="text-[11px] text-muted">
-            Identifier used by the provider's API.
+            Identifier used by the provider&apos;s API.
           </p>
         </div>
 
-        {/* API Key — the new dedicated field */}
+        {/* Endpoint URL — admin-configurable */}
+        <div className="space-y-2">
+          <Label htmlFor="endpoint" className="flex items-center gap-1.5">
+            <Link2 className="h-3.5 w-3.5" />
+            Endpoint URL
+            <span className="text-muted normal-case tracking-normal">(optional)</span>
+          </Label>
+          <Input
+            id="endpoint"
+            value={form.endpoint}
+            onChange={(e) => set({ endpoint: e.target.value })}
+            placeholder={endpointPlaceholder}
+            className="font-mono text-xs"
+          />
+          <p className="text-[11px] text-muted">
+            Leave blank to use the built-in OpenRouter endpoint. Set explicitly
+            for OpenAI-compatible providers (Groq, Together, vLLM, custom proxies, etc).
+          </p>
+        </div>
+
+        {/* API Key */}
         <div className="space-y-2">
           <Label htmlFor="apiKey" className="flex items-center gap-1.5">
             <KeyRound className="h-3.5 w-3.5" />
@@ -274,8 +310,7 @@ export default function ModelFormModal({
             </button>
           </div>
           <p className="text-[11px] text-muted">
-            Stored on this model row in the database. Leave blank when editing
-            to keep the existing key.
+            Stored on this model row. Leave blank when editing to keep the existing key.
           </p>
         </div>
 
@@ -342,11 +377,11 @@ export default function ModelFormModal({
             rows={4}
             value={form.configExtra}
             onChange={(e) => set({ configExtra: e.target.value })}
-            placeholder={`{\n  "temperature": 0.7,\n  "maxTokens": 4000\n}`}
+            placeholder={`{\n  "temperature": 0.8,\n  "maxTokens": 6000\n}`}
             className="font-mono text-xs"
           />
           <p className="text-[11px] text-muted">
-            The API key has its own field above and is merged into this on save.
+            API key and endpoint are managed in their own fields above and merged on save.
           </p>
         </div>
 

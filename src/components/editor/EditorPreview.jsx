@@ -12,8 +12,8 @@ function aspectRatio(a) {
 }
 
 // Build the iframe srcDoc once per template. Field updates (text, colors,
-// numeric, select, toggle) are pushed via postMessage so the iframe doesn't
-// reload between edits.
+// numeric, select, toggle, image) are pushed via postMessage so the iframe
+// doesn't reload between edits.
 function buildSrcDoc(template) {
   if (!template) return "";
   return `<!doctype html>
@@ -25,7 +25,14 @@ function buildSrcDoc(template) {
   <body>
     ${template.html}
     <script>
-      window.addEventListener('message', (e) => {
+      function wrapUrl(v) {
+        if (!v) return 'none';
+        var s = String(v).trim();
+        if (!s) return 'none';
+        if (s.indexOf('url(') === 0) return s;
+        return 'url("' + s + '")';
+      }
+      window.addEventListener('message', function (e) {
         if (!e.data || typeof e.data !== 'object') return;
         if (e.data.type !== 'patch') return;
         var root = document.querySelector('.banner');
@@ -43,6 +50,8 @@ function buildSrcDoc(template) {
               document.documentElement.style.setProperty(f.cssVar, f.value + unit);
             } else if (f.type === 'select' && f.cssVar) {
               document.documentElement.style.setProperty(f.cssVar, f.value);
+            } else if (f.type === 'image' && f.cssVar) {
+              document.documentElement.style.setProperty(f.cssVar, wrapUrl(f.value));
             } else if (f.type === 'toggle' && f.selector) {
               var nodes = document.querySelectorAll(f.selector);
               for (var j = 0; j < nodes.length; j++) {
@@ -76,7 +85,10 @@ export default function EditorPreview({
   if (!template) {
     return (
       <div
-        className={cn("rounded-2xl border border-border bg-surface skeleton", className)}
+        className={cn(
+          "rounded-2xl border border-border bg-surface skeleton",
+          className,
+        )}
         style={{ aspectRatio: aspectRatio(aspect) }}
       />
     );

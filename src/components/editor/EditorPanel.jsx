@@ -2,7 +2,13 @@
 "use client";
 
 import { useState } from "react";
-import { LayoutPanelLeft, Palette, Sliders, Type } from "lucide-react";
+import {
+  Image as ImageIcon,
+  LayoutPanelLeft,
+  Palette,
+  Sliders,
+  Type,
+} from "lucide-react";
 import Tabs from "@/components/ui/Tabs";
 import Card from "@/components/ui/Card";
 import TextField from "./TextField";
@@ -10,13 +16,15 @@ import ColorField from "./ColorField";
 import RangeField from "./RangeField";
 import SelectField from "./SelectField";
 import ToggleField from "./ToggleField";
+import ImageField from "./ImageField";
 import AlignmentField from "./AlignmentField";
 
 const TABS = [
-  { id: "text", icon: Type, label: "Text" },
-  { id: "colors", icon: Palette, label: "Colors" },
-  { id: "advanced", icon: Sliders, label: "Advanced" },
-  { id: "layout", icon: LayoutPanelLeft, label: "Layout" },
+  { id: "text",     icon: Type,            label: "Text" },
+  { id: "colors",   icon: Palette,         label: "Colors" },
+  { id: "media",    icon: ImageIcon,       label: "Media" },
+  { id: "advanced", icon: Sliders,         label: "Advanced" },
+  { id: "layout",   icon: LayoutPanelLeft, label: "Layout" },
 ];
 
 export default function EditorPanel({
@@ -26,8 +34,10 @@ export default function EditorPanel({
   onAlignmentChange,
 }) {
   const [tab, setTab] = useState("text");
-  const text = fields.filter((f) => f.type === "text");
-  const colors = fields.filter((f) => f.type === "color");
+
+  const text     = fields.filter((f) => f.type === "text");
+  const colors   = fields.filter((f) => f.type === "color");
+  const images   = fields.filter((f) => f.type === "image");
   const advanced = fields.filter((f) =>
     ["range", "select", "toggle"].includes(f.type),
   );
@@ -71,6 +81,22 @@ export default function EditorPanel({
             ))
           ) : (
             <p className="text-xs text-muted">No color fields in this template.</p>
+          )}
+        </div>
+      )}
+
+      {tab === "media" && (
+        <div className="space-y-4">
+          {images.length ? (
+            images.map((f) => (
+              <ImageField key={f.id} field={f} onChange={onFieldChange} />
+            ))
+          ) : (
+            <p className="text-xs text-muted">
+              No image fields in this template. Re-generate with a brief that
+              suggests a hero image, or paste an image URL by adding a field
+              named <code className="font-mono">bg_image</code> to the template.
+            </p>
           )}
         </div>
       )}

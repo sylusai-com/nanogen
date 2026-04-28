@@ -1,3 +1,4 @@
+// src/components/editor/RangeField.jsx
 "use client";
 
 import { Label } from "@/components/ui/Input";

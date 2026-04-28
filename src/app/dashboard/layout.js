@@ -48,7 +48,7 @@ export default function DashboardLayout({ children }) {
 
   return (
     <RouteGuard>
-      <div className="flex min-h-screen">
+      <div className="flex min-h-dvh items-start">
         <Sidebar sections={sections} footer={footer} />
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>

@@ -12,7 +12,7 @@ export default function Sidebar({ sections, footer, className }) {
   return (
     <aside
       className={cn(
-        "hidden md:flex w-60 shrink-0 flex-col border-r border-border bg-surface/40",
+        "hidden md:flex h-dvh w-60 shrink-0 flex-col border-r border-border bg-surface/40 md:sticky md:top-0",
         className,
       )}
     >

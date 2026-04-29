@@ -10,8 +10,11 @@ import Tabs from "@/components/ui/Tabs";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import { Input } from "@/components/ui/Input";
+import Pagination from "@/components/ui/Pagination";
 import { listAllBanners } from "@/lib/db/admin";
 import { cn } from "@/lib/cn";
+
+const PAGE_SIZE = 24;
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
@@ -148,13 +151,20 @@ export default function AdminOutputs() {
   const [all, setAll]   = useState(null);
   const [view, setView] = useState("all");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
 
   useEffect(() => {
     if (!user) return;
-    listAllBanners(supabase, { limit: 200 })
-      .then(setAll)
+    listAllBanners(supabase, { page, pageSize: PAGE_SIZE })
+      .then((result) => {
+        setAll(result.rows || []);
+        setTotalPages(result.totalPages || 1);
+        setTotalRows(result.total || 0);
+      })
       .catch((e) => console.error("admin outputs", e));
-  }, [user, supabase]);
+  }, [user, supabase, page]);
 
   const filtered = useMemo(() => {
     if (!all) return [];
@@ -174,6 +184,10 @@ export default function AdminOutputs() {
     }
     return list;
   }, [all, view, query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [view, query]);
 
   const tabs = [
     { id: "all",      label: `All · ${all?.length ?? 0}` },
@@ -230,6 +244,10 @@ export default function AdminOutputs() {
                 : "Saved banners appear here as users generate."
             }
           />
+        )}
+
+        {all && totalRows > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
     </>

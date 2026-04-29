@@ -15,6 +15,8 @@
 // All exports are triggered from the browser; this module is "use client"
 // safe and never imported on the server.
 
+import { toJpeg, toPng } from "html-to-image";
+
 // Build the full HTML document the iframe would have shown, with the
 // patched field values applied to the markup and the chosen alignment set.
 export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner" }) {
@@ -133,71 +135,110 @@ export async function rasterize({
   if (typeof window === "undefined") {
     throw new Error("rasterize() must be called from the browser.");
   }
-  const { width, height } = exportSize(aspect);
-  const safeFields = await inlineImageFields(fields || []);
-  const svg = buildSvgString({ html, css, fields: safeFields, alignment, width, height });
-
-  // Use a Blob URL — embedding via data: URI breaks cross-origin images
-  // (Unsplash) because they're loaded under the SVG document's origin.
-  const blob   = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const url    = URL.createObjectURL(blob);
-
   try {
-    const img = await loadImage(url);
-    const canvas = document.createElement("canvas");
-    canvas.width  = Math.round(width * scale);
-    canvas.height = Math.round(height * scale);
-    const ctx = canvas.getContext("2d");
-    if (format === "image/jpeg") {
-      ctx.fillStyle = background;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const { node, cleanup } = await createBannerRenderNode({ html, css, fields, alignment, aspect });
+    try {
+      const options = {
+        cacheBust: true,
+        pixelRatio: scale,
+        backgroundColor: background,
+      };
+      if (format === "image/jpeg") {
+        return await toJpeg(node, { ...options, quality: 0.92 });
+      }
+      return await toPng(node, options);
+    } finally {
+      cleanup();
     }
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL(format, format === "image/jpeg" ? 0.92 : undefined);
   } finally {
-    URL.revokeObjectURL(url);
   }
 }
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload  = () => resolve(img);
-    img.onerror = () => reject(new Error("Image failed to load"));
-    img.src = src;
+async function createBannerRenderNode({ html, css, fields, alignment, aspect }) {
+  if (typeof document === "undefined") {
+    throw new Error("createBannerRenderNode() must be called from the browser.");
+  }
+
+  const { width, height } = exportSize(aspect);
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.tabIndex = -1;
+  iframe.style.position = "fixed";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = `${width}px`;
+  iframe.style.height = `${height}px`;
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  iframe.style.pointerEvents = "none";
+
+  const doc = buildStandaloneHtml({ html, css, fields, alignment, title: "banner-export" });
+  document.body.appendChild(iframe);
+
+  await new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error("Banner export timed out")), 15000);
+    iframe.onload = () => {
+      window.clearTimeout(timeout);
+      resolve();
+    };
+    iframe.srcdoc = doc;
   });
+
+  const docRoot = iframe.contentDocument;
+  if (docRoot?.fonts?.ready) {
+    try {
+      await docRoot.fonts.ready;
+    } catch {
+      // Font loading is best-effort; export should still proceed with fallbacks.
+    }
+  }
+  await inlineImageVariables(docRoot, fields || []);
+  const images = Array.from(docRoot?.images || []);
+  await Promise.all(
+    images.map((img) => (
+      img.complete
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+          })
+    )),
+  );
+
+  const node = docRoot?.querySelector?.(".banner") || docRoot?.body || docRoot?.documentElement;
+  if (!node) {
+    iframe.remove();
+    throw new Error("Banner export node unavailable");
+  }
+
+  return {
+    node,
+    cleanup: () => iframe.remove(),
+  };
 }
 
-async function inlineImageFields(fields) {
-  const next = [];
+async function inlineImageVariables(docRoot, fields) {
+  if (!docRoot?.documentElement) return;
+
   for (const field of fields) {
-    if (field?.type !== "image") {
-      next.push(field);
-      continue;
-    }
+    if (field?.type !== "image" || !field.cssVar) continue;
     const raw = String(field.value || "").trim();
-    if (!raw || raw.startsWith("data:") || raw.startsWith("url(data:")) {
-      next.push(field);
-      continue;
-    }
+    if (!raw || raw.startsWith("data:")) continue;
+
     const cleanUrl = raw.startsWith("url(")
       ? raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "")
       : raw;
+
     try {
-      const res = await fetch(cleanUrl, { mode: "cors" });
-      if (!res.ok) {
-        next.push(field);
-        continue;
-      }
+      const res = await fetch(cleanUrl, { mode: "cors", cache: "no-store" });
+      if (!res.ok) continue;
       const blob = await res.blob();
       const dataUrl = await blobToDataUrl(blob);
-      next.push({ ...field, value: `url("${dataUrl}")` });
+      docRoot.documentElement.style.setProperty(field.cssVar, `url("${dataUrl}")`);
     } catch {
-      next.push(field);
+      // Best effort: keep the original URL if inlining fails.
     }
   }
-  return next;
 }
 
 function blobToDataUrl(blob) {

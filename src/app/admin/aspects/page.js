@@ -11,12 +11,15 @@ import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import AspectFormModal from "@/components/admin/AspectFormModal";
+import Pagination from "@/components/ui/Pagination";
 import {
   createAspectRatio,
   deleteAspectRatio,
   listAllAspectRatios,
   updateAspectRatio,
 } from "@/lib/db/aspects";
+
+const PAGE_SIZE = 12;
 
 // Visual preview of each aspect ratio
 function AspectPreview({ ratio }) {
@@ -38,14 +41,19 @@ function AspectPreview({ ratio }) {
 export default function AdminAspects() {
   const { user, supabase } = useAuth();
   const [aspects, setAspects] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
   const [error, setError]   = useState(null);
   const [modal, setModal]   = useState({ open: false, item: null });
   const [busyId, setBusyId] = useState(null);
 
   const reload = async () => {
     try {
-      const rows = await listAllAspectRatios(supabase);
-      setAspects(rows);
+      const result = await listAllAspectRatios(supabase, { page, pageSize: PAGE_SIZE });
+      setAspects(result.rows || []);
+      setTotalPages(result.totalPages || 1);
+      setTotalRows(result.total || 0);
     } catch (e) {
       setError(e.message || "Failed to load aspect ratios");
     }
@@ -54,7 +62,11 @@ export default function AdminAspects() {
   useEffect(() => {
     if (user) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, []);
 
   const onCreate = async (form) => {
     await createAspectRatio(supabase, form);
@@ -193,6 +205,10 @@ export default function AdminAspects() {
               </Card>
             ))}
           </div>
+        )}
+
+        {aspects && totalRows > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
 

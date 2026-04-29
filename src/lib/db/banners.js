@@ -34,6 +34,19 @@ const COLUMNS = `
   updatedAt:updated_at
 `;
 
+function normalizePagination({ page = 1, pageSize = null, limit = null } = {}) {
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const safePageSize = pageSize == null ? null : Math.max(1, Math.floor(Number(pageSize) || 1));
+  const safeLimit = limit == null ? null : Math.max(1, Math.floor(Number(limit) || 1));
+  return {
+    page: safePage,
+    pageSize: safePageSize,
+    limit: safeLimit,
+    from: safePageSize ? (safePage - 1) * safePageSize : 0,
+    to: safePageSize ? (safePage - 1) * safePageSize + safePageSize - 1 : 0,
+  };
+}
+
 // Pull the current user's id from the auth session so we can scope queries
 // to their rows even when the caller has admin role (RLS bypass).
 async function currentUserId(supabase) {
@@ -41,17 +54,29 @@ async function currentUserId(supabase) {
   return data?.user?.id || null;
 }
 
-export async function listBanners(supabase, { limit = 100 } = {}) {
+export async function listBanners(supabase, options = {}) {
+  const { page, pageSize, limit, from, to } = normalizePagination(options);
   const uid = await currentUserId(supabase);
   if (!uid) return [];
-  const { data, error } = await supabase
+  const paginated = pageSize != null;
+  let query = supabase
     .from("banners")
-    .select(COLUMNS)
+    .select(COLUMNS, paginated ? { count: "exact" } : undefined)
     .eq("user_id", uid)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
+  if (paginated) query = query.range(from, to);
+  else if (limit != null) query = query.limit(limit);
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data || [];
+  if (!paginated) return data || [];
+  const total = count ?? 0;
+  return {
+    rows: data || [],
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 }
 
 export async function getBanner(supabase, id) {

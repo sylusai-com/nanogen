@@ -17,24 +17,30 @@ import BannerFilters from "@/components/dashboard/BannerFilters";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
+import Pagination from "@/components/ui/Pagination";
 import { listBanners } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
+
+const PAGE_SIZE = 12;
 
 export default function BannersList() {
   const { user, supabase } = useAuth();
   const userId = user?.id;
   const [query, setQuery] = useState("");
   const [view, setView]   = useState("all");
+  const [page, setPage]   = useState(1);
 
   // Banner list is hot — cache for 30s with stale-while-revalidate so
   // navigating between detail/edit and back is instant. The cache
   // invalidates the "banners" tag whenever a banner is created
   // (/api/banners), updated (editor), favourited, or deleted.
-  const { data: all = null } = useCachedQuery(
-    ["banners", userId],
-    () => listBanners(supabase),
+  const { data: pageResult = null } = useCachedQuery(
+    ["banners", userId, page],
+    () => listBanners(supabase, { page, pageSize: PAGE_SIZE }),
     { ttlMs: 30_000, tags: ["banners", `banners:${userId || "anon"}`], enabled: !!userId },
   );
+
+  const all = pageResult?.rows ?? null;
 
   const grouped = useMemo(() => {
     if (!all) return [];
@@ -87,6 +93,9 @@ export default function BannersList() {
 
     return groups;
   }, [all, view, query]);
+
+  const totalPages = pageResult?.totalPages ?? 1;
+  const totalRows = pageResult?.total ?? 0;
 
   const totals = {
     all: all?.length ?? 0,
@@ -249,6 +258,16 @@ export default function BannersList() {
               </Button>
             }
           />
+        )}
+
+        {pageResult && grouped.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+        )}
+
+        {pageResult && grouped.length === 0 && totalRows > 0 && (
+          <div className="rounded-2xl border border-border bg-surface-2/70 p-4 text-sm text-muted">
+            No matches on this page. Try a different page or refine the search.
+          </div>
         )}
       </div>
     </>

@@ -13,6 +13,17 @@ const COLUMNS = `
   updatedAt:updated_at
 `;
 
+function normalizePagination({ page = 1, pageSize = null } = {}) {
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const safePageSize = pageSize == null ? null : Math.max(1, Math.floor(Number(pageSize) || 1));
+  return {
+    page: safePage,
+    pageSize: safePageSize,
+    from: safePageSize ? (safePage - 1) * safePageSize : 0,
+    to: safePageSize ? (safePage - 1) * safePageSize + safePageSize - 1 : 0,
+  };
+}
+
 export async function listAspectRatios(supabase) {
   const { data, error } = await supabase
     .from("aspect_ratios")
@@ -23,13 +34,19 @@ export async function listAspectRatios(supabase) {
   return data || [];
 }
 
-export async function listAllAspectRatios(supabase) {
-  const { data, error } = await supabase
+export async function listAllAspectRatios(supabase, options = {}) {
+  const { page, pageSize, from, to } = normalizePagination(options);
+  const paginated = pageSize != null;
+  let query = supabase
     .from("aspect_ratios")
-    .select(COLUMNS)
+    .select(COLUMNS, paginated ? { count: "exact" } : undefined)
     .order("sort_order", { ascending: true });
+  if (paginated) query = query.range(from, to);
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data || [];
+  if (!paginated) return data || [];
+  const total = count ?? 0;
+  return { rows: data || [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 export async function createAspectRatio(supabase, row) {

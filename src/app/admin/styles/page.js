@@ -11,12 +11,15 @@ import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import StyleFormModal from "@/components/admin/StyleFormModal";
+import Pagination from "@/components/ui/Pagination";
 import {
   createBannerStyle,
   deleteBannerStyle,
   listAllBannerStyles,
   updateBannerStyle,
 } from "@/lib/db/styles";
+
+const PAGE_SIZE = 12;
 
 function ColorSwatch({ color, label }) {
   return (
@@ -34,14 +37,19 @@ function ColorSwatch({ color, label }) {
 export default function AdminStyles() {
   const { user, supabase } = useAuth();
   const [styles, setStyles]   = useState(null);
+  const [page, setPage]      = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
   const [error, setError]     = useState(null);
   const [modal, setModal]     = useState({ open: false, item: null });
   const [busyId, setBusyId]   = useState(null);
 
   const reload = async () => {
     try {
-      const rows = await listAllBannerStyles(supabase);
-      setStyles(rows);
+      const result = await listAllBannerStyles(supabase, { page, pageSize: PAGE_SIZE });
+      setStyles(result.rows || []);
+      setTotalPages(result.totalPages || 1);
+      setTotalRows(result.total || 0);
     } catch (e) {
       setError(e.message || "Failed to load styles");
     }
@@ -50,7 +58,11 @@ export default function AdminStyles() {
   useEffect(() => {
     if (user) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, []);
 
   const onCreate = async (form) => {
     await createBannerStyle(supabase, form);
@@ -189,6 +201,10 @@ export default function AdminStyles() {
               </Card>
             ))}
           </div>
+        )}
+
+        {styles && totalRows > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
 

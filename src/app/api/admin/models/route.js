@@ -21,6 +21,17 @@ export const runtime = "nodejs";
 // Always evaluate per-request — never cached at the edge / by Next.js.
 export const dynamic = "force-dynamic";
 
+function normalizePagination(url) {
+  const page = Math.max(1, Number(url.searchParams.get("page") || 1));
+  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize") || 20));
+  return {
+    page,
+    pageSize,
+    from: (page - 1) * pageSize,
+    to: (page - 1) * pageSize + pageSize - 1,
+  };
+}
+
 async function requireAdmin() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -62,22 +73,33 @@ function sanitizeModel(row) {
   };
 }
 
-export async function GET() {
+export async function GET(req) {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;
 
+  const url = new URL(req.url);
+  const { page, pageSize, from, to } = normalizePagination(url);
+
   const adminDb = createAdminClient();
-  const { data, error } = await adminDb
+  const { data, error, count } = await adminDb
     .from("models")
-    .select("*")
+    .select("*", { count: "exact" })
     .order("kind", { ascending: true })
-    .order("sort_order", { ascending: true });
+    .order("sort_order", { ascending: true })
+    .range(from, to);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   // Strip sensitive headers from cache layers.
-  const res = NextResponse.json({ models: (data || []).map(sanitizeModel) });
+  const total = count ?? 0;
+  const res = NextResponse.json({
+    models: (data || []).map(sanitizeModel),
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  });
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }

@@ -13,6 +13,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import AreaActivity from "@/components/admin/AreaActivity";
 import ModelShareChart from "@/components/admin/ModelShareChart";
+import Pagination from "@/components/ui/Pagination";
 import {
   getDailyActivity,
   getKpis,
@@ -20,12 +21,16 @@ import {
   listAllBanners,
 } from "@/lib/db/admin";
 
+const LATEST_PAGE_SIZE = 5;
+
 export default function AdminOverview() {
   const { user, supabase } = useAuth();
   const [kpis, setKpis] = useState(null);
   const [activity, setActivity] = useState(null);
   const [share, setShare] = useState(null);
   const [recent, setRecent] = useState(null);
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentTotalPages, setRecentTotalPages] = useState(1);
 
   useEffect(() => {
     if (!user) return;
@@ -34,20 +39,21 @@ export default function AdminOverview() {
       getKpis(supabase),
       getDailyActivity(supabase, 14),
       getModelShare(supabase),
-      listAllBanners(supabase, { limit: 5 }),
+      listAllBanners(supabase, { page: recentPage, pageSize: LATEST_PAGE_SIZE }),
     ])
       .then(([k, a, s, r]) => {
         if (cancelled) return;
         setKpis(k);
         setActivity(a);
         setShare(s);
-        setRecent(r);
+        setRecent(r.rows || []);
+        setRecentTotalPages(r.totalPages || 1);
       })
       .catch((e) => console.error("admin load", e));
     return () => {
       cancelled = true;
     };
-  }, [user, supabase]);
+  }, [user, supabase, recentPage]);
 
   const cards = kpis && [
     { id: "users", label: "Users", value: kpis.users, icon: <Users className="h-4 w-4" /> },
@@ -161,37 +167,42 @@ export default function AdminOverview() {
                 See all
               </Link>
             </div>
-            {recent && recent.length ? (
-              <ul className="mt-4 space-y-3">
-                {recent.map((o) => (
-                  <li key={o.id} className="flex items-center gap-3">
-                    <div
-                      className="h-10 w-16 shrink-0 rounded-md ring-1 ring-inset ring-border"
-                      style={{ background: o.preview_gradient || undefined }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-foreground">{o.title}</div>
-                      <div className="flex items-center gap-1.5 truncate text-[11px] text-muted">
-                        <Avatar name={o.profiles?.name || ""} size={14} className="text-[8px]!" />
-                        <span className="truncate">{o.profiles?.name || o.profiles?.email || "—"}</span>
-                      </div>
-                    </div>
-                    {o.score != null && (
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
-                          o.score >= 80
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : "bg-amber-500/10 text-amber-400"
-                        }`}
-                      >
-                        {o.score}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : recent ? (
-              <EmptyData className="mt-4" title="Quiet so far" body="Saved banners appear here." />
+            {recent ? (
+              <>
+                {recent.length ? (
+                  <ul className="mt-4 space-y-3">
+                    {recent.map((o) => (
+                      <li key={o.id} className="flex items-center gap-3">
+                        <div
+                          className="h-10 w-16 shrink-0 rounded-md ring-1 ring-inset ring-border"
+                          style={{ background: o.preview_gradient || undefined }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm text-foreground">{o.title}</div>
+                          <div className="flex items-center gap-1.5 truncate text-[11px] text-muted">
+                            <Avatar name={o.profiles?.name || ""} size={14} className="text-[8px]!" />
+                            <span className="truncate">{o.profiles?.name || o.profiles?.email || "—"}</span>
+                          </div>
+                        </div>
+                        {o.score != null && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
+                              o.score >= 80
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : "bg-amber-500/10 text-amber-400"
+                            }`}
+                          >
+                            {o.score}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <EmptyData className="mt-4" title="Quiet so far" body="Saved banners appear here." />
+                )}
+                <Pagination page={recentPage} totalPages={recentTotalPages} onPageChange={setRecentPage} className="mt-4" />
+              </>
             ) : (
               <div className="mt-4 space-y-2">
                 {Array.from({ length: 4 }).map((_, i) => (

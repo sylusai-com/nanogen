@@ -12,29 +12,34 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
+import Pagination from "@/components/ui/Pagination";
 import { listBanners, userStats } from "@/lib/db/banners";
 
 const iconCls = "h-4 w-4";
+const RECENT_PAGE_SIZE = 8;
 
 export default function DashboardOverview() {
   const { user, supabase } = useAuth();
   const [recent, setRecent] = useState(null);
   const [stats, setStats] = useState(null);
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentTotalPages, setRecentTotalPages] = useState(1);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    Promise.all([listBanners(supabase, { limit: 8 }), userStats(supabase)])
+    Promise.all([listBanners(supabase, { page: recentPage, pageSize: RECENT_PAGE_SIZE }), userStats(supabase)])
       .then(([banners, s]) => {
         if (cancelled) return;
-        setRecent(banners);
+        setRecent(banners.rows || []);
+        setRecentTotalPages(banners.totalPages || 1);
         setStats(s);
       })
       .catch((e) => console.error("dashboard load", e));
     return () => {
       cancelled = true;
     };
-  }, [user, supabase]);
+  }, [user, supabase, recentPage]);
 
   const cards = [
     {
@@ -109,10 +114,13 @@ export default function DashboardOverview() {
               ))}
             </div>
           ) : recent.length ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {recent.map((b, i) => (
-                <BannerThumb key={b.id} banner={b} index={i} />
-              ))}
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {recent.map((b, i) => (
+                  <BannerThumb key={b.id} banner={b} index={i} />
+                ))}
+              </div>
+              <Pagination page={recentPage} totalPages={recentTotalPages} onPageChange={setRecentPage} />
             </div>
           ) : (
             <EmptyData

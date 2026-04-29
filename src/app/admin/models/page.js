@@ -21,6 +21,9 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import ModelFormModal from "@/components/admin/ModelFormModal";
 import { invalidateTags } from "@/lib/cache";
+import Pagination from "@/components/ui/Pagination";
+
+const PAGE_SIZE = 8;
 
 // All mutations go through admin-only API routes (server-side merge for
 // API key preservation) — never the browser supabase client. The DB is
@@ -63,13 +66,16 @@ export default function AdminModels() {
   const [error, setError]   = useState(null);
   const [modal, setModal]   = useState({ open: false, model: null });
   const [busyId, setBusyId] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
 
-  const reload = async () => {
+  const reload = async (nextPage = page) => {
     try {
       // Admin route returns models with full (apiKey-redacted) config so
       // the form can pre-fill endpoint + extras. The plain
       // listAllModels() public selector intentionally hides config.
-      const rows = await fetch("/api/admin/models", {
+      const rows = await fetch(`/api/admin/models?page=${nextPage}&pageSize=${PAGE_SIZE}`, {
         cache: "no-store",
         credentials: "same-origin",
       })
@@ -77,8 +83,14 @@ export default function AdminModels() {
           if (!r.ok) throw new Error(`Models load failed (${r.status})`);
           return r.json();
         })
-        .then((j) => j.models || []);
-      setModels(rows);
+        .then((j) => ({
+          models: j.models || [],
+          totalPages: j.totalPages || 1,
+          total: j.total || 0,
+        }));
+      setModels(rows.models);
+      setTotalPages(rows.totalPages);
+      setTotalRows(rows.total);
       // pull live aggregates from generation_results
       const { data } = await supabase
         .from("generation_results")
@@ -112,9 +124,9 @@ export default function AdminModels() {
   // Stable user.id key avoids re-firing reload() every time the auth
   // provider re-shapes the user object (token refresh on tab switch).
   useEffect(() => {
-    if (user?.id) reload();
+    if (user?.id) reload(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, page]);
 
   const onCreate = async (form) => {
     await adminFetch("/api/admin/models", {
@@ -247,6 +259,10 @@ export default function AdminModels() {
               onDelete={onDelete}
             />
           </>
+        )}
+
+        {models && totalRows > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
 

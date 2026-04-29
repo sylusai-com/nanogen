@@ -9,9 +9,12 @@ import Badge from "@/components/ui/Badge";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import { Input } from "@/components/ui/Input";
+import Pagination from "@/components/ui/Pagination";
 import { TD, TH, THead, TR, Table } from "@/components/ui/Table";
 import Dropdown, { DropdownItem, DropdownSection } from "@/components/ui/Dropdown";
 import { listAllUsers } from "@/lib/db/admin";
+
+const PAGE_SIZE = 20;
 
 function fmtAgo(iso) {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
@@ -24,10 +27,17 @@ export default function AdminUsers() {
   const { user, supabase } = useAuth();
   const [all, setAll] = useState(null);
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
 
   const reload = () => {
-    listAllUsers(supabase)
-      .then(setAll)
+    listAllUsers(supabase, { page, pageSize: PAGE_SIZE })
+      .then((result) => {
+        setAll(result.rows || []);
+        setTotalPages(result.totalPages || 1);
+        setTotalRows(result.total || 0);
+      })
       .catch((e) => console.error("admin users", e));
   };
 
@@ -35,7 +45,7 @@ export default function AdminUsers() {
     if (!user) return;
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, supabase]);
+  }, [user, supabase, page]);
 
   const filtered = useMemo(() => {
     if (!all) return [];
@@ -47,6 +57,10 @@ export default function AdminUsers() {
         (u.email || "").toLowerCase().includes(q),
     );
   }, [all, query]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
 
   const promote = async (u) => {
     const next = u.role === "admin" ? "user" : "admin";
@@ -152,6 +166,10 @@ export default function AdminUsers() {
                 : "Users appear here as they sign up."
             }
           />
+        )}
+
+        {all && totalRows > 0 && (
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
     </>

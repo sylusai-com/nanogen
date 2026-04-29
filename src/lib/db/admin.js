@@ -3,20 +3,41 @@
 // is_admin() function set up in 0001_initial_schema.sql, and the admin
 // layout wraps everything in <RouteGuard requireAdmin>.
 
-export async function listAllUsers(supabase) {
-  const { data, error } = await supabase
+function normalizePagination({ page = 1, pageSize = null, limit = null } = {}) {
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const safePageSize = pageSize == null ? null : Math.max(1, Math.floor(Number(pageSize) || 1));
+  const safeLimit = limit == null ? null : Math.max(1, Math.floor(Number(limit) || 1));
+  return {
+    page: safePage,
+    pageSize: safePageSize,
+    limit: safeLimit,
+    from: safePageSize ? (safePage - 1) * safePageSize : 0,
+    to: safePageSize ? (safePage - 1) * safePageSize + safePageSize - 1 : 0,
+  };
+}
+
+export async function listAllUsers(supabase, options = {}) {
+  const { page, pageSize, from, to } = normalizePagination(options);
+  const paginated = pageSize != null;
+  let query = supabase
     .from("profiles")
-    .select("id, name, email, role, plan, avatar_url, created_at")
+    .select("id, name, email, role, plan, avatar_url, created_at", paginated ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false });
+  if (paginated) query = query.range(from, to);
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data || [];
+  if (!paginated) return data || [];
+  const total = count ?? 0;
+  return { rows: data || [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 // Pulls every banner across the platform with its creator profile embedded.
 // Includes html/css/fields/alignment so the admin outputs page can render the
 // actual banner thumbnail in an iframe (same approach as user-side BannerThumb).
-export async function listAllBanners(supabase, { limit = 200 } = {}) {
-  const { data, error } = await supabase
+export async function listAllBanners(supabase, options = {}) {
+  const { page, pageSize, limit, from, to } = normalizePagination(options);
+  const paginated = pageSize != null;
+  let query = supabase
     .from("banners")
     .select(
       `
@@ -39,11 +60,16 @@ export async function listAllBanners(supabase, { limit = 200 } = {}) {
         created_at,
         profiles ( name, email, avatar_url )
       `,
+      paginated ? { count: "exact" } : undefined,
     )
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
+  if (paginated) query = query.range(from, to);
+  else if (limit != null) query = query.limit(limit);
+  const { data, error, count } = await query;
   if (error) throw error;
-  return data || [];
+  if (!paginated) return data || [];
+  const total = count ?? 0;
+  return { rows: data || [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 export async function getKpis(supabase) {

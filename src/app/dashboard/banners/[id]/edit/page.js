@@ -159,7 +159,7 @@ export default function BannerEditor({ params }) {
           </Button>
         }
       />
-      <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-5 py-8 md:px-8 md:py-10">
+      <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-5 py-6 md:px-8 md:py-8">
         <div className="flex items-center justify-between">
           <Link
             href={`/dashboard/banners/${banner.id}`}
@@ -182,10 +182,14 @@ export default function BannerEditor({ params }) {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+        {/* Two-column layout. Preview is sticky and capped at viewport
+            height on lg+; panel scrolls independently. On smaller screens
+            preview is capped so it can't push the controls below the
+            fold and overlap visually. */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
+          <div className="min-w-0 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
             {!template ? (
-              <div className="flex items-center gap-2 text-xs text-muted">
+              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-6 text-xs text-muted">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating HTML banner template…
               </div>
             ) : (
@@ -194,10 +198,11 @@ export default function BannerEditor({ params }) {
                 fields={fields}
                 alignment={alignment}
                 aspect={banner.aspect}
+                className="max-h-[60vh] lg:max-h-[calc(100vh-7rem)]"
               />
             )}
           </div>
-          <div className="min-w-0 space-y-4 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
+          <div className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
             {fields.length > 0 ? (
               <EditorPanel
                 fields={fields}

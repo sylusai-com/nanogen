@@ -1,9 +1,9 @@
 // src/components/admin/ModelFormModal.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, KeyRound, Link2, Loader2, Save } from "lucide-react";
-import { PROVIDERS } from "@/lib/models";
+import { PROVIDER_ENDPOINTS, PROVIDERS } from "@/lib/models";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Switch from "@/components/ui/Switch";
@@ -15,24 +15,12 @@ const KIND_OPTIONS = [
   { value: "text",  label: "Text (HTML banner generator)" },
 ];
 
-// Default endpoint hints per provider, shown as placeholder text. The admin
-// can override or leave blank — blank means "use the built-in default for
-// this provider" which is OpenRouter's URL.
-const ENDPOINT_HINTS = {
-  openrouter: "https://openrouter.ai/api/v1/chat/completions",
-  openai:     "https://api.openai.com/v1/chat/completions",
-  anthropic:  "https://api.anthropic.com/v1/messages (not OpenAI-compatible)",
-  google:     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-  stability:  "https://api.stability.ai/v2beta/...",
-  replicate:  "https://api.replicate.com/v1/predictions",
-  fal:        "https://fal.run/...",
-};
-
 const EMPTY = {
   slug: "",
   label: "",
   kind: "image",
   provider: "openrouter",
+  customProvider: "",
   modelId: "",
   enabled: true,
   isDefault: false,
@@ -56,11 +44,18 @@ function fromModel(m) {
   delete rest.baseUrl;
   delete rest.url;
 
+  // If the provider isn't in the predefined list, treat it as a custom
+  // provider — admins can register any OpenAI-compatible service.
+  const known          = PROVIDERS.includes(m.provider);
+  const provider       = known ? m.provider : "custom";
+  const customProvider = known ? "" : (m.provider || "");
+
   return {
     slug:            m.slug || "",
     label:           m.label || "",
     kind:            m.kind || "image",
-    provider:        m.provider || "openrouter",
+    provider,
+    customProvider,
     modelId:         m.modelId || "",
     enabled:         m.enabled !== false,
     isDefault:       !!m.isDefault,
@@ -111,11 +106,29 @@ export default function ModelFormModal({
       if (form.apiKey.trim())   config.apiKey   = form.apiKey.trim();
       if (form.endpoint.trim()) config.endpoint = form.endpoint.trim();
 
+      // Resolve provider: "custom" lets the admin name an arbitrary provider.
+      const resolvedProvider =
+        form.provider === "custom"
+          ? (form.customProvider.trim() || "custom")
+          : form.provider;
+
+      // Non-OpenRouter providers must have an endpoint URL — otherwise the
+      // model has no way to know where to send requests.
+      if (
+        form.kind === "text" &&
+        resolvedProvider !== "openrouter" &&
+        !form.endpoint.trim()
+      ) {
+        throw new Error(
+          `Provider "${resolvedProvider}" needs an endpoint URL. Set it above.`,
+        );
+      }
+
       await onSubmit({
         slug:      form.slug.trim(),
         label:     form.label.trim(),
         kind:      form.kind,
-        provider:  form.provider,
+        provider:  resolvedProvider,
         modelId:   form.modelId.trim(),
         enabled:   form.enabled,
         isDefault: form.kind === "text" ? form.isDefault : false,
@@ -134,8 +147,14 @@ export default function ModelFormModal({
 
   const hasExistingKey =
     !!(model?.config?.apiKey || model?.config?.api_key);
-  const endpointPlaceholder =
-    ENDPOINT_HINTS[form.provider] || "https://api.example.com/v1/chat/completions";
+  const endpointPlaceholder = useMemo(
+    () =>
+      PROVIDER_ENDPOINTS[form.provider] ||
+      "https://api.example.com/v1/chat/completions",
+    [form.provider],
+  );
+
+  const useCustomProvider = form.provider === "custom";
 
   return (
     <Modal
@@ -195,11 +214,23 @@ export default function ModelFormModal({
                 <option key={p} value={p}>{p}</option>
               ))}
             </Select>
+            {useCustomProvider && (
+              <Input
+                value={form.customProvider}
+                onChange={(e) => set({ customProvider: e.target.value })}
+                placeholder="my-internal-llm"
+                className="font-mono text-xs"
+              />
+            )}
             {form.kind === "text" && form.provider !== "openrouter" && !form.endpoint && (
               <p className="text-[11px] text-amber-400/90">
                 Set the endpoint URL below so this provider can be called.
               </p>
             )}
+            <p className="text-[11px] text-muted">
+              Any OpenAI-compatible service works — admin sets key + URL,
+              toggle enabled to switch providers on/off.
+            </p>
           </div>
         </div>
 

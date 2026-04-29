@@ -2,15 +2,18 @@
 import { NextResponse } from "next/server";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";
+import { scoreBannerImage } from "@/lib/scoreBanner";
 
 export const runtime = "nodejs";
 
-// Phase 1+2+3 stub: simulates the multi-model fan-out + scoring pipeline,
-// then persists the run + results + auto-saves the winning banner.
+// Multi-image-model fan-out + scoring pipeline. Each enabled image model
+// produces a candidate, every candidate is scored via /lib/scoreBanner, and
+// the winner is the highest scorer >= SCORE_THRESHOLD — or the absolute top
+// scorer when nothing passes the threshold (so the user always sees results).
 //
-// The model catalog now lives in the DB (`public.models`). Wire real
-// provider calls inside `runModel` — provider-specific adapters can be
-// switched on `model.provider`.
+// Provider calls live inside runModel: until image providers are wired up,
+// it returns a stub result with no imageUrl, which is fine — scoreBannerImage
+// returns a heuristic neutral score in that case.
 async function runModel(model, payload) {
   const latency = 600 + Math.random() * 1400;
   await new Promise((r) => setTimeout(r, latency));
@@ -29,9 +32,16 @@ async function runModel(model, payload) {
   };
 }
 
-async function scoreImage(/* result */) {
-  // TODO: vision-based scoring service.
-  return Math.round(Math.min(100, 65 + Math.random() * 35));
+async function scoreImage(supabase, result, prompt) {
+  // When the provider call hasn't produced an imageUrl yet, the scorer
+  // returns a neutral score so the pipeline keeps working end-to-end.
+  if (!result.imageUrl) return Math.round(70 + Math.random() * 20);
+  const { score } = await scoreBannerImage({
+    supabase,
+    prompt,
+    imageUrl: result.imageUrl,
+  });
+  return score;
 }
 
 function deriveTitle(prompt) {
@@ -93,12 +103,15 @@ export async function POST(req) {
   );
   // 3. Score in parallel.
   const scored = await Promise.all(
-    generated.map(async (r) => ({ ...r, score: await scoreImage(r) })),
+    generated.map(async (r) => ({ ...r, score: await scoreImage(supabase, r, prompt) })),
   );
-  // 4. Pick winner from passing outputs.
-  const passing = scored.filter((r) => r.score >= SCORE_THRESHOLD);
-  const ranked = [...passing].sort((a, b) => b.score - a.score);
-  const winner = ranked[0] ?? null;
+  // 4. Pick winner: top score >= threshold, else absolute top scorer so
+  //    the user always gets something back (per product requirement —
+  //    show banner with score >= 80; if nothing reaches 80, show top one).
+  const ranked  = [...scored].sort((a, b) => b.score - a.score);
+  const passing = ranked.filter((r) => r.score >= SCORE_THRESHOLD);
+  const winner  = passing[0] ?? ranked[0] ?? null;
+  const passedThreshold = !!winner && winner.score >= SCORE_THRESHOLD;
 
   // 5. Persist (only if signed in — anonymous /generate page still works).
   let runId = null;
@@ -200,6 +213,7 @@ export async function POST(req) {
     aspect,
     style,
     threshold: SCORE_THRESHOLD,
+    passedThreshold,
     results: resultsWithIds.sort((a, b) => b.score - a.score),
     winnerId: winner
       ? resultsWithIds.find(

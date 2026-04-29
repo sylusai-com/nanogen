@@ -97,20 +97,24 @@ export default function EditorPreview({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-2xl border border-border bg-surface-2 p-3",
+        "flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-surface-2 p-3",
         className,
       )}
     >
       <div
-        className="overflow-hidden rounded-xl"
-        style={{ aspectRatio: aspectRatio(aspect) }}
+        className="block w-full max-w-full overflow-hidden rounded-xl"
+        style={{
+          aspectRatio: aspectRatio(aspect),
+          // Never let the preview frame exceed the parent column's height.
+          maxHeight: "100%",
+        }}
       >
         <iframe
           ref={ref}
           title="Banner preview"
           srcDoc={srcDoc}
           sandbox="allow-scripts"
-          className="h-full w-full border-0 bg-white"
+          className="block h-full w-full border-0 bg-white"
           onLoad={() => {
             const win = ref.current?.contentWindow;
             win?.postMessage({ type: "patch", fields, alignment }, "*");

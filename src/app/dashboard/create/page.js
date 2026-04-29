@@ -36,7 +36,18 @@ export default function DashboardCreate() {
         setError(
           `Banner saved using the fallback template. Reason: ${data.reason}`,
         );
-        // Still redirect so the user can see what was created.
+        setTimeout(() => {
+          router.push(`/dashboard/banners/${data.banner.id}/edit`);
+        }, 2200);
+        return;
+      }
+
+      // If we picked the top scorer below threshold, let the user know
+      // they can regenerate for a stronger result before redirecting.
+      if (data.passedThreshold === false && typeof data.score === "number") {
+        setError(
+          `Showing the top-scoring variant (${data.score}/100). None of the ${data.variants?.length ?? 0} variants reached the ${data.threshold}-point threshold — regenerate or refine the prompt for a stronger result.`,
+        );
         setTimeout(() => {
           router.push(`/dashboard/banners/${data.banner.id}/edit`);
         }, 2200);

@@ -135,15 +135,13 @@ export default function BannerThumb({ banner, href, index = 0 }) {
                 sandbox="allow-scripts allow-same-origin"
                 className="pointer-events-none h-full w-full border-0 bg-transparent"
               />
-            ) : banner.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={banner.imageUrl}
-                alt={banner.title}
-                className="h-full w-full object-cover"
-              />
             ) : (
-              <div className="h-full w-full" />
+              <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_34%),linear-gradient(135deg,#0c0c10,#17172a)] p-4">
+                <div className="max-w-[80%] rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-left text-white/85 backdrop-blur-md">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/50">HTML + CSS banner</div>
+                  <div className="mt-1 truncate text-sm font-medium text-white">Template unavailable</div>
+                </div>
+              </div>
             )}
 
             <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_30%,rgba(0,0,0,0.16))]" />

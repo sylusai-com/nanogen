@@ -22,6 +22,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import { cn } from "@/lib/cn";
+import { buildStandaloneHtml } from "@/lib/bannerDownload";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
 
@@ -30,51 +31,6 @@ function aspectClass(a) {
   if (a === "4:5") return "aspect-[4/5]";
   if (a === "9:16") return "aspect-[9/16]";
   return "aspect-video";
-}
-
-// Build a minimal srcDoc to render the stored HTML banner template.
-function buildSrcDoc(html, css, fields, alignment) {
-  if (!html || !css) return null;
-  let cssWithVars = css;
-  const varOverrides = (fields || [])
-    .filter((f) => f.cssVar)
-    .map((f) => {
-      let val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
-      if (f.type === "image") {
-        const raw = String(f.value || "").trim();
-        val = raw
-          ? raw.startsWith("url(")
-            ? raw
-            : `url("${raw}")`
-          : "none";
-      }
-      return `  ${f.cssVar}: ${val};`;
-    })
-    .join("\n");
-  if (varOverrides) {
-    cssWithVars = cssWithVars.includes(":root")
-      ? cssWithVars.replace(/:root\s*{/, `:root {\n${varOverrides}`)
-      : `:root {\n${varOverrides}\n}\n` + cssWithVars;
-  }
-  let htmlWithText = html;
-  for (const f of fields || []) {
-    if (f.type === "text" && f.slot) {
-      htmlWithText = htmlWithText.replace(
-        new RegExp(`(data-slot="${f.slot}"[^>]*)>([^<]*)`, "g"),
-        `$1>${f.value ?? ""}`
-      );
-    }
-  }
-  const alignedHtml = htmlWithText.replace(
-    /data-align="[^"]*"/,
-    `data-align="${alignment || "left"}"`
-  );
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0;padding:0}
-*{animation:none!important;transition:none!important}
-html,body{width:100%;height:100%;overflow:hidden;background:transparent}
-${cssWithVars}
-</style></head><body>${alignedHtml}</body></html>`;
 }
 
 export default function BannerDetail({ params }) {
@@ -160,7 +116,15 @@ export default function BannerDetail({ params }) {
     );
   }
 
-  const srcDoc = buildSrcDoc(banner.html, banner.css, banner.fields, banner.alignment);
+  const srcDoc = banner.html && banner.css
+    ? buildStandaloneHtml({
+        html: banner.html,
+        css: banner.css,
+        fields: banner.fields || [],
+        alignment: banner.alignment || "left",
+        title: banner.title,
+      })
+    : null;
 
   const meta = [
     { label: "Model",   value: banner.modelLabel || "—" },
@@ -193,21 +157,17 @@ export default function BannerDetail({ params }) {
                 <iframe
                   title={banner.title}
                   srcDoc={srcDoc}
-                  sandbox="allow-scripts"
+                  sandbox="allow-scripts allow-same-origin"
                   className="h-full w-full border-0"
                 />
-              ) : banner.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={banner.imageUrl}
-                  alt={banner.title}
-                  className="h-full w-full rounded-xl object-cover"
-                />
               ) : (
-                <div
-                  className="h-full w-full rounded-xl"
-                  style={{ background: banner.gradient || "#0c0c10" }}
-                />
+                <div className="flex h-full w-full items-center justify-center rounded-xl border border-border bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_38%),linear-gradient(135deg,#0c0c10,#17172a)] p-8 text-center">
+                  <div className="max-w-sm space-y-2">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-muted">HTML + CSS banner</div>
+                    <div className="text-lg font-semibold tracking-tight text-foreground">Preview unavailable</div>
+                    <div className="text-sm text-muted">This banner should render from the stored HTML/CSS template. If you see this state, the template is missing or invalid.</div>
+                  </div>
+                </div>
               )}
             </div>
           </Card>

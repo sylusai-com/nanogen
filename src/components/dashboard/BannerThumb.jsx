@@ -97,6 +97,7 @@ function escapeHtml(s) {
 
 export default function BannerThumb({ banner, href, index = 0 }) {
   const link = href || `/dashboard/banners/${banner.id}`;
+  const isTopScore = banner.score != null && banner.score >= 80;
 
   const srcDoc = useMemo(
     () =>
@@ -117,54 +118,74 @@ export default function BannerThumb({ banner, href, index = 0 }) {
     >
       <Link
         href={link}
-        className="group block overflow-hidden rounded-2xl border border-border bg-surface transition-all duration-200 hover:border-border-strong hover:-translate-y-0.5"
+        className="group block overflow-hidden rounded-3xl border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] shadow-[0_18px_60px_-46px_rgba(0,0,0,0.6)] transition-all duration-300 hover:-translate-y-1 hover:border-border-strong hover:shadow-[0_28px_80px_-48px_rgba(0,0,0,0.7)]"
       >
-        <div
-          className={cn(aspectClass(banner.aspect), "relative overflow-hidden")}
-          style={!srcDoc ? { background: banner.gradient || "#0c0c10" } : undefined}
-        >
-          {srcDoc ? (
-            <iframe
-              title={banner.title}
-              srcDoc={srcDoc}
-              sandbox="allow-scripts allow-same-origin"
-              className="pointer-events-none h-full w-full border-0 bg-transparent"
-            />
-          ) : banner.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={banner.imageUrl}
-              alt={banner.title}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="h-full w-full" />
-          )}
-
-          {banner.favourite && (
-            <span className="absolute left-2.5 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-amber-300 backdrop-blur">
-              <Star className="h-3.5 w-3.5" fill="currentColor" strokeWidth={0} />
-            </span>
-          )}
-          {banner.score != null && (
-            <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-black/40 px-2 py-0.5 font-mono text-[10px] text-white backdrop-blur">
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  banner.score >= 80 ? "bg-emerald-400" : "bg-amber-400",
-                )}
+        <div className="p-2">
+          <div
+            className={cn(
+              aspectClass(banner.aspect),
+              "relative overflow-hidden rounded-[22px] border border-white/8 bg-surface-2",
+            )}
+            style={!srcDoc ? { background: banner.gradient || "#0c0c10" } : undefined}
+          >
+            {srcDoc ? (
+              <iframe
+                title={banner.title}
+                srcDoc={srcDoc}
+                sandbox="allow-scripts allow-same-origin"
+                className="pointer-events-none h-full w-full border-0 bg-transparent"
               />
-              {banner.score}
-            </span>
-          )}
-        </div>
-        <div className="space-y-0.5 border-t border-border bg-surface-2 px-3 py-2.5">
-          <div className="truncate text-sm text-foreground">{banner.title}</div>
-          <div className="flex items-center justify-between text-[11px] text-muted">
-            <span className="truncate">
-              {banner.modelLabel || "—"} · {banner.style || "—"}
-            </span>
-            <span>{banner.createdAt ? fmtDate(banner.createdAt) : ""}</span>
+            ) : banner.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={banner.imageUrl}
+                alt={banner.title}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="h-full w-full" />
+            )}
+
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_30%,rgba(0,0,0,0.16))]" />
+            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-[linear-gradient(180deg,transparent,rgba(0,0,0,0.52))]" />
+
+            <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+              {banner.favourite && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[10px] font-medium text-amber-300 backdrop-blur">
+                  <Star className="h-3 w-3" fill="currentColor" strokeWidth={0} />
+                  Favourite
+                </span>
+              )}
+            </div>
+
+            {banner.score != null && (
+              <span className={cn(
+                "absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] backdrop-blur",
+                isTopScore
+                  ? "border border-emerald-400/20 bg-emerald-400/12 text-emerald-200"
+                  : "border border-amber-400/20 bg-amber-400/12 text-amber-200",
+              )}>
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    isTopScore ? "bg-emerald-400" : "bg-amber-400",
+                  )}
+                />
+                Score {banner.score}
+              </span>
+            )}
+
+            <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
+              <div className="min-w-0 rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-white/90 backdrop-blur-md">
+                <div className="truncate text-sm font-medium text-white">{banner.title}</div>
+                <div className="mt-0.5 truncate text-[11px] text-white/60">
+                  {banner.modelLabel || "—"} · {banner.style || "—"}
+                </div>
+              </div>
+              <div className="shrink-0 rounded-full border border-white/10 bg-black/30 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70 backdrop-blur-md">
+                {banner.createdAt ? fmtDate(banner.createdAt) : "New"}
+              </div>
+            </div>
           </div>
         </div>
       </Link>

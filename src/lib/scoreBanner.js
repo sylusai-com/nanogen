@@ -14,8 +14,9 @@
 // bannerTemplate.js is the floor — even on model failure, we don't fall
 // off a cliff.
 
-import { getDefaultTextModel } from "@/lib/db/models";
+import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   pickApiKey,
   pickEndpoint,
@@ -111,7 +112,7 @@ export async function scoreBannerTemplate({
 }) {
   const heuristic = heuristicScore({ html, css, prompt });
 
-  const model = await getDefaultTextModel(supabase);
+  const model = await getDefaultTextModelWithSecrets(createAdminClient());
   if (!model) {
     return {
       score:    heuristic,
@@ -187,7 +188,7 @@ export async function scoreBannerImage({ supabase, prompt = "", imageUrl }) {
     return { score: 0, source: "heuristic", reason: "imageUrl is required" };
   }
 
-  const model = await getDefaultTextModel(supabase);
+  const model = await getDefaultTextModelWithSecrets(createAdminClient());
   const apiKey = model ? pickApiKey(model) : null;
   const endpoint = model ? pickEndpoint(model) : null;
 

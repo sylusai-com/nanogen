@@ -10,7 +10,39 @@ import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import EditorPreview from "@/components/editor/EditorPreview";
 import EditorPanel from "@/components/editor/EditorPanel";
+import DownloadMenu from "@/components/banner/DownloadMenu";
 import { getBanner, updateBanner } from "@/lib/db/banners";
+
+function aspectClass(a) {
+  if (a === "1:1")  return "aspect-square";
+  if (a === "4:5")  return "aspect-[4/5]";
+  if (a === "9:16") return "aspect-[9/16]";
+  return "aspect-[16/9]";
+}
+
+function EditorPreviewSkeleton({ aspect = "16:9" }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface-2 p-3">
+      <div className={`relative w-full overflow-hidden rounded-xl bg-surface ${aspectClass(aspect)}`}>
+        <div className="skeleton absolute inset-0" />
+        <div className="absolute inset-0 flex flex-col items-start justify-end gap-3 p-6 md:p-10">
+          <div className="h-3 w-24 rounded-full bg-foreground/10" />
+          <div className="h-10 w-3/4 rounded-md bg-foreground/15" />
+          <div className="h-10 w-1/2 rounded-md bg-foreground/15" />
+          <div className="h-3 w-2/3 rounded-full bg-foreground/8" />
+          <div className="mt-2 flex gap-2">
+            <div className="h-9 w-32 rounded-full bg-foreground/15" />
+            <div className="h-9 w-24 rounded-full bg-foreground/8" />
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-muted">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Generating HTML banner template — usually 15–45 seconds…
+      </div>
+    </div>
+  );
+}
 
 export default function BannerEditor({ params }) {
   const { id } = use(params);
@@ -25,9 +57,12 @@ export default function BannerEditor({ params }) {
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState(null);
 
-  // 1. Load banner from DB
+  // 1. Load banner from DB. We depend on user?.id (stable) instead of
+  //    `user` (a new object reference on every profile re-fetch) so
+  //    tab-switching doesn't reload the banner / re-call the model.
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     setLoading(true);
     getBanner(supabase, id)
@@ -40,10 +75,13 @@ export default function BannerEditor({ params }) {
     return () => {
       cancelled = true;
     };
-  }, [id, user, supabase]);
+  }, [id, userId, supabase]);
 
   // 2. Hydrate the editor: use stored html/css/fields if present, otherwise
-  //    request a fresh template from /api/banners/html.
+  //    request a fresh template from /api/banners/html. Keyed on
+  //    banner?.id so saves (which create a new banner object) don't
+  //    re-trigger the call.
+  const bannerId = banner?.id;
   useEffect(() => {
     if (!banner) return;
     if (banner.html && banner.css && Array.isArray(banner.fields)) {
@@ -77,7 +115,8 @@ export default function BannerEditor({ params }) {
     return () => {
       cancelled = true;
     };
-  }, [banner]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bannerId]);
 
   const onFieldChange = (fieldId, value) => {
     setFields((prev) => prev.map((f) => (f.id === fieldId ? { ...f, value } : f)));
@@ -142,21 +181,33 @@ export default function BannerEditor({ params }) {
       <TopBar
         title="Editor"
         action={
-          <Button
-            onClick={onSave}
-            disabled={saving}
-            leftIcon={
-              saving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : justSaved ? (
-                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )
-            }
-          >
-            {saving ? "Saving" : justSaved ? "Saved" : "Save changes"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <DownloadMenu
+              banner={{
+                title:     banner.title,
+                html:      template?.html,
+                css:       template?.css,
+                fields,
+                alignment,
+                aspect:    banner.aspect,
+              }}
+            />
+            <Button
+              onClick={onSave}
+              disabled={saving}
+              leftIcon={
+                saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : justSaved ? (
+                  <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )
+              }
+            >
+              {saving ? "Saving" : justSaved ? "Saved" : "Save changes"}
+            </Button>
+          </div>
         }
       />
       <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-5 py-6 md:px-8 md:py-8">
@@ -189,9 +240,7 @@ export default function BannerEditor({ params }) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
           <div className="min-w-0 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
             {!template ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-6 text-xs text-muted">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating HTML banner template…
-              </div>
+              <EditorPreviewSkeleton aspect={banner.aspect} />
             ) : (
               <EditorPreview
                 template={template}

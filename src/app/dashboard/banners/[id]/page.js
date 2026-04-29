@@ -1,12 +1,11 @@
 // src/app/dashboard/banners/[id]/page.js
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Download,
   Edit3,
   Loader2,
   PenTool,
@@ -21,8 +20,10 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
+import DownloadMenu from "@/components/banner/DownloadMenu";
 import { cn } from "@/lib/cn";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
+import { useCachedQuery } from "@/lib/cache";
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
@@ -71,27 +72,41 @@ export default function BannerDetail({ params }) {
   const { id } = use(params);
   const { user, supabase } = useAuth();
   const router = useRouter();
-  const [banner, setBanner]   = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy]       = useState(false);
+  const userId = user?.id;
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    setLoading(true);
-    getBanner(supabase, id)
-      .then((b) => !cancelled && setBanner(b))
-      .catch((e) => console.error("banner load", e))
-      .finally(() => !cancelled && setLoading(false));
-    return () => { cancelled = true; };
-  }, [id, user, supabase]);
+  // Cached + stale-while-revalidate. Tagged on `banner:{id}` so updates
+  // / deletes / favourites in the dashboard or editor invalidate this
+  // single-row entry without nuking the whole banners list.
+  const {
+    data: banner = null,
+    isLoading: loading,
+    refresh,
+  } = useCachedQuery(
+    ["banner", id, userId],
+    () => getBanner(supabase, id),
+    {
+      ttlMs: 60_000,
+      tags: ["banners", `banner:${id}`, `banners:${userId || "anon"}`],
+      enabled: !!userId,
+    },
+  );
+
+  // Local optimistic-update helper — UI patches the cached row immediately
+  // and refresh() reconciles in the background.
+  const patchBanner = (next) => {
+    if (!next) return;
+    // The hook reads from the module cache — calling refresh re-sets it
+    // from the source. Prefer that over re-implementing local state.
+    refresh().catch(() => {});
+  };
 
   const onToggleFavourite = async () => {
     if (!banner) return;
     setBusy(true);
     try {
       const next = await toggleFavourite(supabase, banner.id, !banner.favourite);
-      if (next) setBanner(next);
+      patchBanner(next);
     } finally {
       setBusy(false);
     }
@@ -234,12 +249,11 @@ export default function BannerDetail({ params }) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="secondary"
-                    leftIcon={<Download className="h-3.5 w-3.5" />}
-                  >
-                    Download
-                  </Button>
+                  <DownloadMenu
+                    banner={banner}
+                    className="w-full"
+                    buttonClassName="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full border border-border bg-surface px-4 text-xs font-medium text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50"
+                  />
                   <Button
                     variant="secondary"
                     leftIcon={<Share2 className="h-3.5 w-3.5" />}

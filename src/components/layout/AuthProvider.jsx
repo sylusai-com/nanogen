@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { clearCache } from "@/lib/cache";
 
 // Public shape consumed by useAuth() — kept stable so callers don't change.
 //   { user: { id, email, name, role, avatarUrl } | null,
@@ -85,24 +86,47 @@ export function AuthProvider({ children }) {
   );
 
   // Bootstrap session on mount + subscribe to auth state changes.
+  //
+  // We deliberately ignore TOKEN_REFRESHED and INITIAL_SESSION events on
+  // the listener — Supabase fires them whenever the tab regains focus
+  // (silent token rotation), which would otherwise re-fetch the profile,
+  // bump every consumer that depends on `user`/`supabase`, and force
+  // dependent screens (editor, dashboard) to re-run their effects and
+  // re-render. The session itself is updated in-place by the SDK so
+  // server clients still get fresh tokens.
   useEffect(() => {
     let active = true;
+    let lastUserId = null;
 
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!active) return;
       setSession(data.session);
-      if (data.session?.user?.id) {
-        await loadProfile(data.session.user.id);
-      }
+      lastUserId = data.session?.user?.id || null;
+      if (lastUserId) await loadProfile(lastUserId);
       if (!active) return;
       setIsLoading(false);
     })();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
+      const nextId = next?.user?.id || null;
+
+      // Ignore noise: token rotation and initial session re-emit don't
+      // actually change identity. Just keep the session ref fresh.
+      if (
+        (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") &&
+        nextId === lastUserId
+      ) {
+        setSession(next);
+        return;
+      }
+
       setSession(next);
-      if (next?.user?.id) loadProfile(next.user.id);
-      else setProfile(null);
+      if (nextId !== lastUserId) {
+        lastUserId = nextId;
+        if (nextId) loadProfile(nextId);
+        else setProfile(null);
+      }
     });
 
     return () => {
@@ -163,6 +187,9 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
+    // Drop every cached query so the next user on a shared device doesn't
+    // see the previous user's banner list / model registry / etc.
+    clearCache();
   }, [supabase]);
 
   const user = shapeUser(session?.user, profile);

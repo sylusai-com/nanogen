@@ -7,6 +7,7 @@ import { useAuth } from "@/components/layout/AuthProvider";
 import { listAspectRatios } from "@/lib/db/aspects";
 import { listBannerStyles } from "@/lib/db/styles";
 import { getDefaultTextModel } from "@/lib/db/models";
+import { useCachedQuery } from "@/lib/cache";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import PromptInput from "./PromptInput";
@@ -14,8 +15,8 @@ import AspectSelector from "./AspectSelector";
 import StyleSelector from "./StyleSelector";
 
 // HTML banner studio. Pulls aspects + styles + default text model from DB
-// and submits to /api/banners — the admin-configured OpenRouter model
-// generates the banner template and the row is persisted in one shot.
+// (with stale-while-revalidate caching so opening the page is instant
+// after the first visit) and submits to /api/banners.
 export default function PromptForm({ onSubmit, isGenerating }) {
   const { supabase } = useAuth();
 
@@ -23,34 +24,37 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const [aspect, setAspect] = useState(null);
   const [style, setStyle] = useState(null);
 
-  const [aspects, setAspects] = useState(null);
-  const [styles, setStyles] = useState(null);
-  const [textModel, setTextModel] = useState(null);
-  const [loadError, setLoadError] = useState(null);
+  // Catalog data is admin-managed and rarely changes. Cache for 5 minutes
+  // and revalidate in the background — the form re-renders if a new
+  // aspect / style is added between visits.
+  const aspectsQ = useCachedQuery(
+    ["catalog", "aspects"],
+    () => listAspectRatios(supabase),
+    { ttlMs: 5 * 60_000, tags: ["aspects"] },
+  );
+  const stylesQ = useCachedQuery(
+    ["catalog", "styles"],
+    () => listBannerStyles(supabase),
+    { ttlMs: 5 * 60_000, tags: ["styles"] },
+  );
+  const textModelQ = useCachedQuery(
+    ["catalog", "default-text-model"],
+    () => getDefaultTextModel(supabase),
+    { ttlMs: 5 * 60_000, tags: ["models"] },
+  );
 
-  // Fetch aspect ratios, styles, default text model in parallel.
+  const aspects   = aspectsQ.data;
+  const styles    = stylesQ.data;
+  const textModel = textModelQ.data;
+  const loadError = aspectsQ.error || stylesQ.error || textModelQ.error;
+
+  // Initialize selected aspect / style once the catalog loads.
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      listAspectRatios(supabase),
-      listBannerStyles(supabase),
-      getDefaultTextModel(supabase),
-    ])
-      .then(([a, s, m]) => {
-        if (cancelled) return;
-        setAspects(a);
-        setStyles(s);
-        setTextModel(m);
-        if (a.length) setAspect(a[0].ratio);
-        if (s.length) setStyle(s[0].label);
-      })
-      .catch((e) => {
-        if (!cancelled) setLoadError(e.message || "Failed to load catalog");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
+    if (aspect == null && aspects?.length) setAspect(aspects[0].ratio);
+  }, [aspect, aspects]);
+  useEffect(() => {
+    if (style == null && styles?.length) setStyle(styles[0].label);
+  }, [style, styles]);
 
   const ready = aspects && styles;
   const canSubmit =

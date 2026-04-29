@@ -11,9 +11,10 @@
 //   4. Provider/key/endpoint resolution is fully driven by the admin row —
 //      any OpenAI-compatible provider works (OpenRouter is just one of them).
 
-import { getDefaultTextModel } from "@/lib/db/models";
+import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
 import { getStyleByName } from "@/lib/db/styles";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   accentFor,
   adjustForContrast,
@@ -743,7 +744,12 @@ export async function generateBannerTemplate({
   const styleRow = await getStyleByName(supabase, style);
   const styled   = applyStyleRow(FALLBACK_TEMPLATE, styleRow);
 
-  const textModel = await getDefaultTextModel(supabase);
+  // Resolve the default text model using the admin/secret client so we
+  // can read the API key. This is server-only — the secret key never
+  // leaves the route handler. The browser supabase client is never
+  // permitted to read `config`.
+  const adminClient = createAdminClient();
+  const textModel   = await getDefaultTextModelWithSecrets(adminClient);
   if (!textModel) {
     return {
       ...styled,

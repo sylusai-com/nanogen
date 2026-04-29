@@ -8,14 +8,18 @@ import TopBar from "@/components/dashboard/TopBar";
 import Eyebrow from "@/components/ui/Eyebrow";
 import Card from "@/components/ui/Card";
 import PromptForm from "@/components/generate/PromptForm";
+import GenerationProgress from "@/components/generate/GenerationProgress";
+import { invalidateTags } from "@/lib/cache";
 
 export default function DashboardCreate() {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [submittedAspect, setSubmittedAspect] = useState("16:9");
   const [error, setError]           = useState(null);
 
   const onSubmit = async (payload) => {
     setSubmitting(true);
+    setSubmittedAspect(payload.aspect || "16:9");
     setError(null);
     try {
       const res  = await fetch("/api/banners", {
@@ -27,6 +31,9 @@ export default function DashboardCreate() {
       if (!res.ok) {
         throw new Error(data.error || `Request failed (${res.status})`);
       }
+      // A new banner was just persisted server-side — drop the dashboard
+      // cache so /dashboard/banners shows it immediately on next visit.
+      invalidateTags(["banners"]);
 
       // If the API surfaced a `reason`, the generator fell back. Stop here
       // and surface that to the user instead of silently redirecting — they
@@ -86,8 +93,11 @@ export default function DashboardCreate() {
           </div>
         )}
 
-        <div className="grid gap-6 md:grid-cols-[1fr_280px]">
-          <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
+        <div className="grid gap-6 md:grid-cols-[1fr_320px]">
+          <div className="min-w-0 space-y-6">
+            <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
+            {submitting && <GenerationProgress aspect={submittedAspect} />}
+          </div>
 
           <Card elevated className="h-fit p-5">
             <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--primary)_14%,transparent)] text-primary ring-1 ring-inset ring-[color-mix(in_oklab,var(--primary)_25%,transparent)]">
@@ -103,13 +113,13 @@ export default function DashboardCreate() {
               </li>
               <li className="flex gap-2">
                 <span className="font-mono text-muted-strong">2.</span>
-                The model returns an HTML/CSS banner template with editable
-                fields.
+                Three banner variants are generated and scored in parallel.
               </li>
               <li className="flex gap-2">
                 <span className="font-mono text-muted-strong">3.</span>
-                Banner is saved to your library — fine-tune in the editor or
-                rearrange in the visual builder.
+                The top scorer (≥ 80, else absolute top) is saved to your
+                library — fine-tune in the editor or rearrange in the
+                visual builder.
               </li>
             </ol>
           </Card>

@@ -1,6 +1,10 @@
 // src/lib/db/aspects.js
 // Aspect ratios — admin-managed. Anyone (incl. anon) can read enabled rows.
 // Only admins can write (RLS enforced server-side).
+//
+// Mutations invalidate the "aspects" cache tag.
+
+import { invalidateTags } from "@/lib/cache";
 
 const COLUMNS = `
   id, slug, label, ratio, enabled,
@@ -35,6 +39,7 @@ export async function createAspectRatio(supabase, row) {
     .select(COLUMNS)
     .single();
   if (error) throw error;
+  invalidateTags(["aspects"]);
   return data;
 }
 
@@ -46,6 +51,7 @@ export async function updateAspectRatio(supabase, id, patch) {
     .select(COLUMNS)
     .single();
   if (error) throw error;
+  invalidateTags(["aspects"]);
   return data;
 }
 
@@ -55,6 +61,7 @@ export async function deleteAspectRatio(supabase, id) {
     .delete()
     .eq("id", id);
   if (error) throw error;
+  invalidateTags(["aspects"]);
 }
 
 function toRow(p) {

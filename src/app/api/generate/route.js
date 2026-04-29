@@ -3,8 +3,20 @@ import { NextResponse } from "next/server";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import { createClient } from "@/lib/supabase/server";
 import { scoreBannerImage } from "@/lib/scoreBanner";
+import {
+  clientKey,
+  errorResponse,
+  originAllowed,
+  rateLimit,
+  readJson,
+  validateEnum,
+  validateString,
+} from "@/lib/server/security";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const ALLOWED_ASPECTS = ["1:1", "4:5", "9:16", "16:9"];
 
 // Multi-image-model fan-out + scoring pipeline. Each enabled image model
 // produces a candidate, every candidate is scored via /lib/scoreBanner, and
@@ -50,25 +62,55 @@ function deriveTitle(prompt) {
 }
 
 export async function POST(req) {
+  if (!originAllowed(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  // Rate limit per user (or IP for anonymous /generate page).
+  const rl = rateLimit({
+    key:      clientKey(req, user?.id),
+    max:      user ? 12 : 5,
+    windowMs: 5 * 60_000,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
   }
 
-  const { prompt, aspect = "16:9", style, models: requested = [] } = body || {};
-  if (!prompt || typeof prompt !== "string") {
-    return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
-  }
-  if (!Array.isArray(requested) || requested.length === 0) {
+  let body;
+  try { body = await readJson(req, { maxBytes: 16 * 1024 }); }
+  catch (e) { return errorResponse(e); }
+
+  let prompt, style, aspect;
+  try {
+    prompt = validateString(body.prompt, {
+      name: "prompt", min: 3, max: 4000, required: true,
+    });
+    style  = validateString(body.style,  { name: "style", max: 60 }) || "Modern";
+    aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
+  } catch (e) { return errorResponse(e); }
+
+  const requested = Array.isArray(body.models) ? body.models.filter(
+    (s) => typeof s === "string" && s.length <= 64,
+  ) : [];
+  if (requested.length === 0) {
     return NextResponse.json(
       { error: "Select at least one model" },
+      { status: 400 },
+    );
+  }
+  // Cap fan-out width — defends against an attacker requesting 1000
+  // model slugs and exhausting upstream providers.
+  if (requested.length > 8) {
+    return NextResponse.json(
+      { error: "Too many models requested (max 8)" },
       { status: 400 },
     );
   }

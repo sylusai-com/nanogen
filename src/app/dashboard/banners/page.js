@@ -1,7 +1,7 @@
 // src/app/dashboard/banners/page.js
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Sparkles, ImageIcon } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
@@ -11,23 +11,23 @@ import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
 import { listBanners } from "@/lib/db/banners";
+import { useCachedQuery } from "@/lib/cache";
 
 export default function BannersList() {
   const { user, supabase } = useAuth();
-  const [all, setAll] = useState(null);
+  const userId = user?.id;
   const [query, setQuery] = useState("");
-  const [view, setView] = useState("all");
+  const [view, setView]   = useState("all");
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    listBanners(supabase)
-      .then((rows) => !cancelled && setAll(rows))
-      .catch((e) => console.error("banners load", e));
-    return () => {
-      cancelled = true;
-    };
-  }, [user, supabase]);
+  // Banner list is hot — cache for 30s with stale-while-revalidate so
+  // navigating between detail/edit and back is instant. The cache
+  // invalidates the "banners" tag whenever a banner is created
+  // (/api/banners), updated (editor), favourited, or deleted.
+  const { data: all = null } = useCachedQuery(
+    ["banners", userId],
+    () => listBanners(supabase),
+    { ttlMs: 30_000, tags: ["banners", `banners:${userId || "anon"}`], enabled: !!userId },
+  );
 
   const filtered = useMemo(() => {
     if (!all) return [];

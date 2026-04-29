@@ -2,23 +2,57 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateBannerTemplate } from "@/lib/bannerTemplate";
+import {
+  clientKey,
+  errorResponse,
+  originAllowed,
+  rateLimit,
+  readJson,
+  validateEnum,
+  validateString,
+} from "@/lib/server/security";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Returns an HTML banner template for the editor. When OPENROUTER_API_KEY is
-// configured AND a default text model exists in the `models` table, this
-// calls OpenRouter; otherwise it returns the styled fallback. The editor
-// page consumes the response directly.
+const ALLOWED_ASPECTS = ["1:1", "4:5", "9:16", "16:9"];
+
+// Returns an HTML banner template for the editor — same generation path
+// as /api/banners but without persistence. Used when the editor needs a
+// fresh template (e.g. older banner without stored html).
 export async function POST(req) {
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  if (!originAllowed(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { prompt = "", style = "Modern", aspect = "16:9" } = body || {};
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const rl = rateLimit({
+    key:      clientKey(req, user?.id),
+    max:      20,
+    windowMs: 5 * 60_000,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+
+  let body;
+  try { body = await readJson(req, { maxBytes: 16 * 1024 }); }
+  catch (e) { return errorResponse(e); }
+
+  let prompt, style, aspect;
+  try {
+    prompt = validateString(body.prompt, { name: "prompt", max: 4000 });
+    style  = validateString(body.style,  { name: "style",  max: 60  }) || "Modern";
+    aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
+  } catch (e) { return errorResponse(e); }
+
   const template = await generateBannerTemplate({ supabase, prompt, style, aspect });
-  return NextResponse.json(template);
+  const res = NextResponse.json(template);
+  res.headers.set("Cache-Control", "private, no-store");
+  return res;
 }

@@ -1,6 +1,11 @@
 // src/lib/db/styles.js
 // Banner styles — admin-managed. Drives the prompt-form Style chip group
 // AND the color preset that the HTML banner generator applies.
+//
+// Mutations invalidate the "styles" cache tag so any consumer using
+// useCachedQuery(["catalog","styles"], ...) refreshes on next render.
+
+import { invalidateTags } from "@/lib/cache";
 
 const COLUMNS = `
   id, slug, label, bg, fg, accent, gradient, enabled,
@@ -54,6 +59,7 @@ export async function createBannerStyle(supabase, row) {
     .select(COLUMNS)
     .single();
   if (error) throw error;
+  invalidateTags(["styles"]);
   return data;
 }
 
@@ -65,12 +71,14 @@ export async function updateBannerStyle(supabase, id, patch) {
     .select(COLUMNS)
     .single();
   if (error) throw error;
+  invalidateTags(["styles"]);
   return data;
 }
 
 export async function deleteBannerStyle(supabase, id) {
   const { error } = await supabase.from("banner_styles").delete().eq("id", id);
   if (error) throw error;
+  invalidateTags(["styles"]);
 }
 
 function toRow(s) {

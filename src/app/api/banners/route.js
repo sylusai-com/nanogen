@@ -8,10 +8,21 @@ import {
 } from "@/lib/bannerTemplate";
 import { scoreBannerTemplate } from "@/lib/scoreBanner";
 import { SCORE_THRESHOLD } from "@/lib/models";
+import {
+  clientKey,
+  errorResponse,
+  originAllowed,
+  rateLimit,
+  readJson,
+  validateEnum,
+  validateString,
+} from "@/lib/server/security";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const VARIANT_COUNT = 3;
+const ALLOWED_ASPECTS = ["1:1", "4:5", "9:16", "16:9"];
 
 // Generate an HTML banner from a prompt, score N variants, and persist the
 // winner. The winner is the highest-scoring variant whose score is
@@ -20,6 +31,11 @@ const VARIANT_COUNT = 3;
 //
 // Used by /dashboard/create. The user is then redirected to the editor.
 export async function POST(req) {
+  // CSRF: only accept same-origin browser requests.
+  if (!originAllowed(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -28,17 +44,38 @@ export async function POST(req) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  // Rate limit per signed-in user. Banner generation is expensive
+  // (3 model calls + 3 score calls per request). 12 / 5 minutes is
+  // generous for normal use, lethal for abuse.
+  const rl = rateLimit({
+    key:      clientKey(req, user.id),
+    max:      12,
+    windowMs: 5 * 60_000,
+  });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
   }
 
-  const { prompt, style = "Modern", aspect = "16:9" } = body || {};
-  if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-    return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
-  }
+  let body;
+  try { body = await readJson(req, { maxBytes: 16 * 1024 }); }
+  catch (e) { return errorResponse(e); }
+
+  let prompt, style, aspect;
+  try {
+    prompt = validateString(body.prompt, {
+      name: "prompt",
+      min: 3,
+      max: 4000,
+      required: true,
+    });
+    // Style and aspect are free-form labels but capped to keep the model
+    // request body bounded.
+    style  = validateString(body.style, { name: "style", max: 60 }) || "Modern";
+    aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
+  } catch (e) { return errorResponse(e); }
 
   // 1. Generate N variants in parallel — each gets a different archetype
   //    seed so the model is nudged toward different layouts.

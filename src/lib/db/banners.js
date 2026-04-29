@@ -6,8 +6,10 @@
 // that, we filter by auth.uid() defensively here. The admin "see all
 // banners" view lives in /admin/outputs and uses src/lib/db/admin.js.
 //
+// Mutations invalidate the "banners" cache tag so dashboards stay in sync.
 // Column names are aliased to camelCase in the SELECT so UI components can
 // consume the rows directly (`banner.modelLabel`, `banner.gradient`, etc).
+import { invalidateTags } from "@/lib/cache";
 
 const COLUMNS = `
   id,
@@ -75,6 +77,7 @@ export async function updateBanner(supabase, id, patch) {
     .select(COLUMNS)
     .maybeSingle();
   if (error) throw error;
+  invalidateTags(["banners", `banners:${uid}`, `banner:${id}`]);
   return data;
 }
 
@@ -87,6 +90,7 @@ export async function deleteBanner(supabase, id) {
     .eq("id", id)
     .eq("user_id", uid);
   if (error) throw error;
+  invalidateTags(["banners", `banners:${uid}`, `banner:${id}`]);
 }
 
 export async function toggleFavourite(supabase, id, favourite) {

@@ -20,12 +20,24 @@ import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import ModelFormModal from "@/components/admin/ModelFormModal";
-import {
-  createModel,
-  deleteModel,
-  listAllModels,
-  updateModel,
-} from "@/lib/db/models";
+import { invalidateTags } from "@/lib/cache";
+
+// All mutations go through admin-only API routes (server-side merge for
+// API key preservation) — never the browser supabase client. The DB is
+// still the source of truth, but the browser never sees the raw apiKey.
+async function adminFetch(url, init = {}) {
+  const res = await fetch(url, {
+    ...init,
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
 
 function bar(percent, color) {
   return (
@@ -38,10 +50,10 @@ function bar(percent, color) {
   );
 }
 
-// Whether the model has an API key set in its config blob.
+// The admin API replaces apiKey with a `hasApiKey` boolean — the raw
+// secret never leaves the server.
 function hasApiKey(model) {
-  const c = model?.config || {};
-  return !!(c.apiKey || c.api_key);
+  return !!model?.hasApiKey;
 }
 
 export default function AdminModels() {
@@ -54,7 +66,18 @@ export default function AdminModels() {
 
   const reload = async () => {
     try {
-      const rows = await listAllModels(supabase);
+      // Admin route returns models with full (apiKey-redacted) config so
+      // the form can pre-fill endpoint + extras. The plain
+      // listAllModels() public selector intentionally hides config.
+      const rows = await fetch("/api/admin/models", {
+        cache: "no-store",
+        credentials: "same-origin",
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error(`Models load failed (${r.status})`);
+          return r.json();
+        })
+        .then((j) => j.models || []);
       setModels(rows);
       // pull live aggregates from generation_results
       const { data } = await supabase
@@ -86,33 +109,46 @@ export default function AdminModels() {
     }
   };
 
+  // Stable user.id key avoids re-firing reload() every time the auth
+  // provider re-shapes the user object (token refresh on tab switch).
   useEffect(() => {
-    if (user) reload();
+    if (user?.id) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.id]);
 
   const onCreate = async (form) => {
-    await createModel(supabase, form);
+    await adminFetch("/api/admin/models", {
+      method: "POST",
+      body: JSON.stringify(form),
+    });
+    invalidateTags(["models"]);
     await reload();
   };
 
   const onUpdate = async (form) => {
     if (!modal.model?.id) return;
-    // If the API key field is empty AND the existing model has a key,
-    // preserve the existing one so the admin can edit other fields without
-    // re-pasting the key every time.
-    if (!form.config?.apiKey && modal.model?.config) {
-      const existing = modal.model.config.apiKey || modal.model.config.api_key;
-      if (existing) form.config = { ...form.config, apiKey: existing };
-    }
-    await updateModel(supabase, modal.model.id, form);
+    // When the admin leaves the apiKey field blank, send the
+    // __preserveApiKey sentinel so the server-side merge keeps the
+    // existing key. Without this, blanking the form would wipe it.
+    const patch = !form.config?.apiKey
+      ? { ...form, config: { ...form.config, __preserveApiKey: true } }
+      : form;
+    await adminFetch(`/api/admin/models/${modal.model.id}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    });
+    invalidateTags(["models"]);
     await reload();
   };
 
   const onToggleEnabled = async (m) => {
     setBusyId(m.id);
     try {
-      await updateModel(supabase, m.id, { enabled: !m.enabled });
+      await adminFetch(`/api/admin/models/${m.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: !m.enabled }),
+      });
+      invalidateTags(["models"]);
       await reload();
     } finally {
       setBusyId(null);
@@ -122,7 +158,11 @@ export default function AdminModels() {
   const onMakeDefault = async (m) => {
     setBusyId(m.id);
     try {
-      await updateModel(supabase, m.id, { isDefault: true });
+      await adminFetch(`/api/admin/models/${m.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isDefault: true }),
+      });
+      invalidateTags(["models"]);
       await reload();
     } finally {
       setBusyId(null);
@@ -133,7 +173,8 @@ export default function AdminModels() {
     if (!confirm(`Delete ${m.label}? This cannot be undone.`)) return;
     setBusyId(m.id);
     try {
-      await deleteModel(supabase, m.id);
+      await adminFetch(`/api/admin/models/${m.id}`, { method: "DELETE" });
+      invalidateTags(["models"]);
       await reload();
     } finally {
       setBusyId(null);

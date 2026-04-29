@@ -45,13 +45,18 @@ export default function DashboardCreate() {
         setModelErrors(data.modelErrors);
       }
 
+      const hasMultipleSaved = Array.isArray(data.banners) && data.banners.length > 1;
+      const destination = hasMultipleSaved
+        ? "/dashboard/banners"
+        : `/dashboard/banners/${data.banner.id}/edit`;
+
       // If the WINNER fell back, surface why. Same redirect-after-pause UX.
       if (data.reason) {
         setError(
           `Banner saved using the fallback template. Reason: ${data.reason}`,
         );
         setTimeout(() => {
-          router.push(`/dashboard/banners/${data.banner.id}/edit`);
+          router.push(destination);
         }, 2800);
         return;
       }
@@ -63,7 +68,7 @@ export default function DashboardCreate() {
           `Showing the top-scoring variant (${data.score}/100). None of the ${data.variants?.length ?? 0} variants reached the ${data.threshold}-point threshold — regenerate or refine the prompt for a stronger result.`,
         );
         setTimeout(() => {
-          router.push(`/dashboard/banners/${data.banner.id}/edit`);
+          router.push(destination);
         }, 2800);
         return;
       }
@@ -72,12 +77,12 @@ export default function DashboardCreate() {
       // give the user a moment to see the warnings before we navigate.
       if (modelErrors.length || (Array.isArray(data.modelErrors) && data.modelErrors.length)) {
         setTimeout(() => {
-          router.push(`/dashboard/banners/${data.banner.id}/edit`);
+          router.push(destination);
         }, 2800);
         return;
       }
 
-      router.push(`/dashboard/banners/${data.banner.id}/edit`);
+      router.push(destination);
     } catch (e) {
       setError(e?.message || "Generation failed");
       setSubmitting(false);

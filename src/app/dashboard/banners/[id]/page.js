@@ -39,7 +39,15 @@ function buildSrcDoc(html, css, fields, alignment) {
   const varOverrides = (fields || [])
     .filter((f) => f.cssVar)
     .map((f) => {
-      const val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      let val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      if (f.type === "image") {
+        const raw = String(f.value || "").trim();
+        val = raw
+          ? raw.startsWith("url(")
+            ? raw
+            : `url("${raw}")`
+          : "none";
+      }
       return `  ${f.cssVar}: ${val};`;
     })
     .join("\n");
@@ -63,6 +71,7 @@ function buildSrcDoc(html, css, fields, alignment) {
   );
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
+*{animation:none!important;transition:none!important}
 html,body{width:100%;height:100%;overflow:hidden;background:transparent}
 ${cssWithVars}
 </style></head><body>${alignedHtml}</body></html>`;

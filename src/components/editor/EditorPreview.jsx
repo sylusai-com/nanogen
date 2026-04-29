@@ -20,7 +20,7 @@ function buildSrcDoc(template) {
 <html>
   <head>
     <meta charset="utf-8" />
-    <style>${template.css}</style>
+    <style>*{animation:none!important;transition:none!important}${template.css}</style>
   </head>
   <body>
     ${template.html}

@@ -22,7 +22,15 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   const overrides = fields
     .filter((f) => f.cssVar)
     .map((f) => {
-      const val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      let val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
+      if (f.type === "image") {
+        const raw = String(f.value || "").trim();
+        val = raw
+          ? raw.startsWith("url(")
+            ? raw
+            : `url("${raw}")`
+          : "none";
+      }
       return `  ${f.cssVar}: ${val};`;
     })
     .join("\n");
@@ -59,6 +67,7 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   <title>${escapeText(title)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { animation: none !important; transition: none !important; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
     body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
 ${cssOut}
@@ -125,7 +134,8 @@ export async function rasterize({
     throw new Error("rasterize() must be called from the browser.");
   }
   const { width, height } = exportSize(aspect);
-  const svg = buildSvgString({ html, css, fields, alignment, width, height });
+  const safeFields = await inlineImageFields(fields || []);
+  const svg = buildSvgString({ html, css, fields: safeFields, alignment, width, height });
 
   // Use a Blob URL — embedding via data: URI breaks cross-origin images
   // (Unsplash) because they're loaded under the SVG document's origin.
@@ -156,6 +166,46 @@ function loadImage(src) {
     img.onload  = () => resolve(img);
     img.onerror = () => reject(new Error("Image failed to load"));
     img.src = src;
+  });
+}
+
+async function inlineImageFields(fields) {
+  const next = [];
+  for (const field of fields) {
+    if (field?.type !== "image") {
+      next.push(field);
+      continue;
+    }
+    const raw = String(field.value || "").trim();
+    if (!raw || raw.startsWith("data:") || raw.startsWith("url(data:")) {
+      next.push(field);
+      continue;
+    }
+    const cleanUrl = raw.startsWith("url(")
+      ? raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "")
+      : raw;
+    try {
+      const res = await fetch(cleanUrl, { mode: "cors" });
+      if (!res.ok) {
+        next.push(field);
+        continue;
+      }
+      const blob = await res.blob();
+      const dataUrl = await blobToDataUrl(blob);
+      next.push({ ...field, value: `url("${dataUrl}")` });
+    } catch {
+      next.push(field);
+    }
+  }
+  return next;
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read image blob"));
+    reader.readAsDataURL(blob);
   });
 }
 

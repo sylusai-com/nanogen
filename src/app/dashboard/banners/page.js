@@ -29,7 +29,7 @@ export default function BannersList() {
     { ttlMs: 30_000, tags: ["banners", `banners:${userId || "anon"}`], enabled: !!userId },
   );
 
-  const filtered = useMemo(() => {
+  const grouped = useMemo(() => {
     if (!all) return [];
     let list = all;
     if (view === "favourites") list = list.filter((b) => b.favourite);
@@ -39,11 +39,41 @@ export default function BannersList() {
       list = list.filter(
         (b) =>
           (b.title || "").toLowerCase().includes(q) ||
+          (b.prompt || "").toLowerCase().includes(q) ||
           (b.modelLabel || "").toLowerCase().includes(q) ||
           (b.style || "").toLowerCase().includes(q),
       );
     }
-    return list;
+
+    const byRun = new Map();
+    for (const banner of list) {
+      const runKey = banner.runId || banner.id;
+      const existing = byRun.get(runKey);
+      if (!existing) {
+        byRun.set(runKey, {
+          runId: runKey,
+          prompt: banner.prompt || banner.title || "Untitled prompt",
+          style: banner.style,
+          aspect: banner.aspect,
+          createdAt: banner.createdAt,
+          items: [banner],
+        });
+        continue;
+      }
+      existing.items.push(banner);
+      if (!existing.createdAt || new Date(banner.createdAt) > new Date(existing.createdAt)) {
+        existing.createdAt = banner.createdAt;
+      }
+    }
+
+    const groups = [...byRun.values()]
+      .map((g) => ({
+        ...g,
+        items: [...g.items].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)),
+      }))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return groups;
   }, [all, view, query]);
 
   const totals = {
@@ -70,10 +100,29 @@ export default function BannersList() {
               <Skeleton key={i} className="aspect-video" />
             ))}
           </div>
-        ) : filtered.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((b, i) => (
-              <BannerThumb key={b.id} banner={b} index={i} />
+        ) : grouped.length ? (
+          <div className="space-y-6">
+            {grouped.map((group) => (
+              <section
+                key={group.runId}
+                className="rounded-2xl border border-border bg-surface-2/50 p-4"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-foreground">
+                      {group.prompt}
+                    </h3>
+                    <div className="text-[11px] text-muted">
+                      {group.items.length} model result{group.items.length > 1 ? "s" : ""} · {group.style || "—"} · {group.aspect || "—"}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {group.items.map((b, i) => (
+                    <BannerThumb key={b.id} banner={b} index={i} />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         ) : (

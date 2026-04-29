@@ -589,6 +589,102 @@ function ensureImageControls(template) {
   return { ...template, fields: [...fields, ...additions] };
 }
 
+function unsplashForPrompt(prompt = "") {
+  const p = String(prompt || "").toLowerCase();
+  if (/food|kitchen|recipe|restaurant|coffee/.test(p)) {
+    return "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&w=1600&q=80";
+  }
+  if (/travel|city|tour|hotel|flight|trip/.test(p)) {
+    return "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1600&q=80";
+  }
+  if (/nature|eco|green|forest|mountain|outdoor/.test(p)) {
+    return "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1600&q=80";
+  }
+  if (/sport|fitness|gym|workout|running/.test(p)) {
+    return "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1600&q=80";
+  }
+  if (/fashion|lifestyle|beauty/.test(p)) {
+    return "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1600&q=80";
+  }
+  if (/business|office|finance|startup|saas/.test(p)) {
+    return "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1600&q=80";
+  }
+  return "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1600&q=80";
+}
+
+function ensureBackgroundImage(template, prompt = "") {
+  if (!template?.fields) return template;
+
+  const next = { ...template, fields: template.fields.map((f) => ({ ...f })) };
+  const hasBgImage = next.fields.some((f) => f.id === "bg_image" && f.type === "image");
+  if (!hasBgImage) {
+    next.fields.push({
+      id: "bg_image",
+      type: "image",
+      cssVar: "--bg-image",
+      label: "Background image",
+      value: unsplashForPrompt(prompt),
+    });
+  }
+
+  if (!next.css.includes("--bg-image")) {
+    next.css = `:root {\n  --bg-image: url(\"${unsplashForPrompt(prompt)}\");\n  --bg-overlay: 0.45;\n  --bg-brightness: 0.75;\n  --bg-blur: 0px;\n  --bg-zoom: 110%;\n  --bg-position: center center;\n}\n` + next.css;
+  }
+
+  if (!/\.banner::before\s*\{/.test(next.css)) {
+    next.css += `
+
+.banner { position: relative; isolation: isolate; }
+.banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--bg-image);
+  background-size: var(--bg-zoom, 110%);
+  background-position: var(--bg-position, center center);
+  background-repeat: no-repeat;
+  filter: brightness(var(--bg-brightness, 0.75)) blur(var(--bg-blur, 0px));
+  transform: scale(1.03);
+}
+.banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, calc(var(--bg-overlay, 0.45) * 0.9)),
+    rgba(0, 0, 0, var(--bg-overlay, 0.45))
+  );
+}`;
+  }
+
+  return next;
+}
+
+function enforceStaticBanner(template) {
+  if (!template) return template;
+  const next = { ...template };
+  let css = String(next.css || "");
+
+  // Remove all explicit keyframes/animations/transitions so exported and previewed banners stay static.
+  css = css.replace(/@keyframes\s+[^{]+\{[\s\S]*?\}\s*\}/gi, "");
+  css = css.replace(/animation\s*:[^;]+;?/gi, "animation: none !important;");
+  css = css.replace(/transition\s*:[^;]+;?/gi, "transition: none !important;");
+
+  css += `
+
+* {
+  animation: none !important;
+  transition: none !important;
+}
+`;
+
+  next.css = css;
+  return next;
+}
+
 function validateTemplate(t) {
   if (!t || typeof t !== "object") return null;
   if (typeof t.html !== "string" || typeof t.css !== "string") return null;
@@ -746,7 +842,9 @@ export async function generateBannerTemplate({
   textModel: textModelOverride = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
-  const styled   = applyStyleRow(FALLBACK_TEMPLATE, styleRow);
+  const styled   = enforceStaticBanner(
+    ensureBackgroundImage(applyStyleRow(FALLBACK_TEMPLATE, styleRow), prompt),
+  );
 
   // Resolve the text model. When the caller passes one (e.g. fan-out
   // mode), use it as-is. Otherwise fall back to the default model.
@@ -815,11 +913,13 @@ export async function generateBannerTemplate({
       };
     }
     const enriched   = ensureImageControls(validated);
+    const imaged     = ensureBackgroundImage(enriched, prompt);
     // Auto-fix contrast issues — invisible text is the #1 model failure mode.
-    const colorSafe  = enforceContrast(enriched);
+    const colorSafe  = enforceContrast(imaged);
+    const staticSafe = enforceStaticBanner(colorSafe);
 
     return {
-      ...colorSafe,
+      ...staticSafe,
       generator: textModel.label,
       modelId:   textModel.modelId,
       provider:  textModel.provider,

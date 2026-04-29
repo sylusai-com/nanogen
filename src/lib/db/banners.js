@@ -13,6 +13,7 @@ import { invalidateTags } from "@/lib/cache";
 
 const COLUMNS = `
   id,
+  runId:run_id,
   user_id,
   title,
   prompt,

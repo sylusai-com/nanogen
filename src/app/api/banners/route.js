@@ -192,45 +192,118 @@ export async function POST(req) {
   const template        = winner.template;
   const passedThreshold = winner.score >= SCORE_THRESHOLD;
 
-  // 6. Persist the winner.
-  const bg       = bgFromTemplate(template);
-  const headline = template.fields.find((f) => f.id === "headline");
-  const title = headline?.value
-    ? headline.value.length > 60
-      ? headline.value.slice(0, 60) + "…"
-      : headline.value
-    : deriveTitle(prompt);
-
-  const { data: banner, error } = await supabase
-    .from("banners")
+  // 6. Persist the full generation run (all model variants) so dashboard
+  // can show one prompt with all model outputs grouped together.
+  const modelsForRun = plan
+    .map((p) => p.model?.modelId)
+    .filter(Boolean);
+  const { data: runRow, error: runErr } = await supabase
+    .from("generation_runs")
     .insert({
-      user_id:          user.id,
-      title,
+      user_id: user.id,
       prompt,
-      style,
       aspect,
-      model_id:         template.modelId || null,
-      model_label:      template.generator || "fallback",
-      preview_gradient: template.styleRow?.gradient || null,
-      score:            winner.score,
-      html:             template.html,
-      css:              template.css,
-      fields:           template.fields,
-      alignment:        template.alignment,
-      canvas:           { background: bg, elements: [] },
+      style,
+      models: modelsForRun.length ? modelsForRun : ["fallback"],
     })
-    .select("id, title, model_label")
+    .select("id")
     .single();
 
-  if (error) {
+  if (runErr) {
     return NextResponse.json(
-      { error: `Failed to save banner: ${error.message}` },
+      { error: `Failed to save generation run: ${runErr.message}` },
       { status: 500 },
     );
   }
 
+  const runId = runRow.id;
+
+  const resultRowsInput = scored.map((v) => {
+    const imageField = (v.template?.fields || []).find(
+      (f) => f?.type === "image" && f.id === "bg_image",
+    );
+    const imageUrl = imageField?.value || null;
+    return {
+      run_id: runId,
+      user_id: user.id,
+      model_id: v.template.modelId || "fallback",
+      model_label: v.template.generator || "fallback",
+      provider: v.template.provider || null,
+      image_url: imageUrl,
+      preview_gradient: v.template.styleRow?.gradient || null,
+      score: v.score,
+      latency_ms: null,
+      is_winner: v === winner,
+    };
+  });
+
+  const { data: savedResults, error: resultsErr } = await supabase
+    .from("generation_results")
+    .insert(resultRowsInput)
+    .select("id, model_id, model_label, score, is_winner");
+
+  if (resultsErr) {
+    return NextResponse.json(
+      { error: `Failed to save generation results: ${resultsErr.message}` },
+      { status: 500 },
+    );
+  }
+
+  // 7. Persist a banner row per model variant in this run.
+  const bannerRows = scored.map((v) => {
+    const t = v.template;
+    const bg = bgFromTemplate(t);
+    const headline = (t.fields || []).find((f) => f.id === "headline");
+    const baseTitle = headline?.value
+      ? headline.value.length > 60
+        ? headline.value.slice(0, 60) + "…"
+        : headline.value
+      : deriveTitle(prompt);
+    const modelLabel = t.generator || "fallback";
+    const resultRow = savedResults.find(
+      (r) => r.model_label === modelLabel && r.score === v.score,
+    );
+
+    return {
+      user_id: user.id,
+      run_id: runId,
+      result_id: resultRow?.id || null,
+      title: scored.length > 1 ? `${baseTitle} · ${modelLabel}` : baseTitle,
+      prompt,
+      style,
+      aspect,
+      model_id: t.modelId || null,
+      model_label: modelLabel,
+      preview_gradient: t.styleRow?.gradient || null,
+      score: v.score,
+      html: t.html,
+      css: t.css,
+      fields: t.fields,
+      alignment: t.alignment,
+      canvas: { background: bg, elements: [] },
+    };
+  });
+
+  const { data: savedBanners, error: bannersErr } = await supabase
+    .from("banners")
+    .insert(bannerRows)
+    .select("id, title, model_label, score");
+
+  if (bannersErr || !savedBanners?.length) {
+    return NextResponse.json(
+      { error: `Failed to save banners: ${bannersErr?.message || "Unknown error"}` },
+      { status: 500 },
+    );
+  }
+
+  const rankedBanners = [...savedBanners].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const winnerBanner = rankedBanners.find((b) => b.model_label === (template.generator || "fallback") && b.score === winner.score)
+    || rankedBanners[0];
+
   return NextResponse.json({
-    banner,
+    banner: winnerBanner,
+    runId,
+    banners: rankedBanners,
     generator: template.generator,
     // Surface the fallback reason when the WINNER fell back. Null when
     // a real model produced it, even if other variants failed.

@@ -734,22 +734,26 @@ export function templateRichness(template) {
 
 // Generates a banner template — calls the configured model when an API key is
 // set, otherwise returns the styled fallback. Always returns a valid template.
+//
+// Pass `textModel` to target a specific row (used by the multi-model fan-out
+// in /api/banners). When omitted, the default text model is used.
 export async function generateBannerTemplate({
   supabase,
   prompt,
   style = "Modern",
   aspect = "16:9",
   variantSeed = 0,
+  textModel: textModelOverride = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
   const styled   = applyStyleRow(FALLBACK_TEMPLATE, styleRow);
 
-  // Resolve the default text model using the admin/secret client so we
-  // can read the API key. This is server-only — the secret key never
-  // leaves the route handler. The browser supabase client is never
-  // permitted to read `config`.
-  const adminClient = createAdminClient();
-  const textModel   = await getDefaultTextModelWithSecrets(adminClient);
+  // Resolve the text model. When the caller passes one (e.g. fan-out
+  // mode), use it as-is. Otherwise fall back to the default model.
+  // Either way we use the admin/secret client so the API key is in scope —
+  // server-only.
+  const textModel = textModelOverride
+    || (await getDefaultTextModelWithSecrets(createAdminClient()));
   if (!textModel) {
     return {
       ...styled,

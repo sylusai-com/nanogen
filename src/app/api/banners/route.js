@@ -1,12 +1,15 @@
 // src/app/api/banners/route.js
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import {
   bgFromTemplate,
   deriveTitle,
   generateBannerTemplate,
+  pickApiKey,
 } from "@/lib/bannerTemplate";
 import { scoreBannerTemplate } from "@/lib/scoreBanner";
+import { listEnabledTextModelsWithSecrets } from "@/lib/db/models";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
   clientKey,
@@ -21,13 +24,19 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const VARIANT_COUNT = 3;
-const ALLOWED_ASPECTS = ["1:1", "4:5", "9:16", "16:9"];
+// When only ONE text model is configured we still want some variety, so
+// we run that model N times with different archetype seeds. With multiple
+// models, each gets a single shot — comparing across models is the point.
+const SOLO_VARIANT_COUNT = 3;
+const ALLOWED_ASPECTS    = ["1:1", "4:5", "9:16", "16:9"];
 
-// Generate an HTML banner from a prompt, score N variants, and persist the
-// winner. The winner is the highest-scoring variant whose score is
-// >= SCORE_THRESHOLD; if no variant passes the threshold, the absolute top
-// scorer is selected so the user always gets a banner back.
+// Generate an HTML banner from a prompt by fanning out across every
+// admin-enabled text model in parallel, scoring each result, and
+// persisting the winner.
+//
+// Winner rule: highest score >= SCORE_THRESHOLD; if none reach the
+// threshold, the absolute top scorer is selected so the user always
+// gets a banner back.
 //
 // Used by /dashboard/create. The user is then redirected to the editor.
 export async function POST(req) {
@@ -44,9 +53,8 @@ export async function POST(req) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit per signed-in user. Banner generation is expensive
-  // (3 model calls + 3 score calls per request). 12 / 5 minutes is
-  // generous for normal use, lethal for abuse.
+  // Rate limit per signed-in user. Banner generation is expensive (one
+  // model call per enabled text model + one score call each).
   const rl = rateLimit({
     key:      clientKey(req, user.id),
     max:      12,
@@ -66,34 +74,92 @@ export async function POST(req) {
   let prompt, style, aspect;
   try {
     prompt = validateString(body.prompt, {
-      name: "prompt",
-      min: 3,
-      max: 4000,
-      required: true,
+      name: "prompt", min: 3, max: 4000, required: true,
     });
-    // Style and aspect are free-form labels but capped to keep the model
-    // request body bounded.
     style  = validateString(body.style, { name: "style", max: 60 }) || "Modern";
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
   } catch (e) { return errorResponse(e); }
 
-  // 1. Generate N variants in parallel — each gets a different archetype
-  //    seed so the model is nudged toward different layouts.
-  const variants = await Promise.all(
-    Array.from({ length: VARIANT_COUNT }, (_, i) =>
+  // 1. Resolve every enabled text model with secrets server-side (admin
+  //    client bypasses RLS for the config column). Filter to rows that
+  //    actually have an apiKey configured — there's no point hitting a
+  //    misconfigured row, and we want clear "no models configured"
+  //    messaging when admin hasn't set anything up yet.
+  const adminClient = createAdminClient();
+  const allModels   = await listEnabledTextModelsWithSecrets(adminClient);
+  const usable      = allModels.filter((m) => pickApiKey(m));
+
+  // 2. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
+  //    so the user actually gets cross-model variety. With 1 model, run
+  //    SOLO_VARIANT_COUNT variants (different archetype seeds). With 0
+  //    models we still call generateBannerTemplate so the rich fallback
+  //    is rendered + a "configure a model" reason is surfaced.
+  let plan;
+  if (usable.length === 0) {
+    plan = [{ model: null, variantSeed: 0 }];
+  } else if (usable.length === 1) {
+    plan = Array.from({ length: SOLO_VARIANT_COUNT }, (_, i) => ({
+      model: usable[0],
+      variantSeed: i,
+    }));
+  } else {
+    plan = usable.map((m, i) => ({ model: m, variantSeed: i }));
+  }
+
+  // 3. Generate every variant in parallel. Each call is independent —
+  //    one model failing doesn't cancel the others (Promise.allSettled).
+  const settled = await Promise.allSettled(
+    plan.map(({ model, variantSeed }) =>
       generateBannerTemplate({
         supabase,
         prompt,
         style,
         aspect,
-        variantSeed: i,
+        variantSeed,
+        textModel: model,
       }),
     ),
   );
 
-  // 2. Score each variant in parallel.
+  // Track per-model failures so the dashboard can show admins which
+  // configurations are broken without forcing them to read server logs.
+  const modelErrors = [];
+  const variants = settled.map((s, i) => {
+    const planned = plan[i];
+    if (s.status === "fulfilled") {
+      const t = s.value;
+      // generateBannerTemplate always returns SOMETHING — but when it
+      // returns the fallback because of a model failure, surface that
+      // through modelErrors so the UI can flag it.
+      if (t?.generator === "fallback" && t?.reason && planned.model) {
+        modelErrors.push({
+          modelId:   planned.model.modelId,
+          modelLabel: planned.model.label,
+          reason:    t.reason,
+        });
+      }
+      return t;
+    }
+    // generateBannerTemplate is meant to never reject — but defend anyway.
+    modelErrors.push({
+      modelId:   planned.model?.modelId || null,
+      modelLabel: planned.model?.label  || "fallback",
+      reason:    s.reason?.message || "Unknown error",
+    });
+    return null;
+  });
+
+  const usableVariants = variants.filter(Boolean);
+  if (usableVariants.length === 0) {
+    return NextResponse.json(
+      { error: "Failed to generate any banner variants. " + (modelErrors[0]?.reason || "") },
+      { status: 500 },
+    );
+  }
+
+  // 4. Score every variant in parallel.
   const scored = await Promise.all(
-    variants.map(async (t) => {
+    usableVariants.map(async (t) => {
       const s = await scoreBannerTemplate({
         supabase,
         prompt,
@@ -102,11 +168,16 @@ export async function POST(req) {
         html: t.html || "",
         css:  t.css  || "",
       });
-      return { template: t, score: s.score, scoreSource: s.source, scoreReason: s.reason };
+      return {
+        template:    t,
+        score:       s.score,
+        scoreSource: s.source,
+        scoreReason: s.reason,
+      };
     }),
   );
 
-  // 3. Pick winner: top score >= threshold, else absolute top scorer.
+  // 5. Pick winner: top score >= threshold, else absolute top scorer.
   const ranked  = [...scored].sort((a, b) => b.score - a.score);
   const passing = ranked.filter((v) => v.score >= SCORE_THRESHOLD);
   const winner  = passing[0] || ranked[0];
@@ -118,10 +189,10 @@ export async function POST(req) {
     );
   }
 
-  const template = winner.template;
+  const template        = winner.template;
   const passedThreshold = winner.score >= SCORE_THRESHOLD;
 
-  // 4. Persist the winner.
+  // 6. Persist the winner.
   const bg       = bgFromTemplate(template);
   const headline = template.fields.find((f) => f.id === "headline");
   const title = headline?.value
@@ -161,8 +232,8 @@ export async function POST(req) {
   return NextResponse.json({
     banner,
     generator: template.generator,
-    // Surface the fallback reason when the generator fell back so admin
-    // can fix configuration. Null when a real model produced the banner.
+    // Surface the fallback reason when the WINNER fell back. Null when
+    // a real model produced it, even if other variants failed.
     reason:    template.reason || null,
     score:     winner.score,
     threshold: SCORE_THRESHOLD,
@@ -175,6 +246,9 @@ export async function POST(req) {
       score:     v.score,
       generator: v.template.generator,
       modelId:   v.template.modelId || null,
+      provider:  v.template.provider || null,
     })),
+    // Per-model errors — admin can fix configurations without reading logs.
+    modelErrors,
   });
 }

@@ -274,12 +274,30 @@ export default function ModelFormModal({
             placeholder={
               form.provider === "openrouter"
                 ? "anthropic/claude-3.5-sonnet"
+                : form.provider === "openai"
+                ? "gpt-4o"
                 : "stability-ai/sdxl"
             }
             required
           />
           <p className="text-[11px] text-muted">
-            Identifier used by the provider&apos;s API.
+            {form.provider === "openrouter" ? (
+              <>
+                Format: <code className="font-mono">&lt;vendor&gt;/&lt;slug&gt;</code> (e.g.{" "}
+                <code className="font-mono">anthropic/claude-3.5-sonnet</code>,{" "}
+                <code className="font-mono">openai/gpt-4o</code>). Don&apos;t prefix
+                with <code className="font-mono">openrouter/</code> — OpenRouter
+                rejects that.
+              </>
+            ) : form.provider === "openai" ? (
+              <>
+                Format: bare slug (e.g. <code className="font-mono">gpt-4o</code>,{" "}
+                <code className="font-mono">gpt-4o-mini</code>). The{" "}
+                <code className="font-mono">openai/</code> vendor prefix is stripped automatically.
+              </>
+            ) : (
+              <>Identifier used by the provider&apos;s API.</>
+            )}
           </p>
         </div>
 

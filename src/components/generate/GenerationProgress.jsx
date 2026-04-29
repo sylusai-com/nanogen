@@ -16,11 +16,11 @@ import Card from "@/components/ui/Card";
 // resolves; this component just keeps the UI alive in the meantime.
 
 const STAGES = [
-  { id: "compose",   label: "Composing your brief",         hint: "Picking the right archetype, palette, and copy direction.",    minMs: 1200 },
-  { id: "generate",  label: "Generating 3 banner variants", hint: "Calling the configured text model in parallel.",                minMs: 9000 },
-  { id: "score",     label: "Scoring variants",             hint: "Each banner is rated on relevance, composition, polish.",       minMs: 5000 },
-  { id: "select",    label: "Selecting the winner",         hint: "Top scorer ≥ 80 — or the absolute top if none reach threshold.", minMs: 2000 },
-  { id: "save",      label: "Saving to your library",       hint: "Persisting the winning variant and dropping you into the editor.", minMs: 1200 },
+  { id: "compose",   label: "Composing your brief",            hint: "Picking the right archetype, palette, and copy direction.",      minMs: 1200 },
+  { id: "fanout",    label: "Fanning out across enabled models", hint: "Calling every admin-enabled text model in parallel.",          minMs: 12000 },
+  { id: "score",     label: "Scoring every variant",            hint: "Each banner is rated on relevance, composition, polish.",       minMs: 6000 },
+  { id: "select",    label: "Selecting the winner",             hint: "Top scorer ≥ 80 — or the absolute top if none reach threshold.", minMs: 2000 },
+  { id: "save",      label: "Saving to your library",           hint: "Persisting the winning variant and dropping you into the editor.", minMs: 1200 },
 ];
 
 function aspectClass(a) {

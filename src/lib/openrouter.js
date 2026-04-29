@@ -17,6 +17,61 @@ export class OpenRouterError extends Error {
   }
 }
 
+// Provider-specific quirks live here. The goal: admins can paste the
+// modelId in whatever shape they expect (e.g. "openrouter/anthropic/claude-…"
+// because that's what they read on the OpenRouter docs landing page) and
+// we'll normalise to what the actual upstream API expects before calling.
+function normalizeModelId(modelId, url) {
+  if (!modelId) return modelId;
+  let id = modelId.trim();
+
+  const isOpenRouter = /\bopenrouter\.ai\b/i.test(url);
+  if (isOpenRouter) {
+    // OpenRouter expects `<vendor>/<model>` with NO leading `openrouter/`.
+    // Strip it if the admin pasted it that way — the upstream rejects
+    // these with `… is not a valid model ID`.
+    id = id.replace(/^openrouter\//i, "");
+  }
+
+  const isOpenAI = /\bapi\.openai\.com\b/i.test(url);
+  if (isOpenAI) {
+    // OpenAI's own API doesn't take the `openai/` vendor prefix —
+    // strip it when present so admins can paste either shape.
+    id = id.replace(/^openai\//i, "");
+  }
+
+  return id;
+}
+
+// Pretty-print upstream errors so admins can fix configuration without
+// reading the raw provider envelope.
+function explainUpstreamError(status, text, url) {
+  const isOpenRouter = /\bopenrouter\.ai\b/i.test(url);
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  const upstreamMsg = parsed?.error?.message || parsed?.error || text || `HTTP ${status}`;
+
+  // Targeted hints for the most common admin mistakes.
+  if (isOpenRouter && /not a valid model id/i.test(upstreamMsg)) {
+    return (
+      `OpenRouter rejected the model ID. Set "Provider model ID" in ` +
+      `Admin → Models to the form "<vendor>/<slug>" (e.g. ` +
+      `"anthropic/claude-3.5-sonnet" — without a leading "openrouter/"). ` +
+      `Upstream: ${upstreamMsg}`
+    );
+  }
+  if (status === 401) {
+    return `Provider returned 401 (auth). Check the API key in Admin → Models. Upstream: ${upstreamMsg}`;
+  }
+  if (status === 402 || /insufficient.*credit|payment required/i.test(upstreamMsg)) {
+    return `Provider account has no credits. Upstream: ${upstreamMsg}`;
+  }
+  if (status === 429) {
+    return `Provider rate limit hit. Try again in a moment. Upstream: ${upstreamMsg}`;
+  }
+  return `Upstream ${status}: ${upstreamMsg}`;
+}
+
 export async function callOpenRouter({
   apiKey,
   endpoint,
@@ -37,7 +92,8 @@ export async function callOpenRouter({
     throw new OpenRouterError("Messages are required", { status: 400 });
   }
 
-  const url = endpoint || DEFAULT_ENDPOINT;
+  const url            = endpoint || DEFAULT_ENDPOINT;
+  const normalizedModel = normalizeModelId(model, url);
 
   const res = await fetch(url, {
     method: "POST",
@@ -51,7 +107,7 @@ export async function callOpenRouter({
       "X-Title": "Nanogen",
     },
     body: JSON.stringify({
-      model,
+      model: normalizedModel,
       messages,
       max_tokens:  maxTokens,
       temperature,
@@ -62,7 +118,7 @@ export async function callOpenRouter({
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new OpenRouterError(
-      `Upstream ${res.status} from ${url}: ${text}`,
+      explainUpstreamError(res.status, text, url),
       { status: res.status, body: text },
     );
   }

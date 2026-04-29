@@ -132,6 +132,21 @@ export async function getDefaultTextModelWithSecrets(adminClient) {
   return any || null;
 }
 
+// Returns every enabled text model with its secret config blob — used by
+// the multi-model fan-out path in /api/banners. Default model first, then
+// the rest in sort_order. Server-only.
+export async function listEnabledTextModelsWithSecrets(adminClient) {
+  const { data, error } = await adminClient
+    .from("models")
+    .select(ADMIN_COLUMNS)
+    .eq("kind", "text")
+    .eq("enabled", true)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
 export async function listImageModelsWithSecrets(adminClient, slugs) {
   let q = adminClient
     .from("models")

@@ -52,17 +52,18 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const textModel = textModelQ.data;
   const loadError = aspectsQ.error || stylesQ.error || textModelQ.error;
 
-  // Initialize selected aspect / style once the catalog loads.
+  // Default the aspect ratio once the catalog loads (16:9 is a sensible
+  // physical default — the canvas needs SOME shape). Style is intentionally
+  // left empty: we don't want to bias the model toward a theme the user
+  // never asked for. The user can still pick one explicitly.
   useEffect(() => {
     if (aspect == null && aspects?.length) setAspect(aspects[0].ratio);
   }, [aspect, aspects]);
-  useEffect(() => {
-    if (style == null && styles?.length) setStyle(styles[0].label);
-  }, [style, styles]);
 
   const ready = aspects && styles;
+  // Style is OPTIONAL — submit is allowed without one.
   const canSubmit =
-    !isGenerating && prompt.trim() && aspect && style && ready;
+    !isGenerating && prompt.trim() && aspect && ready;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -70,7 +71,9 @@ export default function PromptForm({ onSubmit, isGenerating }) {
     onSubmit({
       prompt: prompt.trim(),
       aspect,
-      style,
+      // null when the user didn't pick anything — the API treats that as
+      // "no preference" and lets the model choose freely.
+      style: style || null,
       referenceImage: reference?.dataUrl || null,
     });
   };

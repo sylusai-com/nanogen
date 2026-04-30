@@ -47,7 +47,8 @@ export async function POST(req) {
   let prompt, style, aspect;
   try {
     prompt = validateString(body.prompt, { name: "prompt", max: 4000 });
-    style  = validateString(body.style,  { name: "style",  max: 60  }) || "Modern";
+    // Style is optional — don't substitute a default theme the user didn't ask for.
+    style  = validateString(body.style,  { name: "style",  max: 60  }) || null;
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
   } catch (e) { return errorResponse(e); }
 

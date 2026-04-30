@@ -24,8 +24,15 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────
 // SYSTEM PROMPT
+//
+// Optimised for fast, low-token responses. We only need valid HTML + CSS
+// (plus a small set of editable fields) — no archetype catalog, no
+// mandatory richness rules, no aesthetic dictation. The model is free to
+// pick its own composition. The previous 5k-character prompt forced a lot
+// of CSS techniques that made every response slow without proportional
+// quality gains.
 // ─────────────────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a senior brand designer who has shipped award-winning campaigns for Apple, Stripe, Linear, Vercel, Figma, and Arc. You generate production-grade, FLAGSHIP-quality marketing banners as JSON. Every banner you make looks like it could ship on the homepage of a top-tier product company. Lazy or generic output is unacceptable.
+const SYSTEM_PROMPT_HEAVY = `You are a senior brand designer who has shipped award-winning campaigns for Apple, Stripe, Linear, Vercel, Figma, and Arc. You generate production-grade, FLAGSHIP-quality marketing banners as JSON. Every banner you make looks like it could ship on the homepage of a top-tier product company. Lazy or generic output is unacceptable.
 
 OUTPUT — a single JSON object exactly matching this schema:
 
@@ -313,31 +320,52 @@ ANTI-PATTERNS — INSTANT REJECTION
 
 OUTPUT — return ONLY the JSON object. No prose, no markdown fences, no explanation. The HTML and CSS strings inside the JSON should be valid, complete, and self-contained. The HTML must contain at LEAST 12 elements (count opening tags). The CSS must be at LEAST 1500 characters. If your output is shorter than that, you haven't done the job.`;
 
-// Build a varied second-pass user message that nudges the model toward a
-// SPECIFIC archetype, preventing convergence on archetype E (gradient mesh)
-// which is what most LLMs default to.
+// Lean prompt actually used by the API. Roughly 1/8th the size of the heavy
+// version above, which cuts upstream latency significantly. We only describe
+// the JSON shape and the few invariants that must hold for the editor to
+// work — everything else (palette, archetype, copy direction) is left to
+// the model to decide based on the user's brief.
+const SYSTEM_PROMPT = `You generate marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
+
+Schema:
+{
+  "html": string,
+  "css":  string,
+  "alignment": "left" | "center" | "right",
+  "fields": [
+    { "id": string, "type": "text",   "slot":     string, "label": string, "value": string },
+    { "id": string, "type": "color",  "cssVar":   string, "label": string, "value": string },
+    { "id": string, "type": "image",  "cssVar":   string, "label": string, "value": string },
+    { "id": string, "type": "range",  "cssVar":   string, "label": string, "value": number, "min": number, "max": number, "step": number, "unit": string },
+    { "id": string, "type": "select", "cssVar":   string, "label": string, "value": string, "options": [{ "value": string, "label": string }] },
+    { "id": string, "type": "toggle", "selector": string, "label": string, "value": boolean }
+  ]
+}
+
+Rules:
+- Required fields: a "headline" text field and color fields with ids "bg", "fg", "accent".
+- Editable text uses [data-slot="<id>"] in HTML, where <id> matches a text field's id.
+- Colors are CSS variables (defined in :root) referenced by cssVar.
+- bg vs fg contrast must be readable (≥ 4.5:1 WCAG).
+- Root element: <div class="banner" data-align="left|center|right">.
+- The .banner CSS must include: position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate.
+- No external scripts, no external fonts. https image URLs are fine.
+- Pick palette and composition that fit the user's brief. Do not impose a default theme.
+
+Return ONLY the JSON.`;
+
+// User message is brief — only include style/aspect when the caller passed
+// them. Empty/falsy values are dropped so the model is not biased toward a
+// theme the user did not actually request.
 function buildUserMessage({ prompt, style, aspect, variantSeed = 0 }) {
-  const archetypes = ["A", "B", "C", "D", "E", "F", "G", "H"];
-  const seed       = (prompt.length * 7 + Date.now() + variantSeed * 31) % archetypes.length;
-  const suggestion = archetypes[seed];
-
-  return `BRIEF: ${prompt}
-VISUAL STYLE: ${style}
-ASPECT RATIO: ${aspect}
-
-For variety, STRONGLY CONSIDER archetype ${suggestion} unless the brief clearly demands a different one. Whatever archetype you pick, commit to it fully — don't blend archetypes into a generic hybrid.
-
-Remember the MANDATORY RICHNESS rules:
-  • 10+ distinct visual elements
-  • 6+ CSS techniques (gradients, color-mix, backdrop-filter, mask, blend, clip-path, animation, etc.)
-  • At least one subtle keyframe animation (8s+ loop)
-  • 2+ stacked decorative layers (gradient + texture + hero accent)
-  • 5+ components from the COMPONENT CATALOG
-  • Working bg_image + bg_brightness/blur/overlay/zoom/position controls when using a photo
-
-Write headlines and copy that genuinely fit the brief — never use placeholder text like "Your headline goes here." If you need a number, invent a plausible one. If you need an author, use a believable name. If you need a feature label, write three concrete features that fit the brief.
-
-Return ONLY the JSON object.`;
+  const lines = [`BRIEF: ${prompt}`];
+  if (style && String(style).trim())  lines.push(`STYLE: ${style}`);
+  if (aspect && String(aspect).trim()) lines.push(`ASPECT: ${aspect}`);
+  // Tiny variant nudge — only used by solo fan-out when the same prompt is
+  // sent more than once, so the second call produces something different.
+  if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
+  lines.push("Return ONLY the JSON object.");
+  return lines.join("\n");
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -702,12 +730,12 @@ function validateTemplate(t) {
     if (!ids.has(required)) return null;
   }
 
-  // Reject visibly anaemic HTML — fewer than 8 opening tags or a CSS body
-  // shorter than 800 chars likely means we got a "Register Now" brochure
-  // instead of a real banner. The fallback template is richer than this.
+  // Sanity floor only — we want to accept lean, fast outputs. The previous
+  // 8-tag / 800-char gate rejected perfectly usable banners and forced a
+  // fallback every time a model decided to be concise.
   const tagCount = (t.html.match(/<[a-zA-Z][^>/]*>/g) || []).length;
-  if (tagCount < 8) return null;
-  if (t.css.length < 800) return null;
+  if (tagCount < 3) return null;
+  if (t.css.length < 100) return null;
 
   return t;
 }

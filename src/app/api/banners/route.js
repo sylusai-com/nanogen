@@ -24,13 +24,12 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// When only ONE text model is configured we still want some variety, so
-// we run that model N times with different archetype seeds. With multiple
-// models, each gets a single shot — comparing across models is the point.
-//
-// Kept low (2 instead of 3) so single-model setups don't pay 50% extra
-// latency on every generation. The user always sees the top scorer.
-const SOLO_VARIANT_COUNT = 2;
+// With multiple admin-enabled models, every model runs in parallel — that's
+// the whole point of the fan-out (cross-model variety + best-of-N scoring).
+// With ONE model, we keep it to a single call: extra variants aren't
+// "parallel" from the user's perspective, they're pure latency overhead.
+// Admins can crank this up if they want variety from a single model.
+const SOLO_VARIANT_COUNT = 1;
 const ALLOWED_ASPECTS    = ["1:1", "4:5", "9:16", "16:9"];
 
 // Generate an HTML banner from a prompt by fanning out across every
@@ -82,7 +81,10 @@ export async function POST(req) {
     prompt = validateString(body.prompt, {
       name: "prompt", min: 3, max: 4000, required: true,
     });
-    style  = validateString(body.style, { name: "style", max: 60 }) || "Modern";
+    // Style is OPTIONAL. Don't substitute a "Modern" default — if the
+    // user didn't pick a style we want the model to choose freely from
+    // the brief alone, not be biased toward a theme they never asked for.
+    style  = validateString(body.style, { name: "style", max: 60 }) || null;
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
 
     // Optional user-uploaded reference image. Accept either a data URL

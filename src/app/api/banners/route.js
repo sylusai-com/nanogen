@@ -27,7 +27,10 @@ export const dynamic = "force-dynamic";
 // When only ONE text model is configured we still want some variety, so
 // we run that model N times with different archetype seeds. With multiple
 // models, each gets a single shot — comparing across models is the point.
-const SOLO_VARIANT_COUNT = 3;
+//
+// Kept low (2 instead of 3) so single-model setups don't pay 50% extra
+// latency on every generation. The user always sees the top scorer.
+const SOLO_VARIANT_COUNT = 2;
 const ALLOWED_ASPECTS    = ["1:1", "4:5", "9:16", "16:9"];
 
 // Generate an HTML banner from a prompt by fanning out across every
@@ -68,16 +71,29 @@ export async function POST(req) {
   }
 
   let body;
-  try { body = await readJson(req, { maxBytes: 16 * 1024 }); }
+  // 4MB cap so users can attach a reference image (data URL). The
+  // image is compressed client-side to a few hundred KB but we leave
+  // headroom for very large uploads.
+  try { body = await readJson(req, { maxBytes: 4 * 1024 * 1024 }); }
   catch (e) { return errorResponse(e); }
 
-  let prompt, style, aspect;
+  let prompt, style, aspect, referenceImage;
   try {
     prompt = validateString(body.prompt, {
       name: "prompt", min: 3, max: 4000, required: true,
     });
     style  = validateString(body.style, { name: "style", max: 60 }) || "Modern";
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
+
+    // Optional user-uploaded reference image. Accept either a data URL
+    // or an https URL. Anything else is ignored — we don't want to feed
+    // arbitrary strings into the bg_image field.
+    if (typeof body.referenceImage === "string") {
+      const ri = body.referenceImage.trim();
+      if (ri.startsWith("data:image/") || /^https?:\/\//i.test(ri)) {
+        referenceImage = ri;
+      }
+    }
   } catch (e) { return errorResponse(e); }
 
   // 1. Resolve every enabled text model with secrets server-side (admin
@@ -250,6 +266,29 @@ export async function POST(req) {
   }
 
   // 7. Persist a banner row per model variant in this run.
+  // If the user uploaded a reference image, swap it into every variant's
+  // bg_image field so all model outputs use their photo as the backdrop.
+  // bg_image values are stored wrapped in url("…").
+  if (referenceImage) {
+    const wrapped = `url("${referenceImage}")`;
+    for (const v of scored) {
+      const fields = v.template?.fields;
+      if (!Array.isArray(fields)) continue;
+      const bgField = fields.find((f) => f?.type === "image" && f.id === "bg_image");
+      if (bgField) {
+        bgField.value = wrapped;
+      } else {
+        fields.push({
+          id: "bg_image",
+          type: "image",
+          cssVar: "--bg-image",
+          label: "Background image",
+          value: wrapped,
+        });
+      }
+    }
+  }
+
   const bannerRows = scored.map((v) => {
     const t = v.template;
     const bg = bgFromTemplate(t);

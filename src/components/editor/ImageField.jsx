@@ -1,13 +1,16 @@
 // src/components/editor/ImageField.jsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Image as ImageIcon,
+  Loader2,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { Input, Label } from "@/components/ui/Input";
+import { compressImage, isImageFile } from "@/lib/imageUpload";
 
 // ─────────────────────────────────────────────────────────────────────────
 // CSS url() helpers
@@ -149,10 +152,32 @@ function LivePreview({ url, brightness, blur, overlay, zoom, position }) {
 export default function ImageField({ field, onChange, allFields = [] }) {
   const [draft, setDraft]       = useState(unwrap(field.value));
   const [showPicker, setPicker] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const fileInputRef = useRef(null);
 
   const commit = (val) => {
     setDraft(val);
     onChange(field.id, val ? wrap(val) : "");
+  };
+
+  const onPickFile = async (file) => {
+    if (!file) return;
+    setUploadError(null);
+    if (!isImageFile(file)) {
+      setUploadError("Please choose an image file (PNG, JPG, WEBP).");
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataUrl = await compressImage(file);
+      commit(dataUrl);
+    } catch (e) {
+      setUploadError(e?.message || "Failed to process image");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // Only attach the companion controls when this is the conventional
@@ -182,10 +207,11 @@ export default function ImageField({ field, onChange, allFields = [] }) {
       {/* URL input + clear */}
       <div className="relative">
         <Input
-          value={draft}
+          value={draft.startsWith("data:") ? "Uploaded image" : draft}
           onChange={(e) => commit(e.target.value)}
           placeholder="https://images.unsplash.com/..."
           className="pr-9 text-xs font-mono"
+          readOnly={draft.startsWith("data:")}
         />
         {draft && (
           <button
@@ -198,6 +224,34 @@ export default function ImageField({ field, onChange, allFields = [] }) {
           </button>
         )}
       </div>
+
+      {/* Upload from device */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] text-muted-strong transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-60"
+        >
+          {uploading ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Upload className="h-3 w-3" />
+          )}
+          {uploading ? "Processing…" : "Upload image"}
+        </button>
+        <span className="text-[10px] text-muted">PNG/JPG/WEBP — auto-compressed</span>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => onPickFile(e.target.files?.[0])}
+        />
+      </div>
+      {uploadError && (
+        <div className="text-[11px] text-red-400">{uploadError}</div>
+      )}
 
       {/* Quick-pick from curated Unsplash list */}
       <div className="space-y-2">

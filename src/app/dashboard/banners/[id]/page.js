@@ -199,8 +199,9 @@ export default function BannerDetail({ params }) {
             <Card elevated className="p-5">
               <h3 className="text-sm font-semibold tracking-tight">Actions</h3>
               <div className="mt-3 space-y-2">
-                {/* Primary: editor and builder side by side */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Primary: editor and builder. Stack on narrow phones,
+                    side-by-side on slightly wider screens. */}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Button
                     href={`/dashboard/banners/${banner.id}/edit`}
                     variant="primary"
@@ -217,7 +218,7 @@ export default function BannerDetail({ params }) {
                   </Button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <DownloadMenu
                     banner={banner}
                     className="w-full"

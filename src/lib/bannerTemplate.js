@@ -894,8 +894,11 @@ export async function generateBannerTemplate({
       jsonMode:    true,
       // Slightly higher temperature gives variety. The system prompt pins
       // structure tightly enough that this won't break things.
-      temperature: textModel.config?.temperature ?? 0.95,
-      maxTokens:   textModel.config?.maxTokens   ?? 12000,
+      temperature: textModel.config?.temperature ?? 0.9,
+      // 12k was overkill — most banners come in under 5k tokens, and
+      // capping lower cuts upstream latency noticeably without truncating
+      // real outputs. Admins can override per-model in Admin → Models.
+      maxTokens:   textModel.config?.maxTokens   ?? 6000,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user",   content: buildUserMessage({ prompt, style, aspect, variantSeed }) },

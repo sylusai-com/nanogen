@@ -95,6 +95,9 @@ export default function BuilderPage({ params }) {
   const [elements,    setElements]    = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
   const [rightTab,    setRightTab]    = useState("properties");
+  // On mobile, the toolbar / properties panels are togglable drawers so the
+  // canvas can take the full width of the screen.
+  const [mobilePanel, setMobilePanel] = useState(null); // null | "tools" | "props"
 
   // ── Load banner ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -105,16 +108,24 @@ export default function BuilderPage({ params }) {
       .then((b) => {
         if (cancelled) return;
         setBanner(b);
-        if (b?.canvas) {
-          setBackground(b.canvas.background || "#0c0c10");
-          setElements(b.canvas.elements || []);
+
+        // The persisted canvas is `{ background, elements: [] }` for newly
+        // generated banners — a non-null shape with an empty elements array.
+        // If we only checked `b?.canvas` we'd render an empty canvas and the
+        // user would see "Open in builder" as a blank screen. Seed from the
+        // banner's HTML fields when the elements array is empty so the
+        // builder actually shows the banner content.
+        const stored      = b?.canvas;
+        const hasElements = Array.isArray(stored?.elements) && stored.elements.length > 0;
+        const fieldsBg    = (b?.fields || []).find((f) => f.id === "bg")?.value;
+
+        if (hasElements) {
+          setBackground(stored.background || fieldsBg || "#0c0c10");
+          setElements(stored.elements);
         } else {
-          // Seed from HTML fields if canvas is empty and fields exist
           const seeded = seedFromFields(b?.fields || []);
           setElements(seeded);
-          setBackground(
-            (b?.fields || []).find((f) => f.id === "bg")?.value || "#0c0c10"
-          );
+          setBackground(stored?.background || fieldsBg || "#0c0c10");
         }
       })
       .catch((e) => !cancelled && setError(e.message))
@@ -125,33 +136,62 @@ export default function BuilderPage({ params }) {
   // ── Seed canvas from HTML editor fields when first opening builder ────────
   function seedFromFields(fields) {
     const els = [];
+    const fg     = fields.find((f) => f.id === "fg")?.value     || "#ffffff";
+    const accent = fields.find((f) => f.id === "accent")?.value || "#a78bfa";
+    const bgImg  = fields.find((f) => f.id === "bg_image")?.value;
+
+    // Background image as a layer behind everything. The image field stores
+    // either a url(...) wrapper or a bare URL — handle both.
+    if (bgImg) {
+      const url = String(bgImg).match(/url\((.*?)\)/)?.[1]?.replace(/['"]/g, "") || bgImg;
+      els.push({
+        id: uid(),
+        type: "image",
+        x: 0, y: 0, w: 100, h: 100,
+        content: url,
+        style: { borderRadius: "0px" },
+      });
+    }
+
     let y = 8;
     for (const f of fields) {
       if (f.type !== "text") continue;
-      const isHeadline  = f.id === "headline";
-      const isEyebrow   = f.id === "eyebrow";
-      const isCta       = f.id === "cta";
-      const fontSize    = isHeadline ? "48px" : isEyebrow ? "12px" : isCta ? "14px" : "18px";
-      const fontWeight  = isHeadline ? "700" : isCta ? "600" : "400";
-      const color       =
-        (fields.find((f2) => f2.id === "fg")?.value) || "#ffffff";
+      const id = (f.id || "").toLowerCase();
+      const isHeadline  = id === "headline";
+      const isEyebrow   = id === "eyebrow" || id.endsWith("_label") || id === "version_tag";
+      const isCta       = id.startsWith("cta");
+      const isStat      = id.includes("stat") && id.endsWith("_value");
+
+      const fontSize    = isHeadline
+        ? "56px"
+        : isStat
+        ? "40px"
+        : isEyebrow
+        ? "12px"
+        : isCta
+        ? "14px"
+        : "18px";
+      const fontWeight  = isHeadline ? "700" : isStat ? "700" : isCta ? "600" : "400";
+
       els.push({
         id: uid(),
         type: isCta ? "button" : "text",
         x: 7,
         y,
-        w: isCta ? 18 : 86,
+        w: isCta ? 22 : 86,
         h: null,
-        content: f.value || f.label,
+        content: f.value || f.label || "",
         style: {
-          color,
+          color: isCta ? "#ffffff" : fg,
+          background: isCta ? accent : undefined,
+          borderRadius: isCta ? "999px" : undefined,
           fontSize,
           fontWeight,
           textAlign: "left",
           lineHeight: isHeadline ? "1.1" : "1.4",
         },
       });
-      y += isHeadline ? 22 : isEyebrow ? 6 : 10;
+      y += isHeadline ? 18 : isEyebrow ? 5 : isStat ? 12 : 9;
     }
     return els;
   }
@@ -322,33 +362,70 @@ export default function BuilderPage({ params }) {
       />
 
       {/* Full-height builder layout */}
-      <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
+      <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden">
         {/* Sub-header */}
-        <div className="flex items-center gap-3 border-b border-border bg-surface/60 px-4 py-2 backdrop-blur">
+        <div className="flex items-center gap-3 border-b border-border bg-surface/60 px-3 py-2 backdrop-blur md:px-4">
           <Link
             href={`/dashboard/banners/${banner.id}`}
             className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> {banner.title}
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span className="max-w-[40vw] truncate md:max-w-none">{banner.title}</span>
           </Link>
           {error && (
-            <span className="ml-auto text-xs text-red-400">{error}</span>
+            <span className="ml-auto truncate text-xs text-red-400">{error}</span>
           )}
+          {/* Mobile-only toggles for the side panels. On md+ both panels are
+              always visible so these are hidden. */}
+          <div className="ml-auto flex items-center gap-1 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobilePanel((p) => (p === "tools" ? null : "tools"))}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-muted-strong hover:text-foreground"
+            >
+              <Layers className="h-3 w-3" /> Tools
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobilePanel((p) => (p === "props" ? null : "props"))}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-muted-strong hover:text-foreground"
+            >
+              <Settings2 className="h-3 w-3" /> Edit
+            </button>
+          </div>
         </div>
 
-        {/* Three-panel layout */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* Three-panel layout. On mobile the side panels collapse into
+            slide-over drawers triggered from the sub-header. */}
+        <div className="relative flex flex-1 overflow-hidden">
           {/* Left: Toolbar */}
-          <Toolbar
-            onAddElement={addElement}
-            selectedId={selectedId}
-            selectedElement={selectedEl}
-            onDuplicate={duplicateSelected}
-            onDelete={deleteSelected}
-            onAlignElement={alignSelected}
-            background={background}
-            onBackgroundChange={setBackground}
-          />
+          <div
+            className={
+              "absolute inset-y-0 left-0 z-20 transition-transform duration-200 md:static md:translate-x-0 " +
+              (mobilePanel === "tools" ? "translate-x-0" : "-translate-x-full md:translate-x-0")
+            }
+          >
+            <Toolbar
+              onAddElement={(t) => { addElement(t); setMobilePanel(null); }}
+              selectedId={selectedId}
+              selectedElement={selectedEl}
+              onDuplicate={duplicateSelected}
+              onDelete={deleteSelected}
+              onAlignElement={alignSelected}
+              background={background}
+              onBackgroundChange={setBackground}
+            />
+          </div>
+
+          {/* Backdrop to close mobile panels by tapping outside */}
+          {mobilePanel && (
+            <button
+              type="button"
+              aria-label="Close panel"
+              onClick={() => setMobilePanel(null)}
+              className="absolute inset-0 z-10 bg-black/40 md:hidden"
+            />
+          )}
 
           {/* Center: Canvas */}
           <Canvas
@@ -362,7 +439,12 @@ export default function BuilderPage({ params }) {
           />
 
           {/* Right: Properties / Layers */}
-          <aside className="flex w-72 shrink-0 flex-col border-l border-border bg-surface/60 backdrop-blur overflow-hidden">
+          <aside
+            className={
+              "absolute inset-y-0 right-0 z-20 flex w-72 max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur transition-transform duration-200 md:static md:max-w-none md:translate-x-0 md:bg-surface/60 " +
+              (mobilePanel === "props" ? "translate-x-0" : "translate-x-full md:translate-x-0")
+            }
+          >
             <div className="border-b border-border px-3 py-2">
               <Tabs
                 size="sm"

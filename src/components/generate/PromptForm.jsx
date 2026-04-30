@@ -13,6 +13,7 @@ import Button from "@/components/ui/Button";
 import PromptInput from "./PromptInput";
 import AspectSelector from "./AspectSelector";
 import StyleSelector from "./StyleSelector";
+import ReferenceUpload from "./ReferenceUpload";
 
 // HTML banner studio. Pulls aspects + styles + default text model from DB
 // (with stale-while-revalidate caching so opening the page is instant
@@ -23,6 +24,9 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const [prompt, setPrompt] = useState("");
   const [aspect, setAspect] = useState(null);
   const [style, setStyle] = useState(null);
+  // Optional reference image — { name, dataUrl } or null. Sent to the
+  // server as `referenceImage` and used as the bg_image in every variant.
+  const [reference, setReference] = useState(null);
 
   // Catalog data is admin-managed and rarely changes. Cache for 5 minutes
   // and revalidate in the background — the form re-renders if a new
@@ -63,7 +67,12 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canSubmit) return;
-    onSubmit({ prompt: prompt.trim(), aspect, style });
+    onSubmit({
+      prompt: prompt.trim(),
+      aspect,
+      style,
+      referenceImage: reference?.dataUrl || null,
+    });
   };
 
   return (
@@ -92,6 +101,8 @@ export default function PromptForm({ onSubmit, isGenerating }) {
               onChange={setStyle}
             />
           </div>
+
+          <ReferenceUpload value={reference} onChange={setReference} />
 
           <div className="rounded-xl border border-border bg-background px-3.5 py-3">
             <div className="flex items-start gap-3">

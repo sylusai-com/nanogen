@@ -1,9 +1,11 @@
 // src/components/builder/PropertiesPanel.jsx
 "use client";
 
-import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
+import { useRef, useState } from "react";
+import { AlignCenter, AlignLeft, AlignRight, Loader2, Upload } from "lucide-react";
 import { Label, Input } from "@/components/ui/Input";
 import Card from "@/components/ui/Card";
+import { compressImage, isImageFile } from "@/lib/imageUpload";
 
 function Section({ title, children }) {
   return (
@@ -156,6 +158,59 @@ function updateStyle(element, stylePatch) {
   return { ...element, style: { ...element.style, ...stylePatch } };
 }
 
+function ImageUploadRow({ element, onChange }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+
+  const onFile = async (file) => {
+    if (!file) return;
+    setErr(null);
+    if (!isImageFile(file)) {
+      setErr("Please choose an image file.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const dataUrl = await compressImage(file);
+      onChange({ ...element, content: dataUrl });
+    } catch (e) {
+      setErr(e?.message || "Failed to process image");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <Row label="Upload">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] text-muted-strong hover:border-border-strong hover:text-foreground disabled:opacity-60"
+        >
+          {busy ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Upload className="h-3 w-3" />
+          )}
+          {busy ? "Processing…" : "Upload image"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => onFile(e.target.files?.[0])}
+        />
+      </div>
+      {err && <div className="text-[11px] text-red-400">{err}</div>}
+    </Row>
+  );
+}
+
 export default function PropertiesPanel({ element, onChange }) {
   if (!element) {
     return (
@@ -206,12 +261,14 @@ export default function PropertiesPanel({ element, onChange }) {
           <Section title="Image">
             <Row label="URL">
               <Input
-                value={element.content || ""}
+                value={element.content?.startsWith("data:") ? "Uploaded image" : (element.content || "")}
+                readOnly={element.content?.startsWith("data:")}
                 onChange={(e) => onChange({ ...element, content: e.target.value })}
                 placeholder="https://…"
                 className="text-xs"
               />
             </Row>
+            <ImageUploadRow element={element} onChange={onChange} />
           </Section>
         </div>
       )}

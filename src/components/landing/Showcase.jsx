@@ -6,36 +6,36 @@ import Badge from "@/components/ui/Badge";
 
 const items = [
   {
-    title: "Cyberpunk SaaS launch",
-    score: 94,
-    style: "Cyberpunk",
+    title: "Aurora launch hero",
+    score: 96,
+    style: "Launch",
     aspect: "16:9",
-    gradient: "linear-gradient(135deg, #1e1b4b 0%, #4c1d95 50%, #082f49 100%)",
-    glow: "from-violet-400/30 via-fuchsia-400/20 to-cyan-300/20",
+    gradient: "linear-gradient(135deg, #08111f 0%, #13365f 46%, #0f766e 100%)",
+    glow: "from-cyan-300/30 via-sky-400/20 to-emerald-300/20",
   },
   {
-    title: "Editorial fintech hero",
-    score: 91,
+    title: "Editorial product story",
+    score: 93,
     style: "Editorial",
     aspect: "16:9",
-    gradient: "linear-gradient(135deg, #0c1a3a 0%, #1e293b 50%, #082f49 100%)",
-    glow: "from-amber-300/20 via-rose-300/10 to-cyan-300/20",
+    gradient: "linear-gradient(135deg, #0f172a 0%, #312e81 48%, #7c3aed 100%)",
+    glow: "from-violet-300/20 via-fuchsia-300/10 to-cyan-300/20",
   },
   {
-    title: "Playful sale promo",
-    score: 87,
-    style: "Playful",
+    title: "App store spotlight",
+    score: 90,
+    style: "Spotlight",
     aspect: "1:1",
-    gradient: "linear-gradient(135deg, #831843 0%, #be185d 50%, #f59e0b 100%)",
-    glow: "from-pink-300/30 via-amber-300/20 to-rose-300/20",
+    gradient: "linear-gradient(135deg, #3f1d6f 0%, #9f1239 50%, #f97316 100%)",
+    glow: "from-pink-300/30 via-rose-300/20 to-amber-300/20",
   },
   {
-    title: "Minimal product reveal",
-    score: 89,
-    style: "Minimal",
+    title: "Social campaign crop",
+    score: 88,
+    style: "Social",
     aspect: "4:5",
-    gradient: "linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%)",
-    glow: "from-zinc-200/20 via-zinc-300/10 to-violet-300/20",
+    gradient: "linear-gradient(135deg, #10172a 0%, #1f2937 48%, #334155 100%)",
+    glow: "from-slate-200/20 via-zinc-300/10 to-cyan-300/20",
   },
 ];
 
@@ -50,8 +50,8 @@ export default function Showcase() {
     <Section
       id="showcase"
       eyebrow="Selected outputs"
-      title="A look at what comes out"
-      description="A few real examples from the pipeline — winning outputs picked automatically."
+      title="A look at the modern banner outputs"
+      description="A few recent examples from the pipeline — polished treatments picked automatically."
     >
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {items.map((it, i) => (
@@ -65,7 +65,7 @@ export default function Showcase() {
           >
             <div className="relative">
               <div className={aspectClass(it.aspect)} style={{ background: it.gradient }} />
-              <div className={`absolute inset-0 bg-gradient-to-br ${it.glow} opacity-70`} />
+              <div className={`absolute inset-0 bg-linear-to-br ${it.glow} opacity-70`} />
               <div className="absolute left-3 top-3">
                 <Badge tone="primary" dot>
                   {it.style}

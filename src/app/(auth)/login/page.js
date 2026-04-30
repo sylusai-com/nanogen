@@ -10,16 +10,29 @@ import SocialAuth from "@/components/auth/SocialAuth";
 import { Input, Label } from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
+function humanizeAuthError(raw) {
+  if (!raw) return null;
+  // Common Supabase / Google strings — translate the most opaque ones.
+  if (raw === "missing_code")    return "OAuth callback was missing the auth code. Try again.";
+  if (raw === "callback_failed") return "OAuth sign-in failed. Try again.";
+  if (raw === "access_denied")   return "Sign-in was cancelled before completion.";
+  // Otherwise show the underlying message so admins can debug.
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
 function LoginForm() {
   const { signIn, supabase } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/dashboard";
+  // Surfaced to the user — populated by /auth/callback when OAuth fails
+  // (provider denied consent, code exchange errored, etc).
+  const callbackError = params.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(callbackError ? humanizeAuthError(callbackError) : null);
 
   const onSubmit = async (e) => {
     e.preventDefault();

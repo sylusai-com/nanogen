@@ -167,14 +167,30 @@ export function AuthProvider({ children }) {
   );
 
   const signInWithOAuth = useCallback(
-    async (provider) => {
+    async (provider, { next } = {}) => {
+      // Forward the post-login destination through the OAuth dance. The
+      // /auth/callback route reads `?next=` to decide where to land after
+      // exchanging the code for a session — without this every OAuth user
+      // is dumped on /dashboard regardless of where they came from.
+      let redirectTo;
+      if (typeof window !== "undefined") {
+        const url = new URL("/auth/callback", window.location.origin);
+        if (next) url.searchParams.set("next", next);
+        redirectTo = url.toString();
+      }
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/auth/callback`
-              : undefined,
+          redirectTo,
+          // Ask Google for the user's name + picture + email so the
+          // profile row created by handle_new_user has avatar/name set.
+          ...(provider === "google" && {
+            scopes: "openid email profile",
+            queryParams: {
+              access_type: "offline",
+              prompt: "consent",
+            },
+          }),
         },
       });
       if (error) throw error;

@@ -28,10 +28,18 @@ export default function SocialAuth({ disabled }) {
   const [error, setError] = useState(null);
 
   const onClick = async (provider) => {
+    // Forward ?next=… from the current URL through the OAuth round-trip
+    // so users land where they were trying to go. Read at click time
+    // (instead of useSearchParams) to avoid forcing a Suspense boundary
+    // around the parent — login already has one for its email form.
+    const next =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("next")
+        : null;
     setPending(provider);
     setError(null);
     try {
-      await signInWithOAuth(provider);
+      await signInWithOAuth(provider, { next });
     } catch (e) {
       setError(e?.message || `${provider} sign-in failed`);
       setPending(null);

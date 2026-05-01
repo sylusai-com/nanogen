@@ -13,13 +13,12 @@ import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
 import Pagination from "@/components/ui/Pagination";
-import { listBanners, userStats } from "@/lib/db/banners";
 
 const iconCls = "h-4 w-4";
 const RECENT_PAGE_SIZE = 8;
 
 export default function DashboardOverview() {
-  const { user, supabase } = useAuth();
+  const { user } = useAuth();
   const [recent, setRecent] = useState(null);
   const [stats, setStats] = useState(null);
   const [recentPage, setRecentPage] = useState(1);
@@ -28,18 +27,26 @@ export default function DashboardOverview() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    Promise.all([listBanners(supabase, { page: recentPage, pageSize: RECENT_PAGE_SIZE }), userStats(supabase)])
-      .then(([banners, s]) => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/dashboard/stats?page=${recentPage}&pageSize=${RECENT_PAGE_SIZE}`);
+        const json = await res.json();
         if (cancelled) return;
-        setRecent(banners.rows || []);
-        setRecentTotalPages(banners.totalPages || 1);
-        setStats(s);
-      })
-      .catch((e) => console.error("dashboard load", e));
+        if (res.ok) {
+          setRecent(json.banners.rows || []);
+          setRecentTotalPages(json.banners.totalPages || 1);
+          setStats(json.stats || null);
+        } else {
+          console.error("dashboard load", json.error || "unknown");
+        }
+      } catch (e) {
+        console.error("dashboard load", e);
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [user, supabase, recentPage]);
+  }, [user, recentPage]);
 
   const cards = [
     {

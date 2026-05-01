@@ -14,17 +14,11 @@ import EmptyData from "@/components/ui/EmptyData";
 import AreaActivity from "@/components/admin/AreaActivity";
 import ModelShareChart from "@/components/admin/ModelShareChart";
 import Pagination from "@/components/ui/Pagination";
-import {
-  getDailyActivity,
-  getKpis,
-  getModelShare,
-  listAllBanners,
-} from "@/lib/db/admin";
 
 const LATEST_PAGE_SIZE = 5;
 
 export default function AdminOverview() {
-  const { user, supabase } = useAuth();
+  const { user } = useAuth();
   const [kpis, setKpis] = useState(null);
   const [activity, setActivity] = useState(null);
   const [share, setShare] = useState(null);
@@ -35,25 +29,28 @@ export default function AdminOverview() {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    Promise.all([
-      getKpis(supabase),
-      getDailyActivity(supabase, 14),
-      getModelShare(supabase),
-      listAllBanners(supabase, { page: recentPage, pageSize: LATEST_PAGE_SIZE }),
-    ])
-      .then(([k, a, s, r]) => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/overview?page=${recentPage}&pageSize=${LATEST_PAGE_SIZE}`);
+        const json = await res.json();
         if (cancelled) return;
-        setKpis(k);
-        setActivity(a);
-        setShare(s);
-        setRecent(r.rows || []);
-        setRecentTotalPages(r.totalPages || 1);
-      })
-      .catch((e) => console.error("admin load", e));
+        if (res.ok) {
+          setKpis(json.kpis || null);
+          setActivity(json.activity || null);
+          setShare(json.share || null);
+          setRecent(json.recent?.rows || []);
+          setRecentTotalPages(json.recent?.totalPages || 1);
+        } else {
+          console.error("admin load", json.error || "unknown");
+        }
+      } catch (e) {
+        console.error("admin load", e);
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [user, supabase, recentPage]);
+  }, [user, recentPage]);
 
   const cards = kpis && [
     { id: "users", label: "Users", value: kpis.users, icon: <Users className="h-4 w-4" /> },

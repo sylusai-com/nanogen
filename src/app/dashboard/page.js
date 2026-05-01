@@ -1,7 +1,6 @@
 // src/app/dashboard/page.js
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Images, Sparkles, Trophy, Clock, ArrowRight, ImageIcon } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
@@ -12,37 +11,22 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
+import { useApiCache } from "@/lib/useApiCache";
 
 const iconCls = "h-4 w-4";
 const RECENT_PAGE_SIZE = 8;
 
 export default function DashboardOverview() {
   const { user } = useAuth();
-  const [recent, setRecent] = useState(null);
-  const [stats, setStats] = useState(null);
+  
+  // Fetch dashboard stats with caching (60s TTL, invalidated on user/banner changes)
+  const { data: apiData, isLoading, isStale } = useApiCache(
+    `/api/dashboard/stats?page=1&pageSize=${RECENT_PAGE_SIZE}`,
+    { ttlMs: 60_000, tags: ["banners"], enabled: !!user },
+  );
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/dashboard/stats?page=1&pageSize=${RECENT_PAGE_SIZE}`);
-        const json = await res.json();
-        if (cancelled) return;
-        if (res.ok) {
-          setRecent(json.banners.rows || []);
-          setStats(json.stats || null);
-        } else {
-          console.error("dashboard load", json.error || "unknown");
-        }
-      } catch (e) {
-        console.error("dashboard load", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const recent = apiData?.banners?.rows || [];
+  const stats = apiData?.stats || null;
 
   const cards = [
     {
@@ -110,7 +94,7 @@ export default function DashboardOverview() {
             </Link>
           </div>
 
-          {recent === null ? (
+          {isLoading ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="aspect-video" />

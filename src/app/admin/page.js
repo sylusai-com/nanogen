@@ -1,7 +1,6 @@
 // src/app/admin/page.js
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity, BarChart3, Cpu, Image as ImageIcon, Users } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
@@ -13,41 +12,23 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import AreaActivity from "@/components/admin/AreaActivity";
 import ModelShareChart from "@/components/admin/ModelShareChart";
+import { useApiCache } from "@/lib/useApiCache";
 
-
-const LATEST_PAGE_SIZE = 5;
+const LATEST_PAGE_SIZE = 8;
 
 export default function AdminOverview() {
   const { user } = useAuth();
-  const [kpis, setKpis] = useState(null);
-  const [activity, setActivity] = useState(null);
-  const [share, setShare] = useState(null);
-  const [recent, setRecent] = useState(null);
+  
+  // Fetch admin overview with caching (60s TTL, invalidated on banner/generation changes)
+  const { data: apiData, isLoading, isStale } = useApiCache(
+    `/api/admin/overview?page=1&pageSize=${LATEST_PAGE_SIZE}`,
+    { ttlMs: 60_000, tags: ["banners", "generation_results"], enabled: !!user },
+  );
 
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/admin/overview?page=1&pageSize=${LATEST_PAGE_SIZE}`);
-        const json = await res.json();
-        if (cancelled) return;
-        if (res.ok) {
-          setKpis(json.kpis || null);
-          setActivity(json.activity || null);
-          setShare(json.share || null);
-          setRecent(json.recent?.rows || []);
-        } else {
-          console.error("admin load", json.error || "unknown");
-        }
-      } catch (e) {
-        console.error("admin load", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const kpis = apiData?.kpis || null;
+  const activity = apiData?.activity || null;
+  const share = apiData?.share || null;
+  const recent = apiData?.recent?.rows || [];
 
   const cards = kpis && [
     { id: "users", label: "Users", value: kpis.users, icon: <Users className="h-4 w-4" /> },
@@ -68,9 +49,11 @@ export default function AdminOverview() {
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {cards
-            ? cards.map((c, i) => <StatCard key={c.id} {...c} delay={i * 0.05} />)
-            : Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
+          ) : cards ? (
+            cards.map((c, i) => <StatCard key={c.id} {...c} delay={i * 0.05} />)
+          ) : null}
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
@@ -86,7 +69,7 @@ export default function AdminOverview() {
               </span>
             </div>
             <div className="mt-4">
-              {activity ? <AreaActivity data={activity} /> : <Skeleton className="h-64" />}
+              {isLoading ? <Skeleton className="h-64" /> : activity ? <AreaActivity data={activity} /> : <Skeleton className="h-64" />}
             </div>
           </Card>
 
@@ -94,7 +77,9 @@ export default function AdminOverview() {
             <h3 className="text-sm font-semibold tracking-tight">Model share</h3>
             <p className="text-[11px] text-muted">Runs per model.</p>
             <div className="mt-4">
-              {share && share.length ? (
+              {isLoading ? (
+                <Skeleton className="h-64" />
+              ) : share && share.length ? (
                 <ModelShareChart data={share} />
               ) : share ? (
                 <EmptyData title="No runs yet" body="Model share appears once users generate." />

@@ -21,7 +21,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import ModelFormModal from "@/components/admin/ModelFormModal";
 import { invalidateTags } from "@/lib/cache";
-import Pagination from "@/components/ui/Pagination";
+import { useApiCache } from "@/lib/useApiCache";
 
 const PAGE_SIZE = 8;
 
@@ -62,13 +62,19 @@ function hasApiKey(model) {
 export default function AdminModels() {
   const { user } = useAuth();
   const [models, setModels] = useState(null);
-  const [share, setShare]   = useState({});
   const [error, setError]   = useState(null);
   const [modal, setModal]   = useState({ open: false, model: null });
   const [busyId, setBusyId] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+
+  // Cache model stats with 60s TTL, invalidated when models tag changes
+  const { data: statsData } = useApiCache(
+    "/api/admin/models/stats",
+    { ttlMs: 60_000, tags: ["models"], enabled: !!user },
+  );
+  const share = statsData?.stats || {};
 
   const reload = async (nextPage = page) => {
     try {
@@ -91,16 +97,7 @@ export default function AdminModels() {
       setModels(rows.models);
       setTotalPages(rows.totalPages);
       setTotalRows(rows.total);
-      
-      // Fetch model stats from the API
-      const statsRes = await fetch("/api/admin/models/stats", {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-      if (statsRes.ok) {
-        const statsJson = await statsRes.json();
-        setShare(statsJson.stats || {});
-      }
+      // Model stats are now cached via useApiCache hook
     } catch (e) {
       setError(e.message || "Failed to load models");
     }

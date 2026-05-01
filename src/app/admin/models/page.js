@@ -60,7 +60,7 @@ function hasApiKey(model) {
 }
 
 export default function AdminModels() {
-  const { user, supabase } = useAuth();
+  const { user } = useAuth();
   const [models, setModels] = useState(null);
   const [share, setShare]   = useState({});
   const [error, setError]   = useState(null);
@@ -91,31 +91,16 @@ export default function AdminModels() {
       setModels(rows.models);
       setTotalPages(rows.totalPages);
       setTotalRows(rows.total);
-      // pull live aggregates from generation_results
-      const { data } = await supabase
-        .from("generation_results")
-        .select("model_id, score, latency_ms");
-      const map = {};
-      for (const r of data || []) {
-        if (!map[r.model_id])
-          map[r.model_id] = { runs: 0, score: 0, lats: [] };
-        map[r.model_id].runs++;
-        if (r.score != null) map[r.model_id].score += r.score;
-        if (r.latency_ms != null) map[r.model_id].lats.push(r.latency_ms);
+      
+      // Fetch model stats from the API
+      const statsRes = await fetch("/api/admin/models/stats", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (statsRes.ok) {
+        const statsJson = await statsRes.json();
+        setShare(statsJson.stats || {});
       }
-      const total   = (data || []).length || 1;
-      const summary = {};
-      for (const k of Object.keys(map)) {
-        const m    = map[k];
-        const lats = m.lats.sort((a, b) => a - b);
-        summary[k] = {
-          runs: m.runs,
-          share: m.runs / total,
-          avgScore: m.runs ? Math.round(m.score / m.runs) : null,
-          p50ms: lats.length ? lats[Math.floor(lats.length * 0.5)] : null,
-        };
-      }
-      setShare(summary);
     } catch (e) {
       setError(e.message || "Failed to load models");
     }

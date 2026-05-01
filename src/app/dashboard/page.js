@@ -12,7 +12,6 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
-import Pagination from "@/components/ui/Pagination";
 
 const iconCls = "h-4 w-4";
 const RECENT_PAGE_SIZE = 8;
@@ -21,20 +20,17 @@ export default function DashboardOverview() {
   const { user } = useAuth();
   const [recent, setRecent] = useState(null);
   const [stats, setStats] = useState(null);
-  const [recentPage, setRecentPage] = useState(1);
-  const [recentTotalPages, setRecentTotalPages] = useState(1);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/dashboard/stats?page=${recentPage}&pageSize=${RECENT_PAGE_SIZE}`);
+        const res = await fetch(`/api/dashboard/stats?page=1&pageSize=${RECENT_PAGE_SIZE}`);
         const json = await res.json();
         if (cancelled) return;
         if (res.ok) {
           setRecent(json.banners.rows || []);
-          setRecentTotalPages(json.banners.totalPages || 1);
           setStats(json.stats || null);
         } else {
           console.error("dashboard load", json.error || "unknown");
@@ -46,7 +42,7 @@ export default function DashboardOverview() {
     return () => {
       cancelled = true;
     };
-  }, [user, recentPage]);
+  }, [user]);
 
   const cards = [
     {
@@ -127,7 +123,6 @@ export default function DashboardOverview() {
                   <BannerThumb key={b.id} banner={b} index={i} />
                 ))}
               </div>
-              <Pagination page={recentPage} totalPages={recentTotalPages} onPageChange={setRecentPage} />
             </div>
           ) : (
             <EmptyData

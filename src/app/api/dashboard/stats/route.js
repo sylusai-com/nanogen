@@ -22,7 +22,7 @@ export async function GET(req) {
       supabase
         .from("banners")
         .select(
-          `id, run_id, user_id, title, prompt, style, aspect, model_id, model_label, image_url, preview_gradient, score, html, css, fields, alignment, favourite, created_at, updated_at, profiles ( name, email, avatar_url )`,
+          `id, title, style, aspect, model_label, preview_gradient, score, html, css, fields, alignment, favourite, created_at`,
           { count: "exact" },
         )
         .eq("user_id", user.id)

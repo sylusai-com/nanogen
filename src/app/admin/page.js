@@ -13,7 +13,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import AreaActivity from "@/components/admin/AreaActivity";
 import ModelShareChart from "@/components/admin/ModelShareChart";
-import Pagination from "@/components/ui/Pagination";
+
 
 const LATEST_PAGE_SIZE = 5;
 
@@ -23,15 +23,13 @@ export default function AdminOverview() {
   const [activity, setActivity] = useState(null);
   const [share, setShare] = useState(null);
   const [recent, setRecent] = useState(null);
-  const [recentPage, setRecentPage] = useState(1);
-  const [recentTotalPages, setRecentTotalPages] = useState(1);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/admin/overview?page=${recentPage}&pageSize=${LATEST_PAGE_SIZE}`);
+        const res = await fetch(`/api/admin/overview?page=1&pageSize=${LATEST_PAGE_SIZE}`);
         const json = await res.json();
         if (cancelled) return;
         if (res.ok) {
@@ -39,7 +37,6 @@ export default function AdminOverview() {
           setActivity(json.activity || null);
           setShare(json.share || null);
           setRecent(json.recent?.rows || []);
-          setRecentTotalPages(json.recent?.totalPages || 1);
         } else {
           console.error("admin load", json.error || "unknown");
         }
@@ -50,7 +47,7 @@ export default function AdminOverview() {
     return () => {
       cancelled = true;
     };
-  }, [user, recentPage]);
+  }, [user]);
 
   const cards = kpis && [
     { id: "users", label: "Users", value: kpis.users, icon: <Users className="h-4 w-4" /> },
@@ -198,7 +195,6 @@ export default function AdminOverview() {
                 ) : (
                   <EmptyData className="mt-4" title="Quiet so far" body="Saved banners appear here." />
                 )}
-                <Pagination page={recentPage} totalPages={recentTotalPages} onPageChange={setRecentPage} className="mt-4" />
               </>
             ) : (
               <div className="mt-4 space-y-2">

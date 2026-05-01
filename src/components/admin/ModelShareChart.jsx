@@ -16,8 +16,8 @@ const tooltipStyle = {
 export default function ModelShareChart({ data }) {
   const series = data.map((m) => ({ name: m.label, runs: m.runs }));
   return (
-    <div className="h-64 w-full">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-64 w-full" style={{ minHeight: "256px" }}>
+      <ResponsiveContainer width="100%" height={256} minHeight={0}>
         <BarChart data={series} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <XAxis
             dataKey="name"

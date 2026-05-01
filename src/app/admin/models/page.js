@@ -242,10 +242,6 @@ export default function AdminModels() {
             />
           </>
         )}
-
-        {models && totalRows > 0 && (
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-        )}
       </div>
 
       <ModelFormModal

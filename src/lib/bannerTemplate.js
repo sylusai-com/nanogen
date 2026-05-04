@@ -321,11 +321,10 @@ ANTI-PATTERNS — INSTANT REJECTION
 OUTPUT — return ONLY the JSON object. No prose, no markdown fences, no explanation. The HTML and CSS strings inside the JSON should be valid, complete, and self-contained. The HTML must contain at LEAST 12 elements (count opening tags). The CSS must be at LEAST 1500 characters. If your output is shorter than that, you haven't done the job.`;
 
 // Lean prompt actually used by the API. It keeps the output contract tight
-// while still forcing the model to honor the user's brief as the source of
-// truth and produce a modern Unsplash-backed HTML/CSS banner.
-const SYSTEM_PROMPT = `You generate production-ready marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
+// while letting the user's explicit preferences drive the design.
+const SYSTEM_PROMPT = `You generate marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
 
-The user's brief is authoritative. Treat style and aspect as secondary hints only; never let them override the prompt. The output must be a modern, polished HTML/CSS banner that feels current, visually rich, and correct.
+The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
 
 Schema:
 {
@@ -344,16 +343,13 @@ Schema:
 
 Rules:
 - Required fields: a "headline" text field and color fields with ids "bg", "fg", "accent".
-- Always include "accent2" and "headline_size" when possible, and add "bg_image" with a real Unsplash URL for the hero background.
 - Editable text uses [data-slot="<id>"] in HTML, where <id> matches a text field's id.
 - Colors are CSS variables (defined in :root) referenced by cssVar.
 - bg vs fg contrast must be readable (≥ 4.5:1 WCAG).
 - Root element: <div class="banner" data-align="left|center|right">.
 - The .banner CSS must include: position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate.
-- The banner should use layered HTML/CSS with at least one subtle animation, at least two background layers, and strong typography.
-- When using a photo, use a real Unsplash image and make it part of the composition, not just a hidden asset.
 - No external scripts, no external fonts. https image URLs are fine.
-- Pick palette and composition that fit the user's brief. Do not impose a default theme, but do make the result modern, bold, and high-quality.
+- Pick palette and composition that fit the user's brief. Do not impose a default theme.
 
 Return ONLY the JSON.`;
 
@@ -363,14 +359,14 @@ Return ONLY the JSON.`;
 function buildUserMessage({ prompt, style, aspect, variantSeed = 0 }) {
   const lines = [
     `BRIEF (authoritative): ${prompt}`,
-    `Use the brief as the source of truth for the banner subject, copy, and visual direction.`,
+    `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or image usage.`,
   ];
-  if (style && String(style).trim())  lines.push(`STYLE HINT: ${style}`);
-  if (aspect && String(aspect).trim()) lines.push(`ASPECT HINT: ${aspect}`);
+  if (style && String(style).trim())  lines.push(`STYLE PREFERENCE: ${style}`);
+  if (aspect && String(aspect).trim()) lines.push(`ASPECT PREFERENCE: ${aspect}`);
   // Tiny variant nudge — only used by solo fan-out when the same prompt is
   // sent more than once, so the second call produces something different.
   if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
-  lines.push(`Make it a modern HTML/CSS banner with a real Unsplash background image and layered decorative treatment.`);
+  lines.push(`If the prompt mentions a light background, use a light background. If it does not, choose the best visual direction yourself.`);
   lines.push("Return ONLY the JSON object.");
   return lines.join("\n");
 }

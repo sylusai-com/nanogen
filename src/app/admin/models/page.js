@@ -69,10 +69,11 @@ export default function AdminModels() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
 
-  // Cache model stats with 60s TTL, invalidated when models tag changes
+  // Cache model stats with 60s TTL. Invalidate when models OR
+  // generation_results change so stats reflect recent runs.
   const { data: statsData } = useApiCache(
     "/api/admin/models/stats",
-    { ttlMs: 60_000, tags: ["models"], enabled: !!user },
+    { ttlMs: 60_000, tags: ["models", "generation_results"], enabled: !!user },
   );
   const share = statsData?.stats || {};
 
@@ -282,7 +283,9 @@ function ModelGroup({
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {models.map((m) => {
-            const live   = share[m.slug];
+            // generation_results.model_id stores the provider/modelId (model.modelId),
+            // so stats are keyed by `modelId` on the server. Lookup by that.
+            const live   = share[m.modelId];
             const keySet = hasApiKey(m);
             return (
               <Card elevated key={m.id} className="p-5">

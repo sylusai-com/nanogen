@@ -35,7 +35,9 @@ export default function DashboardCreate() {
       }
       // A new banner was just persisted server-side — drop the dashboard
       // cache so /dashboard/banners shows it immediately on next visit.
-      invalidateTags(["banners"]);
+      // Also invalidate generation_results so admin views (model stats)
+      // refresh when new runs/results are created.
+      invalidateTags(["banners", "generation_results"]);
 
       // Surface per-model failures so admins can see (e.g.) "Claude
       // Sonnet 4.6 failed: invalid model ID — fix in Admin → Models".

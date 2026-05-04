@@ -12,7 +12,7 @@ import Button from "@/components/ui/Button";
 
 function humanizeAuthError(raw) {
   if (!raw) return null;
-  // Common Supabase / Google strings — translate the most opaque ones.
+  // Common Supabase / OAuth strings — translate the most opaque ones.
   if (raw === "missing_code")    return "OAuth callback was missing the auth code. Try again.";
   if (raw === "callback_failed") return "OAuth sign-in failed. Try again.";
   if (raw === "access_denied")   return "Sign-in was cancelled before completion.";

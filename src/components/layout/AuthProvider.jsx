@@ -182,14 +182,17 @@ export function AuthProvider({ children }) {
         provider,
         options: {
           redirectTo,
-          // Ask Google for the user's name + picture + email so the
-          // profile row created by handle_new_user has avatar/name set.
+          // Ask the provider for profile/email data so the profile row
+          // created by handle_new_user has name/avatar/email available.
           ...(provider === "google" && {
             scopes: "openid email profile",
             queryParams: {
               access_type: "offline",
               prompt: "consent",
             },
+          }),
+          ...(provider === "github" && {
+            scopes: "read:user user:email",
           }),
         },
       });

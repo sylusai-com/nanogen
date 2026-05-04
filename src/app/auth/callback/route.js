@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 // Exchanges the OAuth/email-confirmation code for a session cookie.
 //
-// The Google sign-in flow lands here after Supabase finishes the OAuth
+// The Google / GitHub sign-in flow lands here after Supabase finishes the OAuth
 // dance. We:
 //   1. Read the auth code from the query string and trade it for a session.
 //   2. Honour `?next=…` if the caller passed one through (the SocialAuth
@@ -17,15 +17,16 @@ import { createClient } from "@/lib/supabase/server";
 //
 // IMPORTANT: register `<your-site>/auth/callback` in:
 //   - Supabase: Authentication → URL Configuration → Redirect URLs
-//   - Google Cloud: OAuth client → Authorized redirect URIs (the Supabase
-//     project URL `<project>.supabase.co/auth/v1/callback` goes there too)
+//   - Google Cloud and/or GitHub OAuth app: set the provider callback to the
+//     Supabase project callback URL `<project>.supabase.co/auth/v1/callback`
 export async function GET(request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = sanitizeNext(searchParams.get("next"));
 
   // Provider-side errors arrive with `error` + `error_description` in the
-  // query string when the user denies consent or Google rejects the request.
+  // query string when the user denies consent or the OAuth provider rejects
+  // the request.
   const providerError =
     searchParams.get("error_description") || searchParams.get("error");
   if (providerError) {

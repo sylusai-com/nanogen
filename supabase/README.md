@@ -50,7 +50,7 @@ idempotent.
 3. (Optional) Disable email confirmation while developing:
    **Authentication → Providers → Email** → turn off "Confirm email".
    With it on, users can't log in until they click the email link.
-4. (Optional) Enable Google / GitHub OAuth — see [Google OAuth setup](#google-oauth-setup) below.
+4. (Optional) Enable Google / GitHub OAuth — see the setup sections below.
 5. (Optional) Create a public storage bucket named `banners` if you'll upload
    reference images or store generated banner files.
 
@@ -118,3 +118,38 @@ migration (Dashboard SQL editor or `supabase db push`).
    automatically linked by Supabase (provided email confirmation was on);
    they end up with one `auth.users` row that has both a password and a
    Google identity.
+
+## GitHub OAuth setup
+
+The app already has the client-side wiring (`SocialAuth` button →
+`signInWithOAuth("github")` → Supabase → `/auth/callback`). The setup is
+similar to Google, but done in GitHub instead of Google Cloud.
+
+### 1. Create a GitHub OAuth app
+
+1. Open [GitHub Settings → Developer settings → OAuth Apps](https://github.com/settings/developers).
+2. Click **New OAuth App**.
+3. **Homepage URL**: your app URL, for example `http://localhost:3000` in
+   development.
+4. **Authorization callback URL**: your Supabase callback URL —
+   `https://<project-ref>.supabase.co/auth/v1/callback`.
+5. Save and copy the **Client ID** and **Client secret**.
+
+### 2. Configure Supabase
+
+1. **Authentication → Providers → GitHub → Enable**.
+2. Paste the GitHub Client ID and Client secret.
+3. **Authentication → URL Configuration**:
+   - **Site URL**: `http://localhost:3000` (dev) or your prod URL.
+   - **Redirect URLs**: add `http://localhost:3000/auth/callback` and
+     `https://<your-prod-domain>/auth/callback`.
+
+### 3. Test the flow
+
+1. Open `/login`, click **GitHub**.
+2. You should be sent to GitHub's consent screen, then back to
+   `<your-site>/auth/callback?code=…`, and finally to `/dashboard` (or
+   `/admin` if your email is in `admin_emails`).
+3. If your GitHub account has a private email or no public email, Supabase
+   still works when the GitHub app has `read:user` and `user:email` scopes
+   enabled. Those are requested by the client now.

@@ -70,7 +70,7 @@ export default function SocialAuth({ disabled }) {
       </div>
       {error && (
         <p className="text-center text-[11px] text-red-400">
-          {error} — make sure the provider is enabled in Supabase Auth.
+          {error} — make sure the provider is enabled and configured in Supabase Auth.
         </p>
       )}
     </div>

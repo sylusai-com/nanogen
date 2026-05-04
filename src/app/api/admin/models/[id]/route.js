@@ -152,8 +152,33 @@ export async function GET(_req, { params }) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Return the full row (including config.apiKey) to the admin client.
-  const res = NextResponse.json({ model: data });
+  // Sanitize config: remove any API key fields before returning to the browser.
+  const cfg = data.config || {};
+  const hasApiKey = !!(cfg.apiKey || cfg.api_key || cfg.openrouterApiKey || cfg.openrouter_api_key);
+  const safeConfig = { ...cfg };
+  delete safeConfig.apiKey;
+  delete safeConfig.api_key;
+  delete safeConfig.openrouterApiKey;
+  delete safeConfig.openrouter_api_key;
+
+  const out = {
+    id:              data.id,
+    slug:            data.slug,
+    label:           data.label,
+    kind:            data.kind,
+    provider:        data.provider,
+    modelId:         data.model_id,
+    enabled:         data.enabled,
+    isDefault:       data.is_default,
+    sortOrder:       data.sort_order,
+    previewGradient: data.preview_gradient,
+    config:          safeConfig,
+    hasApiKey,
+    createdAt:       data.created_at,
+    updatedAt:       data.updated_at,
+  };
+
+  const res = NextResponse.json({ model: out });
   res.headers.set("Cache-Control", "private, no-store");
   return res;
 }

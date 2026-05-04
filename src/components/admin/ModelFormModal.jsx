@@ -83,21 +83,6 @@ export default function ModelFormModal({
       // schedule to avoid synchronous setState in effect
       Promise.resolve().then(() => {
         setForm(fromModel(model));
-        // Fetch the full model row (including apiKey) from the admin API
-        // so the editor can pre-fill the API key for admins. This is
-        // intentionally server-gated (admin-only) and the response is
-        // not cached.
-        if (model?.id) {
-          fetch(`/api/admin/models/${model.id}`, { cache: "no-store", credentials: "same-origin" })
-            .then((r) => r.json())
-            .then((j) => {
-              if (j?.model?.config) {
-                const apiKey = j.model.config.apiKey || j.model.config.api_key || "";
-                setForm((f) => ({ ...f, apiKey }));
-              }
-            })
-            .catch(() => {});
-        }
         setShowKey(false);
         setError(null);
       });

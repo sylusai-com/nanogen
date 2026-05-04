@@ -1,7 +1,7 @@
 // src/app/dashboard/builder/[id]/page.js
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState, startTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,6 +21,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import Tabs from "@/components/ui/Tabs";
 import { getBanner, updateBanner } from "@/lib/db/banners";
+import { buildTemplateFromCanvas } from "@/lib/bannerDownload";
 import Canvas from "@/components/builder/Canvas";
 import Toolbar from "@/components/builder/Toolbar";
 import PropertiesPanel from "@/components/builder/PropertiesPanel";
@@ -88,6 +89,8 @@ export default function BuilderPage({ params }) {
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [savedAt,   setSavedAt]   = useState(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimer = useRef(null);
   const [error,     setError]     = useState(null);
 
   // Canvas state
@@ -103,11 +106,11 @@ export default function BuilderPage({ params }) {
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    setLoading(true);
+    startTransition(() => setLoading(true));
     getBanner(supabase, id)
       .then((b) => {
         if (cancelled) return;
-        setBanner(b);
+        startTransition(() => setBanner(b));
 
         // The persisted canvas is `{ background, elements: [] }` for newly
         // generated banners — a non-null shape with an empty elements array.
@@ -119,17 +122,19 @@ export default function BuilderPage({ params }) {
         const hasElements = Array.isArray(stored?.elements) && stored.elements.length > 0;
         const fieldsBg    = (b?.fields || []).find((f) => f.id === "bg")?.value;
 
-        if (hasElements) {
-          setBackground(stored.background || fieldsBg || "#0c0c10");
-          setElements(stored.elements);
-        } else {
-          const seeded = seedFromFields(b?.fields || []);
-          setElements(seeded);
-          setBackground(stored?.background || fieldsBg || "#0c0c10");
-        }
+        startTransition(() => {
+          if (hasElements) {
+            setBackground(stored.background || fieldsBg || "#0c0c10");
+            setElements(stored.elements);
+          } else {
+            const seeded = seedFromFields(b?.fields || []);
+            setElements(seeded);
+            setBackground(stored?.background || fieldsBg || "#0c0c10");
+          }
+        });
       })
       .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false));
+      .finally(() => !cancelled && startTransition(() => setLoading(false)));
     return () => { cancelled = true; };
   }, [id, user, supabase]);
 
@@ -253,9 +258,17 @@ export default function BuilderPage({ params }) {
     setError(null);
     try {
       const canvas = { background, elements };
-      const updated = await updateBanner(supabase, banner.id, { canvas });
+      // Persist canvas and also generate a simple HTML/CSS template
+      // so the banner preview (which prefers html/css) reflects edits
+      // made in the visual builder.
+      const tpl = buildTemplateFromCanvas({ elements, background, aspect: banner.aspect });
+      const updated = await updateBanner(supabase, banner.id, { canvas, html: tpl.html, css: tpl.css });
       if (updated) setBanner(updated);
-      setSavedAt(Date.now());
+      const now = Date.now();
+      setSavedAt(now);
+      if (justSavedTimer.current) clearTimeout(justSavedTimer.current);
+      setJustSaved(true);
+      justSavedTimer.current = setTimeout(() => setJustSaved(false), 1500);
     } catch (e) {
       setError(e.message || "Failed to save");
     } finally {
@@ -324,7 +337,7 @@ export default function BuilderPage({ params }) {
     );
   }
 
-  const justSaved     = savedAt && Date.now() - savedAt < 1500;
+  // `justSaved` handled via state to avoid impure calls in render
   const selectedEl    = elements.find((el) => el.id === selectedId) || null;
 
   return (

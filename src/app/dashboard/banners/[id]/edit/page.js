@@ -1,7 +1,7 @@
 // src/app/dashboard/banners/[id]/edit/page.js
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, useRef, startTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2, RefreshCw, Save } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
@@ -22,8 +22,8 @@ function aspectClass(a) {
 
 function EditorPreviewSkeleton({ aspect = "16:9" }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface-2 p-3">
-      <div className={`relative w-full overflow-hidden rounded-xl bg-surface ${aspectClass(aspect)}`}>
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface-2 p-3 h-full">
+      <div className={`relative w-full h-full overflow-hidden rounded-xl bg-surface ${aspectClass(aspect)}`}>
         <div className="skeleton absolute inset-0" />
         <div className="absolute inset-0 flex flex-col items-start justify-end gap-3 p-6 md:p-10">
           <div className="h-3 w-24 rounded-full bg-foreground/10" />
@@ -55,6 +55,8 @@ export default function BannerEditor({ params }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimer = useRef(null);
   const [error, setError] = useState(null);
 
   // 1. Load banner from DB. We depend on user?.id (stable) instead of
@@ -64,14 +66,14 @@ export default function BannerEditor({ params }) {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    setLoading(true);
+    startTransition(() => setLoading(true));
     getBanner(supabase, id)
       .then((b) => {
         if (cancelled) return;
-        setBanner(b);
+        startTransition(() => setBanner(b));
       })
       .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false));
+      .finally(() => !cancelled && startTransition(() => setLoading(false)));
     return () => {
       cancelled = true;
     };
@@ -85,9 +87,11 @@ export default function BannerEditor({ params }) {
   useEffect(() => {
     if (!banner) return;
     if (banner.html && banner.css && Array.isArray(banner.fields)) {
-      setTemplate({ html: banner.html, css: banner.css });
-      setFields(banner.fields);
-      setAlignment(banner.alignment || "left");
+      startTransition(() => {
+        setTemplate({ html: banner.html, css: banner.css });
+        setFields(banner.fields);
+        setAlignment(banner.alignment || "left");
+      });
       return;
     }
     let cancelled = false;
@@ -105,9 +109,11 @@ export default function BannerEditor({ params }) {
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
-        setTemplate({ html: data.html, css: data.css });
-        setFields(data.fields);
-        setAlignment(data.alignment || "left");
+        startTransition(() => {
+          setTemplate({ html: data.html, css: data.css });
+          setFields(data.fields);
+          setAlignment(data.alignment || "left");
+        });
       } catch (e) {
         if (!cancelled) setError(e.message || "Failed to load template");
       }
@@ -139,7 +145,12 @@ export default function BannerEditor({ params }) {
         alignment,
       });
       if (updated) setBanner(updated);
-      setSavedAt(Date.now());
+      const now = Date.now();
+      setSavedAt(now);
+      // toggle justSaved for UI feedback without calling Date.now in render
+      if (justSavedTimer.current) clearTimeout(justSavedTimer.current);
+      setJustSaved(true);
+      justSavedTimer.current = setTimeout(() => setJustSaved(false), 1500);
     } catch (e) {
       setError(e.message || "Failed to save");
     } finally {
@@ -174,7 +185,7 @@ export default function BannerEditor({ params }) {
     );
   }
 
-  const justSaved = savedAt && Date.now() - savedAt < 1500;
+  // `justSaved` is now stateful to avoid impure Date.now calls during render.
 
   return (
     <>
@@ -210,7 +221,7 @@ export default function BannerEditor({ params }) {
           </div>
         }
       />
-      <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-5 py-6 md:px-8 md:py-8">
+      <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-5 py-6 md:px-8 md:py-8 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
         <div className="flex items-center justify-between">
           <Link
             href={`/dashboard/banners/${banner.id}`}
@@ -237,8 +248,8 @@ export default function BannerEditor({ params }) {
             height on lg+; panel scrolls independently. On smaller screens
             preview is capped so it can't push the controls below the
             fold and overlap visually. */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
-          <div className="min-w-0 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:h-full">
+          <div className="min-w-0 lg:sticky lg:top-20 lg:self-start lg:h-full lg:overflow-y-auto lg:pr-4" style={{ scrollbarGutter: 'stable' }}>
             {!template ? (
               <EditorPreviewSkeleton aspect={banner.aspect} />
             ) : (
@@ -247,11 +258,11 @@ export default function BannerEditor({ params }) {
                 fields={fields}
                 alignment={alignment}
                 aspect={banner.aspect}
-                className="max-h-[60vh] lg:max-h-[calc(100vh-7rem)]"
+                className="h-full"
               />
             )}
           </div>
-          <div className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
+          <div className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:h-full lg:self-start lg:overflow-y-auto lg:pr-4" style={{ scrollbarGutter: 'stable' }}>
             {fields.length > 0 ? (
               <EditorPanel
                 fields={fields}

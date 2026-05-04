@@ -25,13 +25,15 @@ export default function Navbar() {
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
+    // Schedule initial read asynchronously to avoid synchronous setState in effect
+    Promise.resolve().then(onScroll);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
-    setMobileOpen(false);
+    // Close mobile menu after navigation — schedule to avoid sync setState in effect
+    Promise.resolve().then(() => setMobileOpen(false));
   }, [pathname]);
 
   const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard") : "/signup";

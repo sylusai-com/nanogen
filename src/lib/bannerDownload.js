@@ -110,6 +110,49 @@ export function buildSvgString({
 </svg>`;
 }
 
+// Build HTML/CSS parts from a builder-style canvas (elements + background).
+// Returns an object { html, css } where `html` is the banner markup
+// (root element expected to be inserted into an iframe body) and `css`
+// contains the styles that should be applied. This mirrors the shape
+// used by the editor/template system so builder exports can be saved
+// back into the banner row.
+export function buildTemplateFromCanvas({ elements = [], background = "#0c0c10", aspect = "16:9" }) {
+  const [w, h] = (aspect || "16:9").split(":").map(Number);
+  const pct = (h / w) * 100;
+
+  const css = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${background}}.banner-inner{position:absolute;inset:0}`;
+
+  const innerHtml = elements
+    .map((el) => {
+      const posStyle = `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;${el.h ? `height:${el.h}%;` : ""}`;
+      switch (el.type) {
+        case "text":
+          return `<div class=\"banner__el banner__text\" data-id=\"${el.id}\" style=\"${posStyle}font-size:${el.style.fontSize||"16px"};font-weight:${el.style.fontWeight||"400"};color:${el.style.color||"#fff"};text-align:${el.style.textAlign||"left"};line-height:${el.style.lineHeight||1.4}\">${escapeHtml(el.content||"")}</div>`;
+        case "rect":
+          return `<div class=\"banner__el banner__rect\" data-id=\"${el.id}\" style=\"${posStyle}background:${el.style.background||"#a78bfa"};border-radius:${el.style.borderRadius||"8px"};opacity:${el.style.opacity??1}\"></div>`;
+        case "button":
+          return `<div class=\"banner__el banner__button\" data-id=\"${el.id}\" style=\"${posStyle}display:inline-flex;align-items:center;justify-content:center;background:${el.style.background||"#a78bfa"};color:${el.style.color||"#fff"};border-radius:${el.style.borderRadius||"999px"};font-size:${el.style.fontSize||"14px"};font-weight:${el.style.fontWeight||"600"}\">${escapeHtml(el.content||"Button")}</div>`;
+        case "image":
+          return `<div class=\"banner__el banner__image\" data-id=\"${el.id}\" style=\"${posStyle}overflow:hidden;border-radius:${el.style.borderRadius||"8px"}\"><img src=\"${escapeAttr(el.content||"")}\" alt=\"\" style=\"width:100%;height:100%;object-fit:cover\"></div>`;
+        case "divider":
+          return `<div class=\"banner__el banner__divider\" data-id=\"${el.id}\" style=\"${posStyle}height:${el.style.thickness||"2px"};background:${el.style.color||"rgba(255,255,255,0.2)"};border-radius:999px\"></div>`;
+        default:
+          return "";
+      }
+    })
+    .join("\n");
+
+  const html = `<div class=\"banner\"> <div class=\"banner-inner\">${innerHtml}</div></div>`;
+  return { html, css };
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+}
+function escapeAttr(s) {
+  return String(s || "").replace(/"/g, "&quot;");
+}
+
 // Common aspect → pixel sizes for export. Higher is sharper; we cap at
 // 1920px on the long edge for sane file sizes.
 export function exportSize(aspect = "16:9") {

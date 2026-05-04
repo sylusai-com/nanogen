@@ -65,8 +65,11 @@ export default function StyleFormModal({ open, onClose, onSubmit, item = null })
 
   useEffect(() => {
     if (open) {
-      setForm(fromItem(item));
-      setError(null);
+      // schedule state updates to avoid synchronous setState in effect
+      Promise.resolve().then(() => {
+        setForm(fromItem(item));
+        setError(null);
+      });
     }
   }, [open, item]);
 

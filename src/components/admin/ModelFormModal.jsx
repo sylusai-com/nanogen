@@ -80,9 +80,12 @@ export default function ModelFormModal({
 
   useEffect(() => {
     if (open) {
-      setForm(fromModel(model));
-      setShowKey(false);
-      setError(null);
+      // schedule to avoid synchronous setState in effect
+      Promise.resolve().then(() => {
+        setForm(fromModel(model));
+        setShowKey(false);
+        setError(null);
+      });
     }
   }, [open, model]);
 

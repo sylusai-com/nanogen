@@ -57,7 +57,10 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   // left empty: we don't want to bias the model toward a theme the user
   // never asked for. The user can still pick one explicitly.
   useEffect(() => {
-    if (aspect == null && aspects?.length) setAspect(aspects[0].ratio);
+    if (aspect == null && aspects?.length) {
+      // schedule to avoid synchronous setState inside effect
+      Promise.resolve().then(() => setAspect(aspects[0].ratio));
+    }
   }, [aspect, aspects]);
 
   const ready = aspects && styles;

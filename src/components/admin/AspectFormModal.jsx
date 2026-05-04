@@ -34,8 +34,11 @@ export default function AspectFormModal({ open, onClose, onSubmit, item = null }
 
   useEffect(() => {
     if (open) {
-      setForm(fromItem(item));
-      setError(null);
+      // schedule to avoid synchronous setState in effect
+      Promise.resolve().then(() => {
+        setForm(fromItem(item));
+        setError(null);
+      });
     }
   }, [open, item]);
 

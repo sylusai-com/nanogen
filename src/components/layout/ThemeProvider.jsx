@@ -12,7 +12,8 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     const stored = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
     const initial = stored === "light" || stored === "dark" ? stored : "dark";
-    setThemeState(initial);
+    // Avoid calling setState synchronously inside effect
+    Promise.resolve().then(() => setThemeState(initial));
     document.documentElement.setAttribute("data-theme", initial);
   }, []);
 

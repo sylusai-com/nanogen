@@ -186,7 +186,8 @@ export default function AdminOutputs() {
   }, [all, view, query]);
 
   useEffect(() => {
-    setPage(1);
+    // avoid synchronous setState inside effect
+    Promise.resolve().then(() => setPage(1));
   }, [view, query]);
 
   const tabs = [

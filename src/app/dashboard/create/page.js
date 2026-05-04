@@ -107,7 +107,7 @@ export default function DashboardCreate() {
           <p className="mt-2 text-sm text-muted">
             {submitting
               ? "Nanogen is fanning your prompt out across every enabled text model and scoring each result. Hang tight — usually 10–30 seconds."
-              : "Describe the banner. Nanogen fans your prompt across every admin-enabled text model in parallel, scores each result, and surfaces the best one."}
+              : "Describe the banner in plain language. Nanogen treats your prompt as the source of truth, fans it across every admin-enabled text model in parallel, scores each result, and surfaces the best one."}
           </p>
         </header>
 

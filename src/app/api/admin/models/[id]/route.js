@@ -134,6 +134,30 @@ export async function PUT(req, { params }) {
   return NextResponse.json({ ok: true });
 }
 
+export async function GET(_req, { params }) {
+  const gate = await requireAdmin();
+  if (gate.error) return gate.error;
+
+  const { id } = await params;
+  if (!id || typeof id !== "string") {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+
+  const adminDb = createAdminClient();
+  const { data, error } = await adminDb
+    .from("models")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!data) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Return the full row (including config.apiKey) to the admin client.
+  const res = NextResponse.json({ model: data });
+  res.headers.set("Cache-Control", "private, no-store");
+  return res;
+}
+
 export async function DELETE(_req, { params }) {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;

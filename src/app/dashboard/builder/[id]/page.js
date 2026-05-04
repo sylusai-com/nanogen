@@ -316,7 +316,7 @@ export default function BuilderPage({ params }) {
       <>
         <TopBar title="Builder" />
         <div className="mx-auto w-full max-w-7xl space-y-6 px-5 py-8">
-          <Skeleton className="h-[480px]" />
+          <Skeleton className="h-120" />
         </div>
       </>
     );
@@ -446,6 +446,10 @@ export default function BuilderPage({ params }) {
             selectedId={selectedId}
             background={background}
             aspect={banner.aspect || "16:9"}
+            html={banner?.html}
+            css={banner?.css}
+            fields={banner?.fields}
+            alignment={banner?.alignment}
             onSelectElement={setSelectedId}
             onUpdateElement={updateElement}
             onDeselectAll={() => setSelectedId(null)}

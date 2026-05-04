@@ -3,6 +3,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import ElementRenderer from "./ElementRenderer";
+import { buildStandaloneHtml } from "@/lib/bannerDownload";
 
 function aspectStyle(aspect) {
   const map = { "16:9": "56.25%", "1:1": "100%", "4:5": "125%", "9:16": "177.78%" };
@@ -14,6 +15,10 @@ export default function Canvas({
   selectedId,
   background,
   aspect,
+  html,
+  css,
+  fields,
+  alignment,
   onSelectElement,
   onUpdateElement,
   onDeselectAll,
@@ -106,6 +111,14 @@ export default function Canvas({
             if (e.target === canvasRef.current) onDeselectAll?.();
           }}
         >
+          {html && css && (
+            <iframe
+              title="banner-preview"
+              srcDoc={buildStandaloneHtml({ html, css, fields: fields || [], alignment: alignment || "left", title: "banner-preview" })}
+              sandbox="allow-scripts"
+              className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-transparent"
+            />
+          )}
           {/* Grid overlay */}
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.04]"

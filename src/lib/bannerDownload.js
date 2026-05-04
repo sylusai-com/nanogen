@@ -17,29 +17,89 @@
 
 import { toJpeg, toPng } from "html-to-image";
 
+function getFieldTextValue(field) {
+  const value = field?.value;
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object") {
+    return String(value.dataUrl || value.url || value.value || "").trim();
+  }
+  return String(value).trim();
+}
+
+function getFieldCssValue(field) {
+  if (!field) return "";
+  if (field.type === "range") {
+    return `${field.value}${field.unit || ""}`;
+  }
+  if (field.type === "image") {
+    const raw = getFieldTextValue(field);
+    if (!raw) return "none";
+    return raw.startsWith("url(") ? raw : `url("${raw}")`;
+  }
+  return getFieldTextValue(field);
+}
+
+function getFieldCssVar(field) {
+  return field?.cssVar || (field?.id === "bg_image" ? "--bg-image" : "");
+}
+
+function getFieldById(fields, id) {
+  return (fields || []).find((field) => field?.id === id) || null;
+}
+
+function renderCanvasElementMarkup(el) {
+  if (!el) return "";
+  const style = el.style || {};
+  const posStyle = `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;${el.h ? `height:${el.h}%;` : ""}`;
+  switch (el.type) {
+    case "text":
+      return `<div class="banner__el banner__text" data-id="${el.id}" style="${posStyle}font-size:${style.fontSize||"16px"};font-weight:${style.fontWeight||"400"};color:${style.color||"#fff"};text-align:${style.textAlign||"left"};line-height:${style.lineHeight||1.4}">${escapeHtml(el.content||"")}</div>`;
+    case "rect":
+      return `<div class="banner__el banner__rect" data-id="${el.id}" style="${posStyle}background:${style.background||"#a78bfa"};border-radius:${style.borderRadius||"8px"};opacity:${style.opacity??1}"></div>`;
+    case "button":
+      return `<div class="banner__el banner__button" data-id="${el.id}" style="${posStyle}display:inline-flex;align-items:center;justify-content:center;background:${style.background||"#a78bfa"};color:${style.color||"#fff"};border-radius:${style.borderRadius||"999px"};font-size:${style.fontSize||"14px"};font-weight:${style.fontWeight||"600"}">${escapeHtml(el.content||"Button")}</div>`;
+    case "image":
+      return `<div class="banner__el banner__image" data-id="${el.id}" style="${posStyle}overflow:hidden;border-radius:${style.borderRadius||"8px"}"><img src="${escapeAttr(el.content||"")}" alt="" style="width:100%;height:100%;object-fit:cover"></div>`;
+    case "divider":
+      return `<div class="banner__el banner__divider" data-id="${el.id}" style="${posStyle}height:${style.thickness||"2px"};background:${style.color||"rgba(255,255,255,0.2)"};border-radius:999px"></div>`;
+    default:
+      return "";
+  }
+}
+
+function renderCanvasElementsMarkup(elements = []) {
+  return (elements || []).map((el) => renderCanvasElementMarkup(el)).join("\n");
+}
+
+function extractBodyInner(docHtml) {
+  const match = String(docHtml || "").match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return match ? match[1] : "";
+}
+
+function extractStyleBlock(docHtml) {
+  const match = String(docHtml || "").match(/<style>([\s\S]*?)<\/style>/i);
+  return match ? match[1] : "";
+}
+
 // Build the full HTML document the iframe would have shown, with the
 // patched field values applied to the markup and the chosen alignment set.
-export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner" }) {
+export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false }) {
   let cssOut = css || "";
   const overrides = fields
-    .filter((f) => f.cssVar)
+    .filter((f) => getFieldCssVar(f))
     .map((f) => {
-      let val = f.type === "range" ? `${f.value}${f.unit || ""}` : f.value;
-      if (f.type === "image") {
-        const raw = String(f.value || "").trim();
-        val = raw
-          ? raw.startsWith("url(")
-            ? raw
-            : `url("${raw}")`
-          : "none";
-      }
-      return `  ${f.cssVar}: ${val};`;
+      return `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`;
     })
     .join("\n");
   if (overrides) {
     cssOut = cssOut.includes(":root")
       ? cssOut.replace(/:root\s*{/, `:root {\n${overrides}`)
       : `:root {\n${overrides}\n}\n` + cssOut;
+  }
+
+  if (hideSlots) {
+    cssOut += `\n\n[data-slot] { visibility: hidden !important; pointer-events: none !important; }\n[data-slot] * { visibility: hidden !important; }\n`;
   }
 
   let htmlOut = html || "";
@@ -116,34 +176,125 @@ export function buildSvgString({
 // contains the styles that should be applied. This mirrors the shape
 // used by the editor/template system so builder exports can be saved
 // back into the banner row.
-export function buildTemplateFromCanvas({ elements = [], background = "#0c0c10", aspect = "16:9" }) {
+export function buildTemplateFromCanvas({ elements = [], background = "#0c0c10", aspect = "16:9", fields = [] }) {
   const [w, h] = (aspect || "16:9").split(":").map(Number);
   const pct = (h / w) * 100;
 
-  const css = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${background}}.banner-inner{position:absolute;inset:0}`;
-
-  const innerHtml = elements
-    .map((el) => {
-      const posStyle = `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;${el.h ? `height:${el.h}%;` : ""}`;
-      switch (el.type) {
-        case "text":
-          return `<div class=\"banner__el banner__text\" data-id=\"${el.id}\" style=\"${posStyle}font-size:${el.style.fontSize||"16px"};font-weight:${el.style.fontWeight||"400"};color:${el.style.color||"#fff"};text-align:${el.style.textAlign||"left"};line-height:${el.style.lineHeight||1.4}\">${escapeHtml(el.content||"")}</div>`;
-        case "rect":
-          return `<div class=\"banner__el banner__rect\" data-id=\"${el.id}\" style=\"${posStyle}background:${el.style.background||"#a78bfa"};border-radius:${el.style.borderRadius||"8px"};opacity:${el.style.opacity??1}\"></div>`;
-        case "button":
-          return `<div class=\"banner__el banner__button\" data-id=\"${el.id}\" style=\"${posStyle}display:inline-flex;align-items:center;justify-content:center;background:${el.style.background||"#a78bfa"};color:${el.style.color||"#fff"};border-radius:${el.style.borderRadius||"999px"};font-size:${el.style.fontSize||"14px"};font-weight:${el.style.fontWeight||"600"}\">${escapeHtml(el.content||"Button")}</div>`;
-        case "image":
-          return `<div class=\"banner__el banner__image\" data-id=\"${el.id}\" style=\"${posStyle}overflow:hidden;border-radius:${el.style.borderRadius||"8px"}\"><img src=\"${escapeAttr(el.content||"")}\" alt=\"\" style=\"width:100%;height:100%;object-fit:cover\"></div>`;
-        case "divider":
-          return `<div class=\"banner__el banner__divider\" data-id=\"${el.id}\" style=\"${posStyle}height:${el.style.thickness||"2px"};background:${el.style.color||"rgba(255,255,255,0.2)"};border-radius:999px\"></div>`;
-        default:
-          return "";
-      }
-    })
+  const rootOverrides = fields
+    .filter((f) => getFieldCssVar(f))
+    .map((f) => `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`)
     .join("\n");
+  const bgColor = getFieldTextValue(fields.find((f) => f.id === "bg")) || background;
+  const hasBgImage = fields.some((f) => f.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+  const css = `${rootOverrides ? `:root {\n${rootOverrides}\n}\n` : ""}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;isolation:isolate;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${bgColor}}.banner-inner{position:absolute;inset:0}${hasBgImage ? `\n.banner::before{content:"";position:absolute;inset:0;z-index:-2;background-image:var(--bg-image);background-size:var(--bg-zoom,110%);background-position:var(--bg-position,center center);background-repeat:no-repeat;filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px));transform:scale(1.03)}.banner::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,calc(var(--bg-overlay,0.45)*0.9)),rgba(0,0,0,var(--bg-overlay,0.45)))}` : ""}`;
+
+  const innerHtml = renderCanvasElementsMarkup(elements);
 
   const html = `<div class=\"banner\"> <div class=\"banner-inner\">${innerHtml}</div></div>`;
   return { html, css };
+}
+
+export function buildCompositeStandaloneHtml({
+  html,
+  css,
+  fields = [],
+  alignment = "left",
+  title = "banner",
+  elements = [],
+  aspect = "16:9",
+  background = "#0c0c10",
+}) {
+  const hasOverlay = elements.length > 0;
+  const baseDoc = html && css
+    ? buildStandaloneHtml({ html, css, fields, alignment, title, hideSlots: hasOverlay })
+    : buildStandaloneHtml({
+        ...buildTemplateFromCanvas({ elements: [], background, aspect, fields }),
+        fields,
+        alignment,
+        hideSlots: hasOverlay,
+        title,
+      });
+
+  const shellStyle = `position:relative;width:100%;height:100%;overflow:hidden;`;
+  const overlayStyle = `position:absolute;inset:0;z-index:5;`;
+  const inner = extractBodyInner(baseDoc);
+  const styles = `${extractStyleBlock(baseDoc)}
+.banner-shell{${shellStyle}}
+.banner-components{${overlayStyle}}
+.banner-components .banner__el{pointer-events:none}`;
+
+  if (!hasOverlay) {
+    return baseDoc;
+  }
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeText(title)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { animation: none !important; transition: none !important; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+    body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
+${styles}
+  </style>
+</head>
+<body>
+  <div class="banner-shell">
+${inner}
+    <div class="banner-components">
+${renderCanvasElementsMarkup(elements)}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export function extractEditableComponentsFromDocument(doc, { fields = [] } = {}) {
+  if (!doc?.querySelector) return [];
+  const root = doc.querySelector(".banner") || doc.body || doc.documentElement;
+  if (!root?.getBoundingClientRect) return [];
+
+  const rootRect = root.getBoundingClientRect();
+  const slots = Array.from(doc.querySelectorAll("[data-slot]"));
+  const fieldIds = new Set((fields || []).map((field) => field?.id));
+
+  return slots
+    .map((node) => {
+      const slot = node.getAttribute("data-slot");
+      if (!slot || !fieldIds.has(slot)) return null;
+      if (slot === "bg_image") return null;
+
+      const rect = node.getBoundingClientRect();
+      if (!rect.width || !rect.height || !rootRect.width || !rootRect.height) return null;
+
+      const field = getFieldById(fields, slot);
+      const computed = doc.defaultView?.getComputedStyle(node);
+      const type = /cta/i.test(slot) || node.tagName === "A" ? "button" : "text";
+
+      return {
+        id: `template:${slot}`,
+        type,
+        x: ((rect.left - rootRect.left) / rootRect.width) * 100,
+        y: ((rect.top - rootRect.top) / rootRect.height) * 100,
+        w: (rect.width / rootRect.width) * 100,
+        h: type === "text" ? null : (rect.height / rootRect.height) * 100,
+        content: getFieldTextValue(field) || node.textContent?.trim() || "",
+        style: {
+          color: computed?.color || "#ffffff",
+          background: type === "button" ? (computed?.backgroundColor || "#a78bfa") : undefined,
+          borderRadius: type === "button" ? (computed?.borderRadius || "999px") : undefined,
+          fontSize: computed?.fontSize || "16px",
+          fontWeight: computed?.fontWeight || "400",
+          textAlign: computed?.textAlign || "left",
+          lineHeight: computed?.lineHeight || "1.4",
+          letterSpacing: computed?.letterSpacing || "normal",
+        },
+      };
+    })
+    .filter(Boolean);
 }
 
 function escapeHtml(s) {

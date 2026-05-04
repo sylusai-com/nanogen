@@ -1,9 +1,9 @@
 // src/components/builder/Canvas.jsx
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ElementRenderer from "./ElementRenderer";
-import { buildStandaloneHtml } from "@/lib/bannerDownload";
+import { buildStandaloneHtml, extractEditableComponentsFromDocument } from "@/lib/bannerDownload";
 
 function aspectStyle(aspect) {
   const map = { "16:9": "56.25%", "1:1": "100%", "4:5": "125%", "9:16": "177.78%" };
@@ -19,14 +19,36 @@ export default function Canvas({
   css,
   fields,
   alignment,
+  onTemplateComponentsExtracted,
   onSelectElement,
   onUpdateElement,
   onDeselectAll,
 }) {
   const canvasRef = useRef(null);
+  const iframeRef = useRef(null);
   const dragging  = useRef(null); // { id, startMouseX, startMouseY, startElemX, startElemY }
   const resizing  = useRef(null); // { id, startMouseX, startMouseY, startW, startH }
   const [dragOver, setDragOver] = useState(false);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !html || !css) return;
+
+    const extract = () => {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      const components = extractEditableComponentsFromDocument(doc, { fields: fields || [] });
+      if (components.length) onTemplateComponentsExtracted?.(components);
+    };
+
+    if (iframe.contentDocument?.readyState === "complete") {
+      extract();
+      return;
+    }
+
+    iframe.addEventListener("load", extract);
+    return () => iframe.removeEventListener("load", extract);
+  }, [html, css, fields, onTemplateComponentsExtracted]);
 
   // ── Drag to move ────────────────────────────────────────────────────────
   const onDragStart = useCallback((e, id) => {
@@ -113,9 +135,17 @@ export default function Canvas({
         >
           {html && css && (
             <iframe
+              ref={iframeRef}
               title="banner-preview"
-              srcDoc={buildStandaloneHtml({ html, css, fields: fields || [], alignment: alignment || "left", title: "banner-preview" })}
-              sandbox="allow-scripts"
+              srcDoc={buildStandaloneHtml({
+                html,
+                css,
+                fields: fields || [],
+                alignment: alignment || "left",
+                title: "banner-preview",
+                hideSlots: elements.length > 0,
+              })}
+              sandbox="allow-scripts allow-same-origin"
               className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-transparent"
             />
           )}

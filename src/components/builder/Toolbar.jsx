@@ -11,6 +11,8 @@ import {
   MinusSquare,
   MousePointer2,
   Square,
+  Redo2,
+  Undo2,
   Trash2,
   Type,
 } from "lucide-react";
@@ -66,9 +68,13 @@ export default function Toolbar({
   onAlignElement,
   background,
   onBackgroundChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }) {
   return (
-    <aside className="flex h-full w-[88px] shrink-0 flex-col border-r border-border bg-surface/60 py-3 backdrop-blur">
+    <aside className="flex h-full w-22 shrink-0 flex-col border-r border-border bg-surface/60 py-3 backdrop-blur">
       {/* Section: Add */}
       <div className="px-2">
         <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
@@ -120,6 +126,27 @@ export default function Toolbar({
       </div>
 
       <Divider />
+
+      {/* Section: History */}
+      <div className="px-2">
+        <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
+          History
+        </div>
+        <div className="space-y-0.5">
+          <ToolButton
+            icon={Undo2}
+            label="Undo"
+            disabled={!canUndo}
+            onClick={onUndo}
+          />
+          <ToolButton
+            icon={Redo2}
+            label="Redo"
+            disabled={!canRedo}
+            onClick={onRedo}
+          />
+        </div>
+      </div>
 
       {/* Section: Canvas background */}
       <div className="px-2">

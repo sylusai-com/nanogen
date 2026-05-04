@@ -3,29 +3,26 @@
 
 import { use, useCallback, useEffect, useRef, useState, startTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
-  Code,
-  Download,
   Layers,
   Loader2,
   Save,
   Settings2,
+  Type,
 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
-import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import Tabs from "@/components/ui/Tabs";
 import { getBanner, updateBanner } from "@/lib/db/banners";
-import { buildTemplateFromCanvas } from "@/lib/bannerDownload";
 import Canvas from "@/components/builder/Canvas";
 import Toolbar from "@/components/builder/Toolbar";
 import PropertiesPanel from "@/components/builder/PropertiesPanel";
 import LayersPanel from "@/components/builder/LayersPanel";
+import EditorPanel from "@/components/editor/EditorPanel";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function uid() {
@@ -77,13 +74,13 @@ function defaultsFor(type) {
 const RIGHT_TABS = [
   { id: "properties", label: <span className="inline-flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Properties</span> },
   { id: "layers",     label: <span className="inline-flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> Layers</span> },
+  { id: "fields",     label: <span className="inline-flex items-center gap-1.5"><Type className="h-3.5 w-3.5" /> Fields</span> },
 ];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BuilderPage({ params }) {
   const { id } = use(params);
   const { user, supabase } = useAuth();
-  const router = useRouter();
 
   const [banner,    setBanner]    = useState(null);
   const [loading,   setLoading]   = useState(true);
@@ -93,14 +90,85 @@ export default function BuilderPage({ params }) {
   const justSavedTimer = useRef(null);
   const [error,     setError]     = useState(null);
 
-  // Canvas state
+  // Canvas state (for visual elements)
   const [background,  setBackground]  = useState("#0c0c10");
   const [elements,    setElements]    = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
   const [rightTab,    setRightTab]    = useState("properties");
-  // On mobile, the toolbar / properties panels are togglable drawers so the
-  // canvas can take the full width of the screen.
   const [mobilePanel, setMobilePanel] = useState(null); // null | "tools" | "props"
+
+  // Template state (for field editing)
+  const [template, setTemplate] = useState(null);
+  const [fields, setFields] = useState([]);
+  const [alignment, setAlignment] = useState("left");
+
+  const initialElementsRef = useRef([]);
+  const initialBackgroundRef = useRef("#0c0c10");
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const [, setHistoryTick] = useState(0);
+  const templateSeededRef = useRef(false);
+
+  const captureState = useCallback(() => ({
+    elements: JSON.parse(JSON.stringify(elements)),
+    background,
+    selectedId,
+    fields: JSON.parse(JSON.stringify(fields)),
+    alignment,
+  }), [elements, background, selectedId, fields, alignment]);
+
+  const applyState = useCallback((state) => {
+    if (!state) return;
+    setElements(state.elements || []);
+    setBackground(state.background || "#0c0c10");
+    setSelectedId(state.selectedId ?? null);
+    setFields(state.fields || []);
+    setAlignment(state.alignment || "left");
+  }, []);
+
+  const recordHistory = useCallback(() => {
+    undoStackRef.current.push(captureState());
+    if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+    redoStackRef.current = [];
+    setHistoryTick((n) => n + 1);
+  }, [captureState]);
+
+  const undo = useCallback(() => {
+    const prev = undoStackRef.current.pop();
+    if (!prev) return;
+    redoStackRef.current.push(captureState());
+    applyState(prev);
+    setHistoryTick((n) => n + 1);
+  }, [applyState, captureState]);
+
+  const redo = useCallback(() => {
+    const next = redoStackRef.current.pop();
+    if (!next) return;
+    undoStackRef.current.push(captureState());
+    applyState(next);
+    setHistoryTick((n) => n + 1);
+  }, [applyState, captureState]);
+
+  const canUndo = undoStackRef.current.length > 0;
+  const canRedo = redoStackRef.current.length > 0;
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const isMac = navigator.platform.toLowerCase().includes("mac");
+      const mod = isMac ? event.metaKey : event.ctrlKey;
+      if (!mod) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [redo, undo]);
 
   // ── Load banner ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -112,25 +180,22 @@ export default function BuilderPage({ params }) {
         if (cancelled) return;
         startTransition(() => setBanner(b));
 
-        // The persisted canvas is `{ background, elements: [] }` for newly
-        // generated banners — a non-null shape with an empty elements array.
-        // If we only checked `b?.canvas` we'd render an empty canvas and the
-        // user would see "Open in builder" as a blank screen. Seed from the
-        // banner's HTML fields when the elements array is empty so the
-        // builder actually shows the banner content.
         const stored      = b?.canvas;
         const hasElements = Array.isArray(stored?.elements) && stored.elements.length > 0;
         const fieldsBg    = (b?.fields || []).find((f) => f.id === "bg")?.value;
+        const initialBg   = stored?.background || fieldsBg || "#0c0c10";
+
+        initialBackgroundRef.current = initialBg;
+        initialElementsRef.current = hasElements ? stored.elements : [];
+        templateSeededRef.current = hasElements;
 
         startTransition(() => {
-          if (hasElements) {
-            setBackground(stored.background || fieldsBg || "#0c0c10");
-            setElements(stored.elements);
-          } else {
-            const seeded = seedFromFields(b?.fields || []);
-            setElements(seeded);
-            setBackground(stored?.background || fieldsBg || "#0c0c10");
-          }
+          setBackground(initialBg);
+          setElements(hasElements ? stored.elements : []);
+          // Load template fields and HTML/CSS
+          setTemplate({ html: b?.html, css: b?.css });
+          setFields(b?.fields || []);
+          setAlignment(b?.alignment || "left");
         });
       })
       .catch((e) => !cancelled && setError(e.message))
@@ -138,71 +203,43 @@ export default function BuilderPage({ params }) {
     return () => { cancelled = true; };
   }, [id, user, supabase]);
 
-  // ── Seed canvas from HTML editor fields when first opening builder ────────
-  function seedFromFields(fields) {
-    const els = [];
-    const fg     = fields.find((f) => f.id === "fg")?.value     || "#ffffff";
-    const accent = fields.find((f) => f.id === "accent")?.value || "#a78bfa";
-    const bgImg  = fields.find((f) => f.id === "bg_image")?.value;
-
-    // Background image as a layer behind everything. The image field stores
-    // either a url(...) wrapper or a bare URL — handle both.
-    if (bgImg) {
-      const url = String(bgImg).match(/url\((.*?)\)/)?.[1]?.replace(/['"]/g, "") || bgImg;
-      els.push({
-        id: uid(),
-        type: "image",
-        x: 0, y: 0, w: 100, h: 100,
-        content: url,
-        style: { borderRadius: "0px" },
-      });
+  // ── Fetch template if not present ────────────────────────────────────────
+  useEffect(() => {
+    if (!banner) return;
+    // If template already loaded, skip
+    if (template?.html && template?.css) return;
+    if (!banner.html || !banner.css) {
+      let cancelled = false;
+      (async () => {
+        try {
+          const res = await fetch("/api/banners/html", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: banner.prompt || banner.title,
+              style: banner.style,
+              aspect: banner.aspect,
+            }),
+          });
+          if (!res.ok) throw new Error(`Request failed (${res.status})`);
+          const data = await res.json();
+          if (cancelled) return;
+          startTransition(() => {
+            setTemplate({ html: data.html, css: data.css });
+            setFields(data.fields);
+            setAlignment(data.alignment || "left");
+          });
+        } catch (e) {
+          if (!cancelled) setError(e.message || "Failed to load template");
+        }
+      })();
+      return () => { cancelled = true; };
     }
-
-    let y = 8;
-    for (const f of fields) {
-      if (f.type !== "text") continue;
-      const id = (f.id || "").toLowerCase();
-      const isHeadline  = id === "headline";
-      const isEyebrow   = id === "eyebrow" || id.endsWith("_label") || id === "version_tag";
-      const isCta       = id.startsWith("cta");
-      const isStat      = id.includes("stat") && id.endsWith("_value");
-
-      const fontSize    = isHeadline
-        ? "56px"
-        : isStat
-        ? "40px"
-        : isEyebrow
-        ? "12px"
-        : isCta
-        ? "14px"
-        : "18px";
-      const fontWeight  = isHeadline ? "700" : isStat ? "700" : isCta ? "600" : "400";
-
-      els.push({
-        id: uid(),
-        type: isCta ? "button" : "text",
-        x: 7,
-        y,
-        w: isCta ? 22 : 86,
-        h: null,
-        content: f.value || f.label || "",
-        style: {
-          color: isCta ? "#ffffff" : fg,
-          background: isCta ? accent : undefined,
-          borderRadius: isCta ? "999px" : undefined,
-          fontSize,
-          fontWeight,
-          textAlign: "left",
-          lineHeight: isHeadline ? "1.1" : "1.4",
-        },
-      });
-      y += isHeadline ? 18 : isEyebrow ? 5 : isStat ? 12 : 9;
-    }
-    return els;
-  }
+  }, [banner, template?.html, template?.css]);
 
   // ── Canvas mutations ─────────────────────────────────────────────────────
   const addElement = useCallback((type) => {
+    recordHistory();
     const newEl = {
       id: uid(),
       type,
@@ -212,26 +249,30 @@ export default function BuilderPage({ params }) {
     };
     setElements((prev) => [...prev, newEl]);
     setSelectedId(newEl.id);
-  }, []);
+  }, [recordHistory]);
 
   const updateElement = useCallback((updated) => {
+    recordHistory();
     setElements((prev) => prev.map((el) => (el.id === updated.id ? updated : el)));
-  }, []);
+  }, [recordHistory]);
 
   const duplicateSelected = useCallback(() => {
+    recordHistory();
     const src = elements.find((el) => el.id === selectedId);
     if (!src) return;
     const copy = { ...JSON.parse(JSON.stringify(src)), id: uid(), x: src.x + 3, y: src.y + 3 };
     setElements((prev) => [...prev, copy]);
     setSelectedId(copy.id);
-  }, [elements, selectedId]);
+  }, [elements, selectedId, recordHistory]);
 
   const deleteSelected = useCallback(() => {
+    recordHistory();
     setElements((prev) => prev.filter((el) => el.id !== selectedId));
     setSelectedId(null);
-  }, [selectedId]);
+  }, [selectedId, recordHistory]);
 
   const alignSelected = useCallback((align) => {
+    recordHistory();
     setElements((prev) =>
       prev.map((el) => {
         if (el.id !== selectedId) return el;
@@ -239,9 +280,10 @@ export default function BuilderPage({ params }) {
         return { ...el, x: xMap[align] ?? el.x };
       })
     );
-  }, [selectedId]);
+  }, [selectedId, recordHistory]);
 
   const moveLayer = useCallback((idx, dir) => {
+    recordHistory();
     setElements((prev) => {
       const next = [...prev];
       const target = idx + dir;
@@ -249,7 +291,23 @@ export default function BuilderPage({ params }) {
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
-  }, []);
+  }, [recordHistory]);
+
+  const changeBackground = useCallback((value) => {
+    recordHistory();
+    setBackground(value);
+  }, [recordHistory]);
+
+  // ── Field editing (for template fields) ─────────────────────────────────
+  const onFieldChange = useCallback((fieldId, value) => {
+    recordHistory();
+    setFields((prev) => prev.map((f) => (f.id === fieldId ? { ...f, value } : f)));
+  }, [recordHistory]);
+
+  const onAlignmentChange = useCallback((a) => {
+    recordHistory();
+    setAlignment(a);
+  }, [recordHistory]);
 
   // ── Save ─────────────────────────────────────────────────────────────────
   const onSave = async () => {
@@ -258,56 +316,30 @@ export default function BuilderPage({ params }) {
     setError(null);
     try {
       const canvas = { background, elements };
-      // Persist canvas and also generate a simple HTML/CSS template
-      // so the banner preview (which prefers html/css) reflects edits
-      // made in the visual builder.
-      const tpl = buildTemplateFromCanvas({ elements, background, aspect: banner.aspect });
-      const updated = await updateBanner(supabase, banner.id, { canvas, html: tpl.html, css: tpl.css });
+      const patch = {
+        canvas,
+        fields,
+        alignment,
+        html: template?.html,
+        css: template?.css,
+      };
+
+      const updated = await updateBanner(supabase, banner.id, patch);
       if (updated) setBanner(updated);
-      const now = Date.now();
-      setSavedAt(now);
+      setSavedAt(Date.now());
       if (justSavedTimer.current) clearTimeout(justSavedTimer.current);
       setJustSaved(true);
       justSavedTimer.current = setTimeout(() => setJustSaved(false), 1500);
+      initialElementsRef.current = JSON.parse(JSON.stringify(elements));
+      initialBackgroundRef.current = background;
+      undoStackRef.current = [];
+      redoStackRef.current = [];
+      setHistoryTick((n) => n + 1);
     } catch (e) {
       setError(e.message || "Failed to save");
     } finally {
       setSaving(false);
     }
-  };
-
-  // ── Export to HTML ────────────────────────────────────────────────────────
-  const exportHtml = () => {
-    const aspect = banner?.aspect || "16:9";
-    const [w, h] = aspect.split(":").map(Number);
-    const pct = (h / w) * 100;
-    const innerHtml = elements
-      .map((el) => {
-        const posStyle = `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;${el.h ? `height:${el.h}%;` : ""}`;
-        switch (el.type) {
-          case "text":
-            return `<div style="${posStyle}font-size:${el.style.fontSize||"16px"};font-weight:${el.style.fontWeight||"400"};color:${el.style.color||"#fff"};text-align:${el.style.textAlign||"left"};line-height:${el.style.lineHeight||1.4}">${el.content||""}</div>`;
-          case "rect":
-            return `<div style="${posStyle}background:${el.style.background||"#a78bfa"};border-radius:${el.style.borderRadius||"8px"};opacity:${el.style.opacity??1}"></div>`;
-          case "button":
-            return `<div style="${posStyle}display:inline-flex;align-items:center;justify-content:center;background:${el.style.background||"#a78bfa"};color:${el.style.color||"#fff"};border-radius:${el.style.borderRadius||"999px"};font-size:${el.style.fontSize||"14px"};font-weight:${el.style.fontWeight||"600"}">${el.content||"Button"}</div>`;
-          case "image":
-            return `<div style="${posStyle}overflow:hidden;border-radius:${el.style.borderRadius||"8px"}"><img src="${el.content||""}" alt="" style="width:100%;height:100%;object-fit:cover"></div>`;
-          case "divider":
-            return `<div style="${posStyle}height:${el.style.thickness||"2px"};background:${el.style.color||"rgba(255,255,255,0.2)"};border-radius:999px"></div>`;
-          default:
-            return "";
-        }
-      })
-      .join("\n");
-    const doc = `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif}.canvas{position:relative;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${background}}.canvas-inner{position:absolute;inset:0}</style></head><body><div class="canvas"><div class="canvas-inner">${innerHtml}</div></div></body></html>`;
-    const blob = new Blob([doc], { type: "text/html" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `${banner?.title || "banner"}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -316,7 +348,7 @@ export default function BuilderPage({ params }) {
       <>
         <TopBar title="Builder" />
         <div className="mx-auto w-full max-w-7xl space-y-6 px-5 py-8">
-          <Skeleton className="h-120" />
+          <div className="h-96 rounded-lg bg-surface-2 animate-pulse" />
         </div>
       </>
     );
@@ -337,8 +369,8 @@ export default function BuilderPage({ params }) {
     );
   }
 
-  // `justSaved` handled via state to avoid impure calls in render
-  const selectedEl    = elements.find((el) => el.id === selectedId) || null;
+
+  const selectedEl = elements.find((el) => el.id === selectedId) || null;
 
   return (
     <>
@@ -346,14 +378,6 @@ export default function BuilderPage({ params }) {
         title="Builder"
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<Code className="h-3.5 w-3.5" />}
-              onClick={exportHtml}
-            >
-              Export HTML
-            </Button>
             <Button
               size="sm"
               onClick={onSave}
@@ -388,8 +412,7 @@ export default function BuilderPage({ params }) {
           {error && (
             <span className="ml-auto truncate text-xs text-red-400">{error}</span>
           )}
-          {/* Mobile-only toggles for the side panels. On md+ both panels are
-              always visible so these are hidden. */}
+          {/* Mobile-only toggles for the side panels */}
           <div className="ml-auto flex items-center gap-1 md:hidden">
             <button
               type="button"
@@ -408,8 +431,7 @@ export default function BuilderPage({ params }) {
           </div>
         </div>
 
-        {/* Three-panel layout. On mobile the side panels collapse into
-            slide-over drawers triggered from the sub-header. */}
+        {/* Three-panel layout */}
         <div className="relative flex flex-1 overflow-hidden">
           {/* Left: Toolbar */}
           <div
@@ -426,7 +448,11 @@ export default function BuilderPage({ params }) {
               onDelete={deleteSelected}
               onAlignElement={alignSelected}
               background={background}
-              onBackgroundChange={setBackground}
+              onBackgroundChange={changeBackground}
+              onUndo={undo}
+              onRedo={redo}
+              canUndo={canUndo}
+              canRedo={canRedo}
             />
           </div>
 
@@ -446,16 +472,16 @@ export default function BuilderPage({ params }) {
             selectedId={selectedId}
             background={background}
             aspect={banner.aspect || "16:9"}
-            html={banner?.html}
-            css={banner?.css}
-            fields={banner?.fields}
-            alignment={banner?.alignment}
+            html={template?.html}
+            css={template?.css}
+            fields={fields}
+            alignment={alignment}
             onSelectElement={setSelectedId}
             onUpdateElement={updateElement}
             onDeselectAll={() => setSelectedId(null)}
           />
 
-          {/* Right: Properties / Layers */}
+          {/* Right: Properties / Layers / Fields */}
           <aside
             className={
               "absolute inset-y-0 right-0 z-20 flex w-72 max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur transition-transform duration-200 md:static md:max-w-none md:translate-x-0 md:bg-surface/60 " +
@@ -473,13 +499,20 @@ export default function BuilderPage({ params }) {
             <div className="flex-1 overflow-y-auto p-3">
               {rightTab === "properties" ? (
                 <PropertiesPanel element={selectedEl} onChange={updateElement} />
-              ) : (
+              ) : rightTab === "layers" ? (
                 <LayersPanel
                   elements={elements}
                   selectedId={selectedId}
                   onSelect={setSelectedId}
                   onMoveUp={(idx) => moveLayer(idx, 1)}
                   onMoveDown={(idx) => moveLayer(idx, -1)}
+                />
+              ) : (
+                <EditorPanel
+                  fields={fields}
+                  alignment={alignment}
+                  onFieldChange={onFieldChange}
+                  onAlignmentChange={onAlignmentChange}
                 />
               )}
             </div>

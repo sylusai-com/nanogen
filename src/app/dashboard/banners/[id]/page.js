@@ -22,7 +22,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import { cn } from "@/lib/cn";
-import { buildStandaloneHtml } from "@/lib/bannerDownload";
+import { buildCompositeStandaloneHtml } from "@/lib/bannerDownload";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
 
@@ -116,15 +116,16 @@ export default function BannerDetail({ params }) {
     );
   }
 
-  const srcDoc = banner.html && banner.css
-    ? buildStandaloneHtml({
-        html: banner.html,
-        css: banner.css,
-        fields: banner.fields || [],
-        alignment: banner.alignment || "left",
-        title: banner.title,
-      })
-    : null;
+  const srcDoc = buildCompositeStandaloneHtml({
+    html: banner.html,
+    css: banner.css,
+    fields: banner.fields || [],
+    alignment: banner.alignment || "left",
+    title: banner.title,
+    elements: banner.canvas?.elements || [],
+    aspect: banner.aspect || "16:9",
+    background: banner.canvas?.background || "#0c0c10",
+  });
 
   const meta = [
     { label: "Model",   value: banner.modelLabel || "—" },

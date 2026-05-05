@@ -70,7 +70,7 @@ function useFakeProgress({ expectedMs = 30000, holdAt = 90, done = false } = {})
 
 export default function GenerationProgress({ aspect = "16:9", done = false }) {
   const [elapsed, setElapsed] = useState(0);
-  const pct = useFakeProgress({ expectedMs: 18000, holdAt: 90, done });
+  const pct = useFakeProgress({ expectedMs: 35000, holdAt: 90, done });
 
   useEffect(() => {
     const start = Date.now();

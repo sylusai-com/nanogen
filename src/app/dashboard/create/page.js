@@ -15,12 +15,18 @@ export default function DashboardCreate() {
   const router = useRouter();
   const { isAdmin } = useAuth();
   const [submitting, setSubmitting] = useState(false);
+  // Flips true the moment /api/banners returns successfully. The progress
+  // bar reads it to fill from its 90% hold ceiling up to 100% before the
+  // route change fires — without this the bar would just freeze at 90%
+  // until the page navigates.
+  const [generationDone, setGenerationDone] = useState(false);
   const [submittedAspect, setSubmittedAspect] = useState("16:9");
   const [error, setError]           = useState(null);
   const [modelErrors, setModelErrors] = useState([]);
 
   const onSubmit = async (payload) => {
     setSubmitting(true);
+    setGenerationDone(false);
     setSubmittedAspect(payload.aspect || "16:9");
     setError(null);
     setModelErrors([]);
@@ -34,6 +40,12 @@ export default function DashboardCreate() {
       if (!res.ok) {
         throw new Error(data.error || `Request failed (${res.status})`);
       }
+
+      // Tell the progress bar to finish from 90 → 100. The fill animation
+      // is short (~700ms) so the bar reaches 100% just as the redirect
+      // fires for the no-warning path below.
+      setGenerationDone(true);
+
       // A new banner was just persisted server-side — drop the dashboard
       // cache so /dashboard/banners shows it immediately on next visit.
       // Also invalidate generation_results so admin views (model stats)

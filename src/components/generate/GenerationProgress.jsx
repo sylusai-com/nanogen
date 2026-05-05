@@ -18,28 +18,59 @@ function aspectClass(a) {
   return "aspect-[16/9]";
 }
 
-// Smooth fake-progress: eases toward 95% over the expected window so the
-// bar never sits idle. The redirect happens as soon as the API returns,
-// so we never need to reach 100% here.
-function useFakeProgress({ expectedMs = 18000 } = {}) {
-  const [pct, setPct] = useState(4);
+// Faked progress that never overshoots and waits at the ceiling for the
+// real model response.
+//
+//   - During the request: the bar eases toward `holdAt` (90 by default)
+//     and parks there. It never exceeds 90 — slow late-stage models will
+//     just wait at 90% rather than wrap around past 100.
+//   - When `done` flips true (the API has returned and the parent is
+//     redirecting), the bar smoothly animates from wherever it is up to
+//     100 so the user sees a satisfying finish before the route changes.
+function useFakeProgress({ expectedMs = 30000, holdAt = 90, done = false } = {}) {
+  const [pct, setPct] = useState(2);
 
   useEffect(() => {
+    if (done) {
+      // Animate to 100 quickly. Slightly faster than the in-progress
+      // tick so the finish feels deliberate, not stalled.
+      const id = setInterval(() => {
+        setPct((p) => {
+          if (p >= 100) {
+            clearInterval(id);
+            return 100;
+          }
+          return Math.min(100, p + 4);
+        });
+      }, 30);
+      return () => clearInterval(id);
+    }
+
     const start = Date.now();
     const id = setInterval(() => {
       const elapsed = Date.now() - start;
-      const target  = Math.min(95, (elapsed / expectedMs) * 100);
-      setPct((p) => (target > p ? target : p + 0.15));
+      // Quadratic ease-out toward holdAt: fast at the start, slowing as
+      // we approach the ceiling so the bar never feels stuck early.
+      const t      = Math.min(1, elapsed / expectedMs);
+      const target = holdAt * (1 - Math.pow(1 - t, 2));
+      setPct((p) => {
+        if (p >= holdAt) return holdAt;
+        // Always trend toward target, but don't decrease and don't exceed
+        // the ceiling. The 0.4 floor keeps the bar moving even if target
+        // hasn't grown past p yet (early ticks).
+        const next = Math.max(target, p + 0.4);
+        return Math.min(holdAt, next);
+      });
     }, 200);
     return () => clearInterval(id);
-  }, [expectedMs]);
+  }, [expectedMs, holdAt, done]);
 
   return pct;
 }
 
-export default function GenerationProgress({ aspect = "16:9" }) {
+export default function GenerationProgress({ aspect = "16:9", done = false }) {
   const [elapsed, setElapsed] = useState(0);
-  const pct = useFakeProgress({ expectedMs: 18000 });
+  const pct = useFakeProgress({ expectedMs: 18000, holdAt: 90, done });
 
   useEffect(() => {
     const start = Date.now();
@@ -49,6 +80,9 @@ export default function GenerationProgress({ aspect = "16:9" }) {
     );
     return () => clearInterval(tick);
   }, []);
+
+  // Progress is rounded for display, but always clamped to [0, 100].
+  const display = Math.min(100, Math.max(0, Math.round(pct)));
 
   return (
     <div className="space-y-6">
@@ -84,7 +118,7 @@ export default function GenerationProgress({ aspect = "16:9" }) {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
               </span>
-              Generating your banner…
+              {done ? "Almost there…" : "Generating your banner…"}
             </div>
             <span className="font-mono text-[10px] text-muted-strong">{elapsed}s</span>
           </div>
@@ -99,16 +133,18 @@ export default function GenerationProgress({ aspect = "16:9" }) {
           <h3 className="text-sm font-semibold tracking-tight">Generating your banner</h3>
         </div>
         <p className="mt-3 text-xs text-muted">
-          Hang tight — we’ll drop you into the editor as soon as it’s ready.
+          {done
+            ? "Banner ready — opening the editor."
+            : "Hang tight — we’ll drop you into the editor as soon as it’s ready."}
         </p>
         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-surface-2">
           <div
             className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
-            style={{ width: `${pct}%` }}
+            style={{ width: `${display}%` }}
           />
         </div>
         <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
-          <span>{Math.round(pct)}%</span>
+          <span>{display}%</span>
           <span className="font-mono text-[10px] text-muted-strong">{elapsed}s</span>
         </div>
       </Card>

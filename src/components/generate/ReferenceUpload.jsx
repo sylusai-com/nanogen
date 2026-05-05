@@ -33,7 +33,7 @@ export default function ReferenceUpload({ value, onChange }) {
   };
 
   return (
-    <Field label="Reference image" hint="Optional — used as the banner backdrop">
+    <Field label="Reference image" hint="Optional — AI extracts subject, palette, mood for inspiration">
       {!value ? (
         <button
           type="button"
@@ -67,7 +67,7 @@ export default function ReferenceUpload({ value, onChange }) {
           />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm text-foreground">{value.name}</div>
-            <div className="text-[11px] text-muted">Will be used as the banner backdrop</div>
+            <div className="text-[11px] text-muted">AI will analyze this and use it as inspiration</div>
           </div>
           <button
             type="button"

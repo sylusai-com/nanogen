@@ -11,6 +11,7 @@ import EmptyData from "@/components/ui/EmptyData";
 import EditorPreview from "@/components/editor/EditorPreview";
 import EditorPanel from "@/components/editor/EditorPanel";
 import DownloadMenu from "@/components/banner/DownloadMenu";
+import ReferencePanel from "@/components/banner/ReferencePanel";
 import { getBanner, updateBanner } from "@/lib/db/banners";
 
 function aspectClass(a) {
@@ -275,6 +276,10 @@ export default function BannerEditor({ params }) {
                 Loading editor…
               </div>
             )}
+            <ReferencePanel
+              imageUrl={banner.referenceImageUrl}
+              context={banner.referenceContext}
+            />
           </div>
         </div>
       </div>

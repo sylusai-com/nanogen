@@ -44,7 +44,7 @@ export default function ModelSelector({ models, selected, onToggle, loading }) {
               className={cn(
                 "group flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-all",
                 checked
-                  ? "border-[var(--primary)]/50 bg-[color-mix(in_oklab,var(--primary)_8%,var(--surface))]"
+                  ? "border-(--primary)/50 bg-[color-mix(in_oklab,var(--primary)_8%,var(--surface))]"
                   : "border-border bg-background hover:border-border-strong hover:bg-surface",
               )}
             >

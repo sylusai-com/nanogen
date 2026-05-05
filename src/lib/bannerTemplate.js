@@ -65,13 +65,20 @@ Pick palette and composition that fit the user's brief. Do not impose a default 
 // User message is brief — only include style/aspect when the caller passed
 // them. Empty/falsy values are dropped so the model is not biased toward a
 // theme the user did not actually request.
-function buildUserMessage({ prompt, style, aspect, variantSeed = 0 }) {
+function buildUserMessage({
+  prompt,
+  style,
+  aspect,
+  variantSeed = 0,
+  referenceContextText = null,
+}) {
   const lines = [
     `BRIEF (authoritative): ${prompt}`,
     `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or imagery.`,
   ];
   if (style && String(style).trim())  lines.push(`STYLE PREFERENCE: ${style}`);
   if (aspect && String(aspect).trim()) lines.push(`ASPECT PREFERENCE: ${aspect}`);
+  if (referenceContextText)            lines.push(referenceContextText);
   if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
   lines.push(`The banner is HTML + CSS only — NO external image URLs. Build any background using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.`);
   lines.push("Return ONLY the JSON object.");
@@ -463,6 +470,7 @@ export async function generateBannerTemplate({
   variantSeed = 0,
   textModel: textModelOverride = null,
   systemPromptOverride = null,
+  referenceContextText = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
   const styled   = enforceStaticBanner(applyStyleRow(FALLBACK_TEMPLATE, styleRow));
@@ -516,7 +524,7 @@ export async function generateBannerTemplate({
       maxTokens:   textModel.config?.maxTokens   ?? 6000,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user",   content: buildUserMessage({ prompt, style, aspect, variantSeed }) },
+        { role: "user",   content: buildUserMessage({ prompt, style, aspect, variantSeed, referenceContextText }) },
       ],
     });
 

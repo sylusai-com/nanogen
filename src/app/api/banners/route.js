@@ -13,6 +13,10 @@ import {
   getEnabledTextModelByRefWithSecrets,
   listEnabledTextModelsWithSecrets,
 } from "@/lib/db/models";
+import {
+  extractReferenceImageContext,
+  formatReferenceContextForPrompt,
+} from "@/lib/referenceImage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
   clientKey,
@@ -134,7 +138,23 @@ export async function POST(req) {
     usable = allModels.filter((m) => pickApiKey(m));
   }
 
-  // 2. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
+  // 2. If the user uploaded a reference image, ask a vision model to
+  //    extract structured context (subject, palette, mood, composition).
+  //    This runs once per request — the resulting paragraph is appended
+  //    to the user message sent to every banner-generation variant. We
+  //    swallow extractor failures: missing context is acceptable, the
+  //    pipeline degrades to the brief alone.
+  let referenceContext = null;
+  let referenceContextText = null;
+  if (referenceImage) {
+    referenceContext = await extractReferenceImageContext({
+      adminClient,
+      imageUrl: referenceImage,
+    });
+    referenceContextText = formatReferenceContextForPrompt(referenceContext);
+  }
+
+  // 3. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
   //    so the user actually gets cross-model variety. With 1 model, run
   //    SOLO_VARIANT_COUNT variants (different archetype seeds). With 0
   //    models we still call generateBannerTemplate so the rich fallback
@@ -151,7 +171,7 @@ export async function POST(req) {
     plan = usable.map((m, i) => ({ model: m, variantSeed: i }));
   }
 
-  // 3. Generate every variant in parallel. Each call is independent —
+  // 4. Generate every variant in parallel. Each call is independent —
   //    one model failing doesn't cancel the others (Promise.allSettled).
   const settled = await Promise.allSettled(
     plan.map(({ model, variantSeed }) =>
@@ -162,6 +182,7 @@ export async function POST(req) {
         aspect,
         variantSeed,
         textModel: model,
+        referenceContextText,
       }),
     ),
   );
@@ -237,8 +258,10 @@ export async function POST(req) {
   const template        = winner.template;
   const passedThreshold = winner.score >= SCORE_THRESHOLD;
 
-  // 6. Persist the full generation run (all model variants) so dashboard
-  // can show one prompt with all model outputs grouped together.
+  // 7. Persist the full generation run (all model variants) so dashboard
+  // can show one prompt with all model outputs grouped together. The
+  // reference image (and its extracted context) are stored on the run so
+  // every variant in the run shares the same inspiration source.
   const modelsForRun = plan
     .map((p) => p.model?.modelId)
     .filter(Boolean);
@@ -250,6 +273,8 @@ export async function POST(req) {
       aspect,
       style,
       models: modelsForRun.length ? modelsForRun : ["fallback"],
+      reference_image_url: referenceImage || null,
+      reference_context:   referenceContext  || null,
     })
     .select("id")
     .single();
@@ -294,63 +319,10 @@ export async function POST(req) {
     );
   }
 
-  // 7. Persist a banner row per model variant in this run.
-  // If the user uploaded a reference image, swap it into every variant's
-  // bg_image field so all model outputs use their photo as the backdrop.
-  // bg_image values are stored wrapped in url("…"). The model is told NOT
-  // to wire --bg-image into its CSS (banner is HTML+CSS only by default),
-  // so we also inject the CSS necessary to render the user's upload.
-  if (referenceImage) {
-    const wrapped = `url("${referenceImage}")`;
-    for (const v of scored) {
-      const t = v.template;
-      const fields = t?.fields;
-      if (!Array.isArray(fields)) continue;
-      const bgField = fields.find((f) => f?.type === "image" && f.id === "bg_image");
-      if (bgField) {
-        bgField.value = wrapped;
-      } else {
-        fields.push({
-          id: "bg_image",
-          type: "image",
-          cssVar: "--bg-image",
-          label: "Background image",
-          value: wrapped,
-        });
-      }
-
-      // Wire --bg-image into the CSS the first time we see this template.
-      // Idempotent: only injected when --bg-image isn't already referenced.
-      if (typeof t.css === "string" && !t.css.includes("--bg-image")) {
-        t.css = `:root { --bg-image: ${wrapped}; }
-.banner::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background-image: var(--bg-image);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-.banner::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.55));
-}
-` + t.css;
-      } else if (typeof t.css === "string") {
-        // Update the :root value to the user's URL.
-        t.css = t.css.replace(
-          /(--bg-image\s*:\s*)[^;]+;/i,
-          `$1${wrapped};`,
-        );
-      }
-    }
-  }
-
+  // 8. Persist a banner row per model variant in this run. The
+  //    reference image (data: URI) and the extracted context are stored
+  //    on every banner so /dashboard/banners/[id] can show the user the
+  //    image they uploaded alongside the AI-generated banner.
   const bannerRows = scored.map((v) => {
     const t = v.template;
     const bg = bgFromTemplate(t);
@@ -382,6 +354,8 @@ export async function POST(req) {
       fields: t.fields,
       alignment: t.alignment,
       canvas: { background: bg, elements: [] },
+      reference_image_url: referenceImage   || null,
+      reference_context:   referenceContext || null,
     };
   });
 

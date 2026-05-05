@@ -21,6 +21,7 @@ import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
+import ReferencePanel from "@/components/banner/ReferencePanel";
 import { cn } from "@/lib/cn";
 import { buildCompositeStandaloneHtml } from "@/lib/bannerDownload";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
@@ -264,6 +265,14 @@ export default function BannerDetail({ params }) {
                 Delete banner
               </button>
             </Card>
+
+            {/* Reference image + AI-extracted context, when the user
+                attached a reference at /dashboard/create. Hidden when
+                this banner has no reference. */}
+            <ReferencePanel
+              imageUrl={banner.referenceImageUrl}
+              context={banner.referenceContext}
+            />
           </div>
         </div>
       </div>

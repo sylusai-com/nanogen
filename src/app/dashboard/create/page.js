@@ -3,16 +3,17 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle } from "lucide-react";
 import TopBar from "@/components/dashboard/TopBar";
 import Eyebrow from "@/components/ui/Eyebrow";
-import Card from "@/components/ui/Card";
 import PromptForm from "@/components/generate/PromptForm";
 import GenerationProgress from "@/components/generate/GenerationProgress";
+import { useAuth } from "@/components/layout/AuthProvider";
 import { invalidateTags } from "@/lib/cache";
 
 export default function DashboardCreate() {
   const router = useRouter();
+  const { isAdmin } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [submittedAspect, setSubmittedAspect] = useState("16:9");
   const [error, setError]           = useState(null);
@@ -39,11 +40,14 @@ export default function DashboardCreate() {
       // refresh when new runs/results are created.
       invalidateTags(["banners", "generation_results"]);
 
-      // Surface per-model failures so admins can see (e.g.) "Claude
-      // Sonnet 4.6 failed: invalid model ID — fix in Admin → Models".
-      // The banner still saved (other models succeeded or fallback ran)
-      // so we redirect after a short pause.
-      if (Array.isArray(data.modelErrors) && data.modelErrors.length) {
+      // Surface per-model failures only to admins — regular users don't
+      // need to know which model failed. Admins can use the warning to
+      // fix the failing rows in Admin → Models.
+      if (
+        isAdmin &&
+        Array.isArray(data.modelErrors) &&
+        data.modelErrors.length
+      ) {
         setModelErrors(data.modelErrors);
       }
 
@@ -52,10 +56,13 @@ export default function DashboardCreate() {
         ? "/dashboard/banners"
         : `/dashboard/banners/${data.banner.id}/edit`;
 
-      // If the WINNER fell back, surface why. Same redirect-after-pause UX.
+      // If the WINNER fell back, surface why — admins see the reason
+      // verbatim, regular users get a generic notice.
       if (data.reason) {
         setError(
-          `Banner saved using the fallback template. Reason: ${data.reason}`,
+          isAdmin
+            ? `Banner saved using the fallback template. Reason: ${data.reason}`
+            : "We couldn't reach the AI model just now, so we saved a default banner you can edit.",
         );
         setTimeout(() => {
           router.push(destination);
@@ -63,11 +70,14 @@ export default function DashboardCreate() {
         return;
       }
 
-      // If we picked the top scorer below threshold, let the user know
-      // they can regenerate for a stronger result before redirecting.
+      // If we picked the top scorer below threshold, suggest regenerating
+      // for a stronger result. Internal threshold/score numbers are hidden
+      // from regular users.
       if (data.passedThreshold === false && typeof data.score === "number") {
         setError(
-          `Showing the top-scoring variant (${data.score}/100). None of the ${data.variants?.length ?? 0} variants reached the ${data.threshold}-point threshold — regenerate or refine the prompt for a stronger result.`,
+          isAdmin
+            ? `Showing the top-scoring variant (${data.score}/100). None of the ${data.variants?.length ?? 0} variants reached the ${data.threshold}-point threshold — regenerate or refine the prompt for a stronger result.`
+            : "Saved your banner — try regenerating or refining your prompt if you want a stronger result.",
         );
         setTimeout(() => {
           router.push(destination);
@@ -106,8 +116,8 @@ export default function DashboardCreate() {
           </h1>
           <p className="mt-2 text-sm text-muted">
             {submitting
-              ? "Nanogen is fanning your prompt out across every enabled text model and scoring each result. Hang tight — usually 10–30 seconds."
-              : "Describe the banner in plain language. Nanogen treats your prompt as the source of truth, fans it across every admin-enabled text model in parallel, scores each result, and surfaces the best one."}
+              ? "Hang tight — your banner is being generated. This usually takes 10–30 seconds."
+              : "Describe the banner you want in plain language. We’ll generate it from your prompt and drop you into the editor."}
           </p>
         </header>
 
@@ -150,38 +160,7 @@ export default function DashboardCreate() {
           // user gets a single, focused "we're working on it" view.
           <GenerationProgress aspect={submittedAspect} />
         ) : (
-          <div className="grid gap-6 md:grid-cols-[1fr_320px]">
-            <div className="min-w-0 space-y-6">
-              <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
-            </div>
-
-            <Card elevated className="h-fit p-5">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--primary)_14%,transparent)] text-primary ring-1 ring-inset ring-[color-mix(in_oklab,var(--primary)_25%,transparent)]">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <h3 className="mt-4 text-sm font-semibold tracking-tight">
-                How it works
-              </h3>
-              <ol className="mt-3 space-y-3 text-xs text-muted">
-                <li className="flex gap-2">
-                  <span className="font-mono text-muted-strong">1.</span>
-                  Your prompt is fanned out across every admin-enabled text
-                  model (Admin → Models).
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-mono text-muted-strong">2.</span>
-                  Each model produces a banner variant; all are scored in
-                  parallel against the same rubric.
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-mono text-muted-strong">3.</span>
-                  The top scorer (≥ 80, else absolute top) is saved to your
-                  library — fine-tune in the editor or rearrange in the
-                  visual builder.
-                </li>
-              </ol>
-            </Card>
-          </div>
+          <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
         )}
       </div>
     </>

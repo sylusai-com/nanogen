@@ -9,7 +9,10 @@ import {
   pickApiKey,
 } from "@/lib/bannerTemplate";
 import { scoreBannerTemplate } from "@/lib/scoreBanner";
-import { listEnabledTextModelsWithSecrets } from "@/lib/db/models";
+import {
+  getEnabledTextModelByRefWithSecrets,
+  listEnabledTextModelsWithSecrets,
+} from "@/lib/db/models";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
   clientKey,
@@ -76,7 +79,7 @@ export async function POST(req) {
   try { body = await readJson(req, { maxBytes: 4 * 1024 * 1024 }); }
   catch (e) { return errorResponse(e); }
 
-  let prompt, style, aspect, referenceImage;
+  let prompt, style, aspect, referenceImage, modelRef;
   try {
     prompt = validateString(body.prompt, {
       name: "prompt", min: 3, max: 4000, required: true,
@@ -86,6 +89,11 @@ export async function POST(req) {
     // the brief alone, not be biased toward a theme they never asked for.
     style  = validateString(body.style, { name: "style", max: 60 }) || null;
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
+
+    // Optional model selection from the dashboard ChatGPT-style picker.
+    // When unset (or "auto"), we fan out across every enabled model.
+    // Otherwise we look up that specific model and use only it.
+    modelRef = validateString(body.model, { name: "model", max: 80 }) || null;
 
     // Optional user-uploaded reference image. Accept either a data URL
     // or an https URL. Anything else is ignored — we don't want to feed
@@ -98,14 +106,33 @@ export async function POST(req) {
     }
   } catch (e) { return errorResponse(e); }
 
-  // 1. Resolve every enabled text model with secrets server-side (admin
-  //    client bypasses RLS for the config column). Filter to rows that
-  //    actually have an apiKey configured — there's no point hitting a
-  //    misconfigured row, and we want clear "no models configured"
-  //    messaging when admin hasn't set anything up yet.
+  // 1. Resolve which text model(s) to use. If the user picked a specific
+  //    model from the dashboard dropdown, only that model runs. Otherwise
+  //    we fan out across every enabled text model in parallel (legacy
+  //    "auto" behavior). We always go through the admin client so the
+  //    apiKey column is in scope (server-side only).
   const adminClient = createAdminClient();
-  const allModels   = await listEnabledTextModelsWithSecrets(adminClient);
-  const usable      = allModels.filter((m) => pickApiKey(m));
+
+  let usable;
+  if (modelRef && modelRef !== "auto") {
+    const picked = await getEnabledTextModelByRefWithSecrets(adminClient, modelRef);
+    if (!picked) {
+      return NextResponse.json(
+        { error: "Selected model is not enabled. Pick a different model or use Auto." },
+        { status: 400 },
+      );
+    }
+    if (!pickApiKey(picked)) {
+      return NextResponse.json(
+        { error: `Model "${picked.label}" has no API key configured. Ask an admin to set one.` },
+        { status: 400 },
+      );
+    }
+    usable = [picked];
+  } else {
+    const allModels = await listEnabledTextModelsWithSecrets(adminClient);
+    usable = allModels.filter((m) => pickApiKey(m));
+  }
 
   // 2. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
   //    so the user actually gets cross-model variety. With 1 model, run
@@ -270,11 +297,14 @@ export async function POST(req) {
   // 7. Persist a banner row per model variant in this run.
   // If the user uploaded a reference image, swap it into every variant's
   // bg_image field so all model outputs use their photo as the backdrop.
-  // bg_image values are stored wrapped in url("…").
+  // bg_image values are stored wrapped in url("…"). The model is told NOT
+  // to wire --bg-image into its CSS (banner is HTML+CSS only by default),
+  // so we also inject the CSS necessary to render the user's upload.
   if (referenceImage) {
     const wrapped = `url("${referenceImage}")`;
     for (const v of scored) {
-      const fields = v.template?.fields;
+      const t = v.template;
+      const fields = t?.fields;
       if (!Array.isArray(fields)) continue;
       const bgField = fields.find((f) => f?.type === "image" && f.id === "bg_image");
       if (bgField) {
@@ -287,6 +317,36 @@ export async function POST(req) {
           label: "Background image",
           value: wrapped,
         });
+      }
+
+      // Wire --bg-image into the CSS the first time we see this template.
+      // Idempotent: only injected when --bg-image isn't already referenced.
+      if (typeof t.css === "string" && !t.css.includes("--bg-image")) {
+        t.css = `:root { --bg-image: ${wrapped}; }
+.banner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.55));
+}
+` + t.css;
+      } else if (typeof t.css === "string") {
+        // Update the :root value to the user's URL.
+        t.css = t.css.replace(
+          /(--bg-image\s*:\s*)[^;]+;/i,
+          `$1${wrapped};`,
+        );
       }
     }
   }

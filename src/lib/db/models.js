@@ -82,6 +82,22 @@ export async function listAllModels(supabase) {
   return publicShapeMany(data);
 }
 
+// Public list of every enabled text model — used by the dashboard's model
+// picker so users can pick which LLM generates their banner. Returns the
+// default model first, then the rest in sort order. Browser-safe: no
+// secrets are returned.
+export async function listEnabledTextModels(supabase) {
+  const { data, error } = await supabase
+    .from("models")
+    .select(PUBLIC_COLUMNS)
+    .eq("kind", "text")
+    .eq("enabled", true)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return publicShapeMany(data);
+}
+
 // Public lookup — used by browser code (PromptForm, editor) to show
 // which model is currently default. The browser does NOT need the API
 // key — server routes resolve it via getDefaultTextModelWithSecrets.
@@ -145,6 +161,28 @@ export async function listEnabledTextModelsWithSecrets(adminClient) {
     .order("sort_order", { ascending: true });
   if (error) throw error;
   return data || [];
+}
+
+// Server-only lookup of a single enabled text model (with secrets) by id
+// or slug — used by /api/banners to resolve the model the user picked
+// from the dashboard dropdown. Returns null when no enabled text row
+// matches, so the caller can fall back to the multi-model fan-out.
+export async function getEnabledTextModelByRefWithSecrets(adminClient, ref) {
+  const value = String(ref || "").trim();
+  if (!value) return null;
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const column = isUuid ? "id" : "slug";
+
+  const { data, error } = await adminClient
+    .from("models")
+    .select(ADMIN_COLUMNS)
+    .eq("kind", "text")
+    .eq("enabled", true)
+    .eq(column, value)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
 }
 
 export async function listImageModelsWithSecrets(adminClient, slugs) {

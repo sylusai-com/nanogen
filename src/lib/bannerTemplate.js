@@ -3,330 +3,35 @@
 // banner in one shot) and /api/banners/html (returns the template for the
 // editor).
 //
-// v4 — overhauled to produce dramatically richer, more modern banners.
-//   1. Mandates a high density of distinct visual elements per banner (10+).
-//   2. Catalog of decorative & functional components the model should mix.
-//   3. CSS techniques required: animations, glassmorphism, noise, gradients
-//      with color-mix(), masks, blend modes.
-//   4. Provider/key/endpoint resolution is fully driven by the admin row —
-//      any OpenAI-compatible provider works (OpenRouter is just one of them).
+// Backgrounds: the banner is HTML + CSS only. NO external image URLs.
+// Backgrounds are produced by the model using CSS gradients, color-mix,
+// and inline SVG (data: URIs). External hosts (Unsplash, Pexels, Imgur,
+// etc.) are stripped from the output to ensure the banner renders even
+// when the model hallucinates a stock photo URL.
 
 import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
 import { getStyleByName } from "@/lib/db/styles";
+import { getActiveSystemPrompt } from "@/lib/db/settings";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   accentFor,
-  adjustForContrast,
   contrastRatio,
   readableForegroundFor,
 } from "@/lib/color";
 
 // ─────────────────────────────────────────────────────────────────────────
-// SYSTEM PROMPT
+// SYSTEM PROMPT (fallback)
 //
-// Optimised for fast, low-token responses. We only need valid HTML + CSS
-// (plus a small set of editable fields) — no archetype catalog, no
-// mandatory richness rules, no aesthetic dictation. The model is free to
-// pick its own composition. The previous 5k-character prompt forced a lot
-// of CSS techniques that made every response slow without proportional
-// quality gains.
+// Used when no admin-configured prompt is set in the app_settings table.
+// Admins can override this from /admin/prompt and the change applies to
+// every subsequent banner generation request.
 // ─────────────────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT_HEAVY = `You are a senior brand designer who has shipped award-winning campaigns for Apple, Stripe, Linear, Vercel, Figma, and Arc. You generate production-grade, FLAGSHIP-quality marketing banners as JSON. Every banner you make looks like it could ship on the homepage of a top-tier product company. Lazy or generic output is unacceptable.
-
-OUTPUT — a single JSON object exactly matching this schema:
-
-{
-  "html": string,
-  "css": string,
-  "alignment": "left" | "center" | "right",
-  "fields": [
-    { "id": string, "type": "text",   "slot": string,     "label": string, "value": string },
-    { "id": string, "type": "color",  "cssVar": string,   "label": string, "value": string },
-    { "id": string, "type": "range",  "cssVar": string,   "label": string, "value": number, "min": number, "max": number, "step": number, "unit": string },
-    { "id": string, "type": "select", "cssVar": string,   "label": string, "value": string, "options": [{ "value": string, "label": string }] },
-    { "id": string, "type": "toggle", "selector": string, "label": string, "value": boolean },
-    { "id": string, "type": "image",  "cssVar": string,   "label": string, "value": string }
-  ]
-}
-
-═══════════════════════════════════════════════════════════════════════════
-COLOR THEORY — INSTANT REJECTION RULES
-═══════════════════════════════════════════════════════════════════════════
-
-Color contrast failures are the most common reason banners ship broken. You
-MUST enforce these rules:
-
-1. **Background vs foreground contrast**: The "fg" text color MUST have a
-   WCAG contrast ratio of AT LEAST 4.5:1 against the "bg" color. As a
-   simple rule: if "bg" is dark (luminance < 0.5), "fg" MUST be a light
-   color (≥ #e5e5ea). If "bg" is light (luminance ≥ 0.5), "fg" MUST be
-   a dark color (≤ #1a1a22).
-
-   GOOD pairs (use these patterns):
-     bg #0a0a0f + fg #ffffff          ← dark theme
-     bg #0c1226 + fg #f8fafc          ← deep navy + warm white
-     bg #faf7f2 + fg #1a1a22          ← warm cream + near-black
-     bg #f4f1ec + fg #14213d          ← editorial cream + deep navy
-     bg #fff5e1 + fg #2b0a3d          ← soft peach + plum
-
-   BAD pairs (NEVER do this):
-     bg #0a0a0f + fg #1a1a22          ← dark on dark — invisible!
-     bg #ffffff + fg #f5f5f5          ← light on light
-     bg #1a1a22 + fg #2a2a3f          ← muddy and unreadable
-
-2. **Accent colors**: The "accent" and "accent2" / "accent3" colors are
-   used for borders, eyebrow pills, button gradients, dot markers, headline
-   gradient stops. They MUST contrast the bg by at least 3.0:1. Pick
-   saturated, non-muddy hues — violets, cyans, fuchsias, ambers, emeralds.
-
-3. **Text gradients on the headline**: When you use background-clip: text
-   for a gradient headline, BOTH gradient stops must be light enough to
-   read on dark bg, OR dark enough to read on light bg. NEVER pair a
-   bright accent with a dark fg-derived stop on a dark bg — it disappears.
-
-4. **Subhead / muted color**: Define --muted as a color-mix(in oklab, var(--fg) 65%, transparent) (or similar) so muted text is the same family as fg, just lower opacity. NEVER hardcode --muted as gray on a dark bg without checking.
-
-5. **Cohesive palette**: bg, fg, accent, accent2, accent3 should feel like
-   one designed palette — not random colors. Pick a vibe (cyber-violet,
-   editorial cream, sunset peach, fintech midnight, organic green) and
-   stick to it.
-
-═══════════════════════════════════════════════════════════════════════════
-MANDATORY RICHNESS — these are non-negotiable
-═══════════════════════════════════════════════════════════════════════════
-
-A. **Component density**: Every banner MUST contain at least 10 distinct visual elements. A "headline + subhead + button + two blurry orbs" banner is REJECTED. Combine layered backgrounds, decorative shapes, content components, and microcopy.
-
-B. **CSS sophistication**: Use AT LEAST 6 of these techniques on every banner:
-   - linear-gradient + radial-gradient combinations
-   - color-mix(in oklab, ...) for harmonious tints
-   - backdrop-filter: blur(...) saturate(...) for glassmorphism
-   - mix-blend-mode (overlay, screen, difference)
-   - mask-image / -webkit-mask-image (radial or linear masks for soft edges)
-   - clip-path (polygon, circle) for geometric shapes
-   - filter: drop-shadow / blur / hue-rotate
-   - @keyframes animations (subtle: 6–20s loops — float, drift, shimmer, pulse, rotate)
-   - transform: rotate / skew / scale / perspective for depth
-   - Inline SVG patterns (grids, dots, noise, waves, isometric)
-   - text-shadow / box-shadow with multiple layers
-   - CSS gradients on text (background-clip: text)
-   - Conic gradients (conic-gradient(...))
-   - Custom outlined ::before / ::after pseudo-elements
-
-C. **Required ANIMATION**: Always include at least one subtle CSS animation (gradient drift, orb float, pulse, marquee, shimmer). Animations are slow (8s+), low-amplitude, never distracting.
-
-D. **Required DECORATIVE LAYERS**: Include 2+ decorative layers stacked behind content:
-   - Layer 1: Base gradient or photo
-   - Layer 2: Texture (SVG noise, grid, dots, scan lines)
-   - Layer 3: Hero accent (orbs, gradient mesh, geometric shapes)
-   - Layer 4 (optional): Foreground glass card or vignette overlay
-
-═══════════════════════════════════════════════════════════════════════════
-LAYOUT ARCHETYPES — CHOOSE ONE based on the brief
-═══════════════════════════════════════════════════════════════════════════
-
-A. FULL-BLEED IMAGE — Photo background fills the canvas, text bottom-left or
-   bottom-right with strong gradient scrim for legibility. Big condensed
-   headline. Add: floating badge pills, decorative corner brackets, scan-line
-   overlay, animated shimmer on the headline.
-
-B. SPLIT 50/50 — Photo on one half, solid/gradient color block on the other
-   with text. Asymmetric crop, optional diagonal split via clip-path. Add:
-   eyebrow tag, dual CTA, supporting metric row, vertical date/issue strip
-   on the photo edge.
-
-C. EDITORIAL / MAGAZINE COVER — Centered hero image with text overlapping the
-   image edge, oversized serif/display headline, small body, issue number or
-   date strip, byline, page-number footer, a quote pulled out, decorative
-   horizontal rules.
-
-D. GRID COMPOSITION — Multiple image tiles arranged in a 2x2 or 3-column
-   grid with a headline panel taking one cell. Add: small label chips on
-   each tile, hover-style ring decoration, footer with category list.
-
-E. GRADIENT MESH — No photo. Lush overlapping radial gradients (4+ colors,
-   color-mix, blurred orbs animated with float keyframes). Add: glassmorphic
-   foreground card with eyebrow + headline + subhead + dual CTAs, an inline
-   feature row (3 icon+label items), trust badges row underneath, animated
-   gradient border on the card.
-
-F. GEOMETRIC / SWISS — No photo. Bold geometric shapes (rotated rectangles,
-   circles, lines via SVG), strong grid, helvetica-style typography, lots of
-   white space. Add: small numbered markers (01 / 02 / 03), a thin horizontal
-   rule under the headline, corner registration marks, version/edition tag.
-
-G. TICKER / TYPOGRAPHIC — Headline IS the design — gigantic words filling the
-   canvas (use a stroke-only outline duplicate behind the filled headline),
-   marquee strip below or above with repeating microcopy, optional one small
-   inline image. Add: blinking cursor character, keyboard-shortcut chip,
-   release date footer.
-
-H. STATS / DATA — Headline plus 3-4 large numeric stats in a row. Each stat
-   is a small card with: big number (with gradient), label, delta indicator
-   (▲ green / ▼ red), tiny sparkline SVG. Subtle background photo or gradient.
-   Add: legend at bottom, time-range chip, source attribution microcopy.
-
-When the brief is generic, pick whichever archetype you used LEAST. NEVER
-default to the same shape twice. NEVER blend archetypes into a generic hybrid.
-
-═══════════════════════════════════════════════════════════════════════════
-COMPONENT CATALOG — mix at least 5 of these into every banner
-═══════════════════════════════════════════════════════════════════════════
-
-TEXT COMPONENTS:
-- Eyebrow pill with leading dot or icon
-- Multi-line gradient headline (background-clip: text)
-- Subhead paragraph (max 56ch, muted)
-- Inline status badge ("v2.0", "BETA", "LIVE", "NEW")
-- Inline keyboard shortcut chip (kbd-style)
-- Quote / pullquote with author
-- Stat block (number + label + delta)
-- Feature row (3-4 icon+label items)
-- Numbered list (01 / 02 / 03 markers)
-- Date / issue / edition strip
-- Trust line ("Loved by 10,000+ teams") with tiny avatar stack
-- Marquee ticker strip (animated translateX)
-- Two-CTA row (primary filled, secondary ghost) with arrow icons
-
-DECORATIVE COMPONENTS:
-- Floating orb (blurred radial gradient with float animation)
-- SVG grid pattern overlay (opacity 0.06–0.12)
-- SVG dot pattern overlay
-- SVG noise texture (turbulence + feColorMatrix)
-- Scan-line overlay (repeating linear gradient)
-- Conic-gradient ring or halo
-- Animated gradient border (mask + conic-gradient)
-- Corner registration marks (┌  ┐  └  ┘ via pseudo elements)
-- Geometric primitive (square, triangle, line) rotated and offset
-- Diagonal stripe panel (clip-path polygon)
-- Glassmorphic card (backdrop-filter blur + saturate)
-- Highlight underline / brush stroke (SVG path)
-- Glow ring around CTA on hover
-- Spotlight gradient (radial centered on focal point)
-
-DATA / MICRO COMPONENTS:
-- Tiny sparkline SVG (30x10)
-- Avatar stack (3 overlapping circles)
-- Logo wall row (placeholder boxes)
-- Progress bar (filled portion)
-- Compass / arrow indicator
-- Live dot (pulsing green circle)
-
-═══════════════════════════════════════════════════════════════════════════
-BACKGROUND IMAGES — REQUIRED for archetypes A, B, C, D. RECOMMENDED for H.
-═══════════════════════════════════════════════════════════════════════════
-
-When using an image:
-- ALWAYS include a real Unsplash URL using this EXACT pattern:
-  https://images.unsplash.com/photo-{ID}?w=1600&q=80&auto=format&fit=crop
-  Use real photo IDs that match the brief. Curated examples:
-  Tech / abstract:     1518770660439-4636190af475, 1620712943543-bcc4688e7485, 1517336714731-489689fd1ca8
-  Business / office:   1556761175-b413da4baf72, 1524758631624-e2822e304c36, 1542744173-8e7e53415bb0
-  Food / kitchen:      1542435503-956c469947f6, 1565299624946-b28f40a0ae38, 1559054663-e8d23213f55c
-  Travel / city:       1502602898657-3e91760cbb34, 1488646953014-85cb44e25828, 1493246507139-91e8fad9978e
-  Lifestyle / fashion: 1483985988355-763728e1935b, 1515886657613-9f3515b0c78f, 1542291026-7eec264c27ff
-  Nature:              1506905925346-21bda4d32df4, 1441974231531-c6227db76b6e, 1470071459604-3b5ec3a7fe05
-  Sport / fitness:     1518611012118-696072aa579a, 1571019613454-1cb2f99b2d8b
-  Music / events:      1493225457124-a3eb161ffa5f, 1459749411175-04bf5292ceea
-- Pick a photo ID that genuinely matches the brief subject.
-- Include the image as a field of type "image", id "bg_image", cssVar "--bg-image".
-- ALWAYS include these companion image-control fields (so the user can adjust):
-    { "id": "bg_brightness", "type": "range", "cssVar": "--bg-brightness", "label": "Image brightness", "value": 0.7, "min": 0.2, "max": 1.4, "step": 0.05, "unit": "" }
-    { "id": "bg_blur",       "type": "range", "cssVar": "--bg-blur",       "label": "Image blur",       "value": 0,   "min": 0,   "max": 24,  "step": 1,    "unit": "px" }
-    { "id": "bg_overlay",    "type": "range", "cssVar": "--bg-overlay",    "label": "Overlay opacity",  "value": 0.45, "min": 0,  "max": 1,   "step": 0.05, "unit": "" }
-    { "id": "bg_zoom",       "type": "range", "cssVar": "--bg-zoom",       "label": "Image zoom",       "value": 110, "min": 100, "max": 200, "step": 5,    "unit": "%" }
-    { "id": "bg_position",   "type": "select", "cssVar": "--bg-position",  "label": "Image position",   "value": "center center", "options": [{"value":"center center","label":"Center"},{"value":"center top","label":"Top"},{"value":"center bottom","label":"Bottom"},{"value":"left center","label":"Left"},{"value":"right center","label":"Right"}] }
-
-- WIRE THEM UP in CSS like this:
-    .banner__bg {
-      background-image: var(--bg-image);
-      background-size: var(--bg-zoom);
-      background-position: var(--bg-position);
-      filter: brightness(var(--bg-brightness)) blur(var(--bg-blur));
-    }
-
-═══════════════════════════════════════════════════════════════════════════
-TEXT FIELDS — adapt to the archetype
-═══════════════════════════════════════════════════════════════════════════
-
-REQUIRED on every banner: "headline" (text), "bg" (color), "fg" (color), "accent" (color).
-
-STRONGLY RECOMMENDED — pick at least 4 more depending on archetype:
-- "eyebrow", "subhead", "cta_primary", "cta_secondary"
-- "stat1_value" + "stat1_label" + "stat2_value" + "stat2_label" + ...
-- "issue", "edition", "byline", "date"
-- "quote", "author"
-- "label", "version_tag"
-- "feature1_title" + "feature1_desc" + ...
-- "trust_line", "logo_caption"
-- "marquee_text"
-
-Always include "headline_size" range (--headline-size, px, 32–120).
-Always include "accent2" color for two-tone gradients.
-Sometimes include "accent3" color for tri-stop effects.
-Always include the image-control fields when using a photo.
-Always include "show_decor" toggle to hide the decorative layer if desired.
-
-═══════════════════════════════════════════════════════════════════════════
-TYPOGRAPHY & FORMATTING
-═══════════════════════════════════════════════════════════════════════════
-
-- Font: 'Geist', ui-sans-serif, system-ui, sans-serif. Use serif (ui-serif, Georgia, serif) for editorial/magazine archetype.
-- Use clamp() for responsive sizes.
-- Headline: huge, tight letter-spacing (-0.02em to -0.04em), weight 600–800, optional gradient text.
-- Body: 14–18px, line-height 1.45–1.6, color slightly muted (color-mix with bg).
-- Eyebrow: 11px uppercase 600 letter-spacing 0.18em.
-- CTAs: real button styling — primary uses gradient/solid fill with shadow, secondary uses ghost (border + transparent). Both have generous padding (12px 22px+), arrow icon (→), border-radius 999px or 12px.
-- Use mix-blend-mode, backdrop-filter, color-mix(in oklab,…) freely.
-
-═══════════════════════════════════════════════════════════════════════════
-STRUCTURAL RULES
-═══════════════════════════════════════════════════════════════════════════
-
-- Root: <div class="banner" data-align="left|center|right">
-- Wrap decorative layers in <div class="banner__bg"> (each as its own child).
-- Wrap content in <div class="banner__inner">.
-- Editable text uses [data-slot="<id>"] where id matches a text field's id.
-- Editable colors are CSS custom properties — define them in :root.
-- Range fields drive numeric CSS values (use the unit).
-- Select fields set CSS variables to one of their option values.
-- Toggle fields hide/show an element via a CSS selector.
-- Image fields set a CSS variable to a url() expression.
-
-CSS RULES:
-- * { box-sizing: border-box; }
-- html, body { margin: 0; height: 100%; background: transparent; }
-- .banner must fill its container: width: 100%; height: 100%; min-height: 320px; overflow: hidden; isolation: isolate; border-radius: 16px;
-- DO NOT load external fonts or external scripts. External background images via https URLs are OK. Inline SVG (data: URLs OK) is encouraged.
-
-═══════════════════════════════════════════════════════════════════════════
-ANTI-PATTERNS — INSTANT REJECTION
-═══════════════════════════════════════════════════════════════════════════
-
-❌ Background and foreground colors with low contrast (anything below 4.5:1).
-❌ Dark text on dark background. Light text on light background. EVER.
-❌ Headline text-color set to the same value as bg (so it disappears).
-❌ Generic centered "Eyebrow / Headline / Subhead / Get started" stack on plain dark gradient with two blurred orbs.
-❌ Plain HTML with only 3-4 elements ("Register Now"-style brochure layouts).
-❌ Same color-stop gradient mesh on every banner.
-❌ Plain white text on plain black background with no decoration.
-❌ Headline below 32px or above 120px.
-❌ Boring placeholder copy. Write headlines that fit the brief subject.
-❌ Fewer than 10 distinct visual elements. If your HTML has only 5 children, redo it.
-❌ No animation. Every banner needs at least one subtle keyframe loop.
-❌ Skipping the SVG noise/grid/dot decorative layer.
-❌ HTML output that is mostly plain text (e.g. "Register now") with no styling structure. This is NOT a banner — it's a sign. REJECTED.
-
-OUTPUT — return ONLY the JSON object. No prose, no markdown fences, no explanation. The HTML and CSS strings inside the JSON should be valid, complete, and self-contained. The HTML must contain at LEAST 12 elements (count opening tags). The CSS must be at LEAST 1500 characters. If your output is shorter than that, you haven't done the job.`;
-
-// Lean prompt actually used by the API. It keeps the output contract tight
-// while letting the user's explicit preferences drive the design.
-const SYSTEM_PROMPT = `You generate marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
+export const DEFAULT_SYSTEM_PROMPT = `You generate marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
 
 The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
 
-Schema:
+OUTPUT FORMAT — strict JSON, exactly matching this schema:
 {
   "html": string,
   "css":  string,
@@ -334,24 +39,28 @@ Schema:
   "fields": [
     { "id": string, "type": "text",   "slot":     string, "label": string, "value": string },
     { "id": string, "type": "color",  "cssVar":   string, "label": string, "value": string },
-    { "id": string, "type": "image",  "cssVar":   string, "label": string, "value": string },
     { "id": string, "type": "range",  "cssVar":   string, "label": string, "value": number, "min": number, "max": number, "step": number, "unit": string },
     { "id": string, "type": "select", "cssVar":   string, "label": string, "value": string, "options": [{ "value": string, "label": string }] },
     { "id": string, "type": "toggle", "selector": string, "label": string, "value": boolean }
   ]
 }
 
-Rules:
-- Required fields: a "headline" text field and color fields with ids "bg", "fg", "accent".
+OUTPUT MUST BE PURE HTML + CSS:
+- Only the html and css strings define the banner. No JavaScript. No external scripts.
+- DO NOT load external fonts and DO NOT reference external image hosts (Unsplash, Pexels, Imgur, Giphy, CDNs, etc.). External http(s) image URLs are FORBIDDEN.
+- Backgrounds must be produced ENTIRELY with CSS — gradients (linear/radial/conic), color-mix(in oklab, …), background-blend-mode, mix-blend-mode, mask-image, clip-path, filter, transform — and inline SVG embedded as data: URIs (url("data:image/svg+xml;utf8,…")). Inline SVG patterns are encouraged for noise, dots, grids, waves.
+- Background imagery must be relevant to the brief: pick gradient palettes, shapes, and SVG motifs that match the topic/category (e.g. food brief → warm earthy gradients with subtle plate/leaf SVG silhouettes; tech brief → cool cyber-violet mesh with circuit / dot patterns). Do NOT default to the same theme on every banner.
+- The "image" field type is supported by the schema but you MUST NOT use it. Do not emit any field with type "image". Do not include any url("https://…") references.
+
+REQUIRED FIELDS:
+- A "headline" text field and color fields with ids "bg", "fg", "accent".
 - Editable text uses [data-slot="<id>"] in HTML, where <id> matches a text field's id.
-- Colors are CSS variables (defined in :root) referenced by cssVar.
+- Colors are CSS variables defined in :root and referenced by cssVar.
 - bg vs fg contrast must be readable (≥ 4.5:1 WCAG).
 - Root element: <div class="banner" data-align="left|center|right">.
 - The .banner CSS must include: position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate.
-- No external scripts, no external fonts. https image URLs are fine.
-- Pick palette and composition that fit the user's brief. Do not impose a default theme.
 
-Return ONLY the JSON.`;
+Pick palette and composition that fit the user's brief. Do not impose a default theme. Return ONLY the JSON.`;
 
 // User message is brief — only include style/aspect when the caller passed
 // them. Empty/falsy values are dropped so the model is not biased toward a
@@ -359,21 +68,19 @@ Return ONLY the JSON.`;
 function buildUserMessage({ prompt, style, aspect, variantSeed = 0 }) {
   const lines = [
     `BRIEF (authoritative): ${prompt}`,
-    `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or image usage.`,
+    `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or imagery.`,
   ];
   if (style && String(style).trim())  lines.push(`STYLE PREFERENCE: ${style}`);
   if (aspect && String(aspect).trim()) lines.push(`ASPECT PREFERENCE: ${aspect}`);
-  // Tiny variant nudge — only used by solo fan-out when the same prompt is
-  // sent more than once, so the second call produces something different.
   if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
-  lines.push(`If the prompt mentions a light background, use a light background. If it does not, choose the best visual direction yourself.`);
+  lines.push(`The banner is HTML + CSS only — NO external image URLs. Build any background using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.`);
   lines.push("Return ONLY the JSON object.");
   return lines.join("\n");
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// FALLBACK — used when no model is configured / call fails. Richer than
-// the previous fallback so even the no-model case looks decent.
+// FALLBACK — used when no model is configured / call fails. CSS-only:
+// gradients, SVG noise, decorative orbs. No external image URLs.
 // ─────────────────────────────────────────────────────────────────────────
 const FALLBACK_TEMPLATE = {
   html: `<div class="banner" data-align="left">
@@ -432,10 +139,7 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
     radial-gradient(50% 70% at 100% 100%, color-mix(in oklab, var(--accent2) 28%, transparent) 0%, transparent 60%),
     radial-gradient(40% 60% at 80% 0%, color-mix(in oklab, var(--accent3) 22%, transparent) 0%, transparent 60%),
     linear-gradient(135deg, color-mix(in oklab, var(--bg) 92%, var(--accent) 8%), var(--bg) 70%);
-  animation: meshDrift 20s ease-in-out infinite alternate;
 }
-@keyframes meshDrift { from { transform: translate3d(0,0,0) scale(1); } to { transform: translate3d(-2%, 1%, 0) scale(1.05); } }
-
 .banner__grid {
   position: absolute; inset: 0;
   background-image:
@@ -451,10 +155,9 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.7 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/></svg>");
 }
 .banner__orb { position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.55; }
-.banner__orb--a { width: 50%; height: 70%; left: -10%; top: -20%; background: radial-gradient(circle, var(--accent), transparent 70%); animation: orbFloat 16s ease-in-out infinite alternate; }
-.banner__orb--b { width: 40%; height: 60%; right: -10%; bottom: -20%; background: radial-gradient(circle, var(--accent2), transparent 70%); animation: orbFloat 22s ease-in-out infinite alternate-reverse; }
-.banner__orb--c { width: 28%; height: 40%; right: 30%; top: 10%; background: radial-gradient(circle, var(--accent3), transparent 70%); animation: orbFloat 18s ease-in-out infinite alternate; opacity: 0.4; }
-@keyframes orbFloat { from { transform: translate(0,0); } to { transform: translate(3%, -2%); } }
+.banner__orb--a { width: 50%; height: 70%; left: -10%; top: -20%; background: radial-gradient(circle, var(--accent), transparent 70%); }
+.banner__orb--b { width: 40%; height: 60%; right: -10%; bottom: -20%; background: radial-gradient(circle, var(--accent2), transparent 70%); }
+.banner__orb--c { width: 28%; height: 40%; right: 30%; top: 10%; background: radial-gradient(circle, var(--accent3), transparent 70%); opacity: 0.4; }
 
 .banner__corner { position: absolute; width: 28px; height: 28px; opacity: 0.45; pointer-events: none; }
 .banner__corner--tl { top: 16px; left: 16px; border-top: 1px solid var(--fg); border-left: 1px solid var(--fg); }
@@ -478,8 +181,7 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   background: color-mix(in oklab, var(--accent) 12%, transparent);
   backdrop-filter: blur(8px);
 }
-.banner__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.7; } }
+.banner__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
 .banner__version {
   font-size: 10px; font-family: ui-monospace, monospace; color: var(--muted);
   border: 1px solid color-mix(in oklab, var(--fg) 16%, transparent);
@@ -511,7 +213,6 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   display: inline-flex; align-items: center; gap: 6px;
   padding: 12px 22px; border-radius: 999px;
   font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .banner__cta--primary {
   background: linear-gradient(135deg, var(--accent), color-mix(in oklab, var(--accent) 60%, var(--accent2)));
@@ -524,7 +225,6 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   border: 1px solid color-mix(in oklab, var(--fg) 18%, transparent);
   backdrop-filter: blur(8px);
 }
-.banner__cta:hover { transform: translateY(-1px); }
 
 .banner__trust { display: inline-flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--muted); }
 .banner__avatars { display: inline-flex; }
@@ -571,126 +271,41 @@ function applyStyleRow(template, styleRow) {
       if (f.id === "accent") f.value = styleRow.accent;
     }
   }
-  // Style rows from admin can occasionally be miscalibrated — enforce
-  // contrast so we never ship invisible-text fallbacks.
   return enforceContrast(next);
 }
 
-// If the model emitted a background image but forgot the companion control
-// fields, inject sensible defaults so the user gets the full image control
-// panel in the editor.
-function ensureImageControls(template) {
-  if (!template?.fields) return template;
-  const fields    = template.fields;
-  const hasImage  = fields.some((f) => f.type === "image" && f.id === "bg_image");
-  if (!hasImage) return template;
+// Strip any external (http/https) image URLs the model emitted in defiance
+// of the system prompt. Inline SVG data: URIs are kept — those are
+// CSS-native and produced by the model itself; user-uploaded reference
+// images (data: URIs injected by the API route) also flow through unchanged.
+const EXTERNAL_URL_IN_CSS_RE = /url\(\s*["']?https?:\/\/[^)"']+["']?\s*\)/gi;
+const EXTERNAL_URL_RE        = /^https?:\/\//i;
 
-  const has = (id) => fields.some((f) => f.id === id);
-  const additions = [];
+function stripExternalImageUrls(template) {
+  if (!template) return template;
+  const next = { ...template };
 
-  if (!has("bg_brightness")) additions.push({
-    id: "bg_brightness", type: "range", cssVar: "--bg-brightness",
-    label: "Image brightness", value: 0.7, min: 0.2, max: 1.4, step: 0.05, unit: "",
-  });
-  if (!has("bg_blur")) additions.push({
-    id: "bg_blur", type: "range", cssVar: "--bg-blur",
-    label: "Image blur", value: 0, min: 0, max: 24, step: 1, unit: "px",
-  });
-  if (!has("bg_overlay")) additions.push({
-    id: "bg_overlay", type: "range", cssVar: "--bg-overlay",
-    label: "Overlay opacity", value: 0.45, min: 0, max: 1, step: 0.05, unit: "",
-  });
-  if (!has("bg_zoom")) additions.push({
-    id: "bg_zoom", type: "range", cssVar: "--bg-zoom",
-    label: "Image zoom", value: 110, min: 100, max: 200, step: 5, unit: "%",
-  });
-  if (!has("bg_position")) additions.push({
-    id: "bg_position", type: "select", cssVar: "--bg-position",
-    label: "Image position", value: "center center",
-    options: [
-      { value: "center center", label: "Center" },
-      { value: "center top",    label: "Top" },
-      { value: "center bottom", label: "Bottom" },
-      { value: "left center",   label: "Left" },
-      { value: "right center",  label: "Right" },
-    ],
-  });
-
-  if (additions.length === 0) return template;
-  return { ...template, fields: [...fields, ...additions] };
-}
-
-function unsplashForPrompt(prompt = "") {
-  const p = String(prompt || "").toLowerCase();
-  if (/food|kitchen|recipe|restaurant|coffee/.test(p)) {
-    return "https://images.unsplash.com/photo-1542435503-956c469947f6?auto=format&fit=crop&w=1600&q=80";
+  if (typeof next.html === "string") {
+    next.html = next.html
+      .replace(EXTERNAL_URL_IN_CSS_RE, 'none')
+      .replace(/<img\b[^>]*src\s*=\s*["']https?:\/\/[^"']+["'][^>]*\/?>(\s*<\/img>)?/gi, "");
   }
-  if (/travel|city|tour|hotel|flight|trip/.test(p)) {
-    return "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=1600&q=80";
+  if (typeof next.css === "string") {
+    next.css = next.css.replace(EXTERNAL_URL_IN_CSS_RE, 'none');
   }
-  if (/nature|eco|green|forest|mountain|outdoor/.test(p)) {
-    return "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1600&q=80";
+  if (Array.isArray(next.fields)) {
+    next.fields = next.fields
+      .map((f) => {
+        if (f?.type !== "image") return f;
+        const raw = String(f.value || "");
+        const m   = raw.match(/^url\(["']?(.+?)["']?\)$/i);
+        const inner = (m ? m[1] : raw).trim();
+        if (EXTERNAL_URL_RE.test(inner)) {
+          return { ...f, value: "" };
+        }
+        return f;
+      });
   }
-  if (/sport|fitness|gym|workout|running/.test(p)) {
-    return "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1600&q=80";
-  }
-  if (/fashion|lifestyle|beauty/.test(p)) {
-    return "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1600&q=80";
-  }
-  if (/business|office|finance|startup|saas/.test(p)) {
-    return "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1600&q=80";
-  }
-  return "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1600&q=80";
-}
-
-function ensureBackgroundImage(template, prompt = "") {
-  if (!template?.fields) return template;
-
-  const next = { ...template, fields: template.fields.map((f) => ({ ...f })) };
-  const hasBgImage = next.fields.some((f) => f.id === "bg_image" && f.type === "image");
-  if (!hasBgImage) {
-    next.fields.push({
-      id: "bg_image",
-      type: "image",
-      cssVar: "--bg-image",
-      label: "Background image",
-      value: unsplashForPrompt(prompt),
-    });
-  }
-
-  if (!next.css.includes("--bg-image")) {
-    next.css = `:root {\n  --bg-image: url(\"${unsplashForPrompt(prompt)}\");\n  --bg-overlay: 0.45;\n  --bg-brightness: 0.75;\n  --bg-blur: 0px;\n  --bg-zoom: 110%;\n  --bg-position: center center;\n}\n` + next.css;
-  }
-
-  if (!/\.banner::before\s*\{/.test(next.css)) {
-    next.css += `
-
-.banner { position: relative; isolation: isolate; }
-.banner::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background-image: var(--bg-image);
-  background-size: var(--bg-zoom, 110%);
-  background-position: var(--bg-position, center center);
-  background-repeat: no-repeat;
-  filter: brightness(var(--bg-brightness, 0.75)) blur(var(--bg-blur, 0px));
-  transform: scale(1.03);
-}
-.banner::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, calc(var(--bg-overlay, 0.45) * 0.9)),
-    rgba(0, 0, 0, var(--bg-overlay, 0.45))
-  );
-}`;
-  }
-
   return next;
 }
 
@@ -722,20 +337,20 @@ function validateTemplate(t) {
   if (!Array.isArray(t.fields) || t.fields.length === 0) return null;
   if (!["left", "center", "right"].includes(t.alignment)) t.alignment = "left";
 
+  // The model is told not to emit image fields, but we still accept them
+  // here so the editor can surface user-uploaded reference images (data:
+  // URIs) that get injected into the bg_image field after generation.
+  // External http(s) values were already stripped upstream.
   const VALID_TYPES = new Set(["text", "color", "range", "select", "toggle", "image"]);
   t.fields = t.fields.filter(
     (f) => f && typeof f.id === "string" && VALID_TYPES.has(f.type),
   );
 
   const ids = new Set(t.fields.map((f) => f.id));
-  // Only "headline" + the three core colors are mandatory.
   for (const required of ["headline", "bg", "fg", "accent"]) {
     if (!ids.has(required)) return null;
   }
 
-  // Sanity floor only — we want to accept lean, fast outputs. The previous
-  // 8-tag / 800-char gate rejected perfectly usable banners and forced a
-  // fallback every time a model decided to be concise.
   const tagCount = (t.html.match(/<[a-zA-Z][^>/]*>/g) || []).length;
   if (tagCount < 3) return null;
   if (t.css.length < 100) return null;
@@ -745,7 +360,6 @@ function validateTemplate(t) {
 
 // Walks the fields[] for the bg / fg / accent triplet, swaps or coerces
 // values so contrast is readable and saves the user from invisible text.
-// Mutates a fresh copy and returns it.
 function enforceContrast(template) {
   if (!template?.fields) return template;
   const next   = { ...template, fields: template.fields.map((f) => ({ ...f })) };
@@ -759,20 +373,14 @@ function enforceContrast(template) {
 
   if (!bgF || !fgF) return next;
 
-  // 1) bg vs fg ≥ 4.5:1 — auto-flip fg to its readable counterpart if not.
   if (contrastRatio(bgF.value, fgF.value) < 4.5) {
     fgF.value = readableForegroundFor(bgF.value);
   }
 
-  // 2) Accent ≥ 3.0:1 against bg (used on borders, dot markers, gradients).
   if (accentF) accentF.value = accentFor(bgF.value, accentF.value);
   if (accent2F) accent2F.value = accentFor(bgF.value, accent2F.value);
   if (accent3F) accent3F.value = accentFor(bgF.value, accent3F.value);
 
-  // 3) Headline gradients use color-mix(... var(--fg) ... var(--accent) ...);
-  //    if the model's literal CSS hardcoded a near-bg color for the
-  //    headline, lift it. We only patch obvious cases where a "color" is
-  //    set on the headline class to within 2.0:1 of bg.
   const headlineColorRe = /\.banner__headline\s*{[^}]*color\s*:\s*([^;}]+)/i;
   const m = next.css.match(headlineColorRe);
   if (m) {
@@ -797,11 +405,6 @@ export function bgFromTemplate(template) {
   return f?.value || "#0c0c10";
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Provider config — every provider is treated uniformly. Admin sets
-// apiKey + endpoint + model_id on the row in /admin/models. The OpenRouter
-// URL is just the default when no endpoint is set.
-// ─────────────────────────────────────────────────────────────────────────
 export function pickApiKey(model) {
   const c = model?.config || {};
   return c.apiKey || c.api_key || c.openrouterApiKey || c.openrouter_api_key || null;
@@ -820,13 +423,11 @@ export function templateRichness(template) {
 
   let score = 50;
 
-  // Element density.
   const elementCount = (html.match(/<\w+/g) || []).length;
   if (elementCount >= 8)  score += 4;
   if (elementCount >= 14) score += 6;
   if (elementCount >= 22) score += 6;
 
-  // CSS techniques.
   const techniques = [
     /linear-gradient\(/i, /radial-gradient\(/i, /conic-gradient\(/i,
     /color-mix\(/i, /backdrop-filter:/i, /mix-blend-mode:/i,
@@ -838,12 +439,10 @@ export function templateRichness(template) {
   const techniqueHits = techniques.filter((re) => re.test(css) || re.test(html)).length;
   score += Math.min(20, techniqueHits * 2);
 
-  // Field richness — more editable fields = richer banner.
   const fieldCount = template.fields?.length || 0;
   if (fieldCount >= 8)  score += 3;
   if (fieldCount >= 14) score += 4;
 
-  // Decorative layers (orbs, grid, noise, mesh, patterns).
   const decorPatterns = [
     /banner__orb/i, /banner__mesh/i, /banner__grid/i, /banner__noise/i,
     /pattern|texture|scan|stripes/i, /<svg/i,
@@ -851,19 +450,11 @@ export function templateRichness(template) {
   const decorHits = decorPatterns.filter((re) => re.test(html)).length;
   score += Math.min(8, decorHits * 2);
 
-  // Has photo/image background.
-  if (/url\(/i.test(css) || template.fields?.some((f) => f.type === "image")) {
-    score += 4;
-  }
-
   return Math.min(99, Math.max(0, score));
 }
 
 // Generates a banner template — calls the configured model when an API key is
 // set, otherwise returns the styled fallback. Always returns a valid template.
-//
-// Pass `textModel` to target a specific row (used by the multi-model fan-out
-// in /api/banners). When omitted, the default text model is used.
 export async function generateBannerTemplate({
   supabase,
   prompt,
@@ -871,18 +462,14 @@ export async function generateBannerTemplate({
   aspect = "16:9",
   variantSeed = 0,
   textModel: textModelOverride = null,
+  systemPromptOverride = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
-  const styled   = enforceStaticBanner(
-    ensureBackgroundImage(applyStyleRow(FALLBACK_TEMPLATE, styleRow), prompt),
-  );
+  const styled   = enforceStaticBanner(applyStyleRow(FALLBACK_TEMPLATE, styleRow));
 
-  // Resolve the text model. When the caller passes one (e.g. fan-out
-  // mode), use it as-is. Otherwise fall back to the default model.
-  // Either way we use the admin/secret client so the API key is in scope —
-  // server-only.
+  const adminClient = createAdminClient();
   const textModel = textModelOverride
-    || (await getDefaultTextModelWithSecrets(createAdminClient()));
+    || (await getDefaultTextModelWithSecrets(adminClient));
   if (!textModel) {
     return {
       ...styled,
@@ -904,10 +491,6 @@ export async function generateBannerTemplate({
     };
   }
 
-  // Endpoint is optional: if the provider is openrouter (or unset), fall back
-  // to the OpenRouter default URL inside callOpenRouter. For any other
-  // provider, the admin must provide the endpoint URL — every provider is
-  // treated uniformly via OpenAI-compatible chat completions.
   if (!endpoint && textModel.provider !== "openrouter") {
     return {
       ...styled,
@@ -917,27 +500,29 @@ export async function generateBannerTemplate({
     };
   }
 
+  // Resolve the system prompt: caller override → admin-managed setting →
+  // hard-coded default. Admins can edit the active prompt at /admin/prompt.
+  const systemPrompt = systemPromptOverride
+    || (await getActiveSystemPrompt(adminClient).catch(() => null))
+    || DEFAULT_SYSTEM_PROMPT;
+
   try {
     const { content } = await callOpenRouter({
       apiKey,
       endpoint:    endpoint || undefined,
       model:       textModel.modelId,
       jsonMode:    true,
-      // Slightly higher temperature gives variety. The system prompt pins
-      // structure tightly enough that this won't break things.
       temperature: textModel.config?.temperature ?? 0.9,
-      // 12k was overkill — most banners come in under 5k tokens, and
-      // capping lower cuts upstream latency noticeably without truncating
-      // real outputs. Admins can override per-model in Admin → Models.
       maxTokens:   textModel.config?.maxTokens   ?? 6000,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user",   content: buildUserMessage({ prompt, style, aspect, variantSeed }) },
       ],
     });
 
     const parsed     = extractJson(content);
-    const validated  = validateTemplate(parsed);
+    const cleaned    = stripExternalImageUrls(parsed);
+    const validated  = validateTemplate(cleaned);
     if (!validated) {
       return {
         ...styled,
@@ -946,10 +531,7 @@ export async function generateBannerTemplate({
         styleRow,
       };
     }
-    const enriched   = ensureImageControls(validated);
-    const imaged     = ensureBackgroundImage(enriched, prompt);
-    // Auto-fix contrast issues — invisible text is the #1 model failure mode.
-    const colorSafe  = enforceContrast(imaged);
+    const colorSafe  = enforceContrast(validated);
     const staticSafe = enforceStaticBanner(colorSafe);
 
     return {

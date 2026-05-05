@@ -5,7 +5,6 @@ import { useRef, useState } from "react";
 import {
   Image as ImageIcon,
   Loader2,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -28,35 +27,10 @@ function wrap(url) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Curated Unsplash quick-pick — broad set so users have starting points
-// without leaving the app. These are real Unsplash photo IDs.
-// ─────────────────────────────────────────────────────────────────────────
-const UNSPLASH_PICKS = [
-  { id: "1518770660439-4636190af475",   label: "Tech / Circuit" },
-  { id: "1620712943543-bcc4688e7485",   label: "AI / Abstract" },
-  { id: "1517336714731-489689fd1ca8",   label: "Laptop work" },
-  { id: "1556761175-b413da4baf72",      label: "Business" },
-  { id: "1524758631624-e2822e304c36",   label: "Modern office" },
-  { id: "1542435503-956c469947f6",      label: "Food" },
-  { id: "1502602898657-3e91760cbb34",   label: "Travel" },
-  { id: "1505740420928-5e560c06d30e",   label: "Lifestyle" },
-  { id: "1483985988355-763728e1935b",   label: "Fashion" },
-  { id: "1542291026-7eec264c27ff",      label: "Product" },
-  { id: "1531297484001-80022131f5a1",   label: "Workspace" },
-  { id: "1493612276216-ee3925520721",   label: "Code" },
-];
-
-function unsplashUrl(id, size = 800) {
-  return `https://images.unsplash.com/photo-${id}?w=${size}&q=80&auto=format&fit=crop`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────
 // Companion field discovery — when this image field is "bg_image" we also
 // surface the related range/select fields (brightness, blur, overlay, zoom,
 // position) right here so the user has one cohesive panel to dial in the look.
 // ─────────────────────────────────────────────────────────────────────────
-const COMPANION_IDS = ["bg_brightness", "bg_blur", "bg_overlay", "bg_zoom", "bg_position"];
-
 function findCompanion(allFields, id) {
   return allFields.find((f) => f.id === id);
 }
@@ -151,7 +125,6 @@ function LivePreview({ url, brightness, blur, overlay, zoom, position }) {
 // ─────────────────────────────────────────────────────────────────────────
 export default function ImageField({ field, onChange, allFields = [] }) {
   const [draft, setDraft]       = useState(unwrap(field.value));
-  const [showPicker, setPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const fileInputRef = useRef(null);
@@ -197,6 +170,8 @@ export default function ImageField({ field, onChange, allFields = [] }) {
   const fmtZoom    = (v) => `${v}%`;
   const fmtPx      = (v) => `${v}px`;
 
+  const isDataUri = draft.startsWith("data:");
+
   return (
     <div className="space-y-3 rounded-xl border border-border bg-surface-2/40 p-4">
       <Label className="flex items-center gap-1.5 text-xs">
@@ -204,14 +179,14 @@ export default function ImageField({ field, onChange, allFields = [] }) {
         {field.label}
       </Label>
 
-      {/* URL input + clear */}
+      {/* Read-only display when an upload (data: URI) is set; otherwise empty */}
       <div className="relative">
         <Input
-          value={draft.startsWith("data:") ? "Uploaded image" : draft}
-          onChange={(e) => commit(e.target.value)}
-          placeholder="https://images.unsplash.com/..."
+          value={isDataUri ? "Uploaded image" : draft}
+          onChange={() => {}}
+          placeholder="Upload an image to use as the banner background"
           className="pr-9 text-xs font-mono"
-          readOnly={draft.startsWith("data:")}
+          readOnly
         />
         {draft && (
           <button
@@ -225,7 +200,9 @@ export default function ImageField({ field, onChange, allFields = [] }) {
         )}
       </div>
 
-      {/* Upload from device */}
+      {/* Upload from device — the only way to set an image. External URLs
+          are intentionally not supported: backgrounds come from the AI
+          model (CSS-only) or from a user upload. */}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -253,38 +230,11 @@ export default function ImageField({ field, onChange, allFields = [] }) {
         <div className="text-[11px] text-red-400">{uploadError}</div>
       )}
 
-      {/* Quick-pick from curated Unsplash list */}
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={() => setPicker((s) => !s)}
-          className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-foreground transition-colors"
-        >
-          <Sparkles className="h-3 w-3" />
-          {showPicker ? "Hide quick picks" : "Show quick picks"}
-        </button>
-        {showPicker && (
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-            {UNSPLASH_PICKS.map((p) => {
-              const url = unsplashUrl(p.id, 400);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={p.label}
-                  onClick={() => commit(unsplashUrl(p.id))}
-                  className="group relative aspect-video overflow-hidden rounded-md border border-border bg-surface transition-colors hover:border-border-strong"
-                >
-                  <span
-                    className="absolute inset-0 bg-cover bg-center transition-transform duration-200 group-hover:scale-110"
-                    style={{ backgroundImage: `url("${url}")` }}
-                  />
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <p className="text-[10px] leading-snug text-muted">
+        Backgrounds are generated by the AI model from your prompt. Upload a
+        photo here only if you want to override the AI-generated background
+        with your own image.
+      </p>
 
       {/* Live preview with current adjustments */}
       {draft && (

@@ -17,7 +17,7 @@ export default function PromptInput({ value, onChange }) {
           value={value}
           onChange={(e) => onChange(e.target.value.slice(0, 500))}
           rows={4}
-          placeholder="e.g. Launch banner for a fintech app — modern HTML/CSS hero, Unsplash photo, bold headline, navy + gold palette"
+          placeholder="e.g. Launch banner for a fintech app — modern HTML/CSS hero, bold headline, navy + gold palette"
           className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed placeholder:text-muted outline-none transition-shadow focus:border-border-strong focus:ring-2 focus:ring-ring"
         />
       </div>

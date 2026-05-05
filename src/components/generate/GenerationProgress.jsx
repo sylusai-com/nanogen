@@ -3,25 +3,13 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Check, Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import Card from "@/components/ui/Card";
 
-// A polished loading screen for the banner studio. Shows the user that
-// work is happening across multiple stages, even though the API is a
-// single request — without it, a 20-60s wait feels like the page is hung.
-//
-// We advance through visible stages on a timed schedule that matches the
-// rough latency of the real pipeline (3 variants in parallel, scoring per
-// variant, persistence). The actual API call resolves whenever it
-// resolves; this component just keeps the UI alive in the meantime.
-
-const STAGES = [
-  { id: "compose",   label: "Composing your brief",            hint: "Picking the right archetype, palette, and copy direction.",      minMs: 800 },
-  { id: "fanout",    label: "Fanning out across enabled models", hint: "Calling every admin-enabled text model in parallel.",          minMs: 8000 },
-  { id: "score",     label: "Scoring every variant",            hint: "Each banner is rated on relevance, composition, polish.",       minMs: 4000 },
-  { id: "select",    label: "Selecting the winner",             hint: "Top scorer ≥ 80 — or the absolute top if none reach threshold.", minMs: 1500 },
-  { id: "save",      label: "Saving to your library",           hint: "Persisting the winning variant and dropping you into the editor.", minMs: 1000 },
-];
+// Lightweight loading screen for the banner studio. The internal pipeline
+// (multi-model fan-out, scoring, persistence, etc.) is intentionally
+// hidden from the user — they see a clean "we're working on it" view
+// and a smooth progress bar.
 
 function aspectClass(a) {
   if (a === "1:1")  return "aspect-square";
@@ -30,32 +18,42 @@ function aspectClass(a) {
   return "aspect-[16/9]";
 }
 
-export default function GenerationProgress({ aspect = "16:9" }) {
-  const [stageIdx, setStageIdx] = useState(0);
-  const [elapsed, setElapsed]   = useState(0);
+// Smooth fake-progress: eases toward 95% over the expected window so the
+// bar never sits idle. The redirect happens as soon as the API returns,
+// so we never need to reach 100% here.
+function useFakeProgress({ expectedMs = 18000 } = {}) {
+  const [pct, setPct] = useState(4);
 
   useEffect(() => {
     const start = Date.now();
-    let acc = 0;
-    const timers = [];
+    const id = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const target  = Math.min(95, (elapsed / expectedMs) * 100);
+      setPct((p) => (target > p ? target : p + 0.15));
+    }, 200);
+    return () => clearInterval(id);
+  }, [expectedMs]);
 
-    for (let i = 0; i < STAGES.length - 1; i++) {
-      acc += STAGES[i].minMs;
-      timers.push(setTimeout(() => setStageIdx(i + 1), acc));
-    }
-    const tick = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 250);
+  return pct;
+}
 
-    return () => {
-      timers.forEach(clearTimeout);
-      clearInterval(tick);
-    };
+export default function GenerationProgress({ aspect = "16:9" }) {
+  const [elapsed, setElapsed] = useState(0);
+  const pct = useFakeProgress({ expectedMs: 18000 });
+
+  useEffect(() => {
+    const start = Date.now();
+    const tick  = setInterval(
+      () => setElapsed(Math.round((Date.now() - start) / 1000)),
+      250,
+    );
+    return () => clearInterval(tick);
   }, []);
 
   return (
     <div className="space-y-6">
       <Card elevated className="overflow-hidden p-0">
         <div className="relative">
-          {/* Skeleton banner preview with shimmer */}
           <div className={`${aspectClass(aspect)} relative w-full overflow-hidden bg-surface-2`}>
             <motion.div
               className="absolute inset-0"
@@ -86,7 +84,7 @@ export default function GenerationProgress({ aspect = "16:9" }) {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
               </span>
-              {STAGES[stageIdx]?.label}…
+              Generating your banner…
             </div>
             <span className="font-mono text-[10px] text-muted-strong">{elapsed}s</span>
           </div>
@@ -94,56 +92,25 @@ export default function GenerationProgress({ aspect = "16:9" }) {
       </Card>
 
       <Card elevated className="p-5">
-        <div className="mb-4 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[color-mix(in_oklab,var(--primary)_14%,transparent)] text-primary">
             <Sparkles className="h-3.5 w-3.5" />
           </span>
           <h3 className="text-sm font-semibold tracking-tight">Generating your banner</h3>
         </div>
-        <ol className="space-y-3">
-          {STAGES.map((s, i) => {
-            const done    = i < stageIdx;
-            const active  = i === stageIdx;
-            return (
-              <li key={s.id} className="flex items-start gap-3">
-                <span
-                  className={[
-                    "mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-1 ring-inset transition-colors",
-                    done
-                      ? "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30"
-                      : active
-                      ? "bg-primary/15 text-primary ring-primary/30"
-                      : "bg-surface-2 text-muted ring-border",
-                  ].join(" ")}
-                >
-                  {done ? (
-                    <Check className="h-3 w-3" strokeWidth={3} />
-                  ) : active ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50" />
-                  )}
-                </span>
-                <div className="min-w-0">
-                  <div
-                    className={[
-                      "text-sm",
-                      done || active ? "text-foreground" : "text-muted",
-                    ].join(" ")}
-                  >
-                    {s.label}
-                  </div>
-                  {(active || done) && (
-                    <div className="text-[11px] text-muted">{s.hint}</div>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-5 border-t border-border pt-3 text-[11px] text-muted">
-          This usually takes 10–30 seconds depending on the model.
+        <p className="mt-3 text-xs text-muted">
+          Hang tight — we’ll drop you into the editor as soon as it’s ready.
         </p>
+        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-surface-2">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
+          <span>{Math.round(pct)}%</span>
+          <span className="font-mono text-[10px] text-muted-strong">{elapsed}s</span>
+        </div>
       </Card>
     </div>
   );

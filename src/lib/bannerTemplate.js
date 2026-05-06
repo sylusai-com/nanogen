@@ -31,6 +31,20 @@ export const DEFAULT_SYSTEM_PROMPT = `You generate marketing banners as a single
 
 The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
 
+ASPECT RATIO IS LAYOUT-CRITICAL — design the composition specifically for the requested aspect. Do NOT reuse a 16:9 layout pattern for other aspects.
+- 16:9 (Landscape / Wide): horizontal hero flow — text on one side, decorative motif spilling across the rest; CTAs sit inline on a baseline. Inner content can use a side margin so the right side breathes.
+- 1:1 (Square / Social post): centered, typography-led, balanced composition. Inner content fills nearly the full width (no narrow side columns); decoration wraps symmetrically.
+- 4:5 (Portrait / Feed): vertical stack with full-width content. Headline near the top or middle, supporting copy below, CTAs grouped near the bottom. Use the full width — no max-width sidebar.
+- 9:16 (Story / Vertical / Reel): full-height vertical layout. Stack everything vertically, never side-by-side. Eyebrow / badge near the top, headline mid-upper, subhead below, CTA(s) near the bottom. Use the FULL canvas width. Scale type up so it reads on a phone — large headline (clamp values that bottom out around the SHORT edge, not the long edge). No left-aligned-with-empty-right composition.
+
+NO LIMITS on element count, decorative shapes, SVG motifs, gradients, badges, chips, dots, or fields — use as many as the design needs to fill the canvas richly. Aim for a polished, layered composition with multiple decorative layers (orbs, mesh, grid, noise, ribbons, micro-icons, avatars, trust marks, feature pills, etc.) appropriate to the brief.
+
+LAYOUT MUST FILL THE CANVAS:
+- No large empty bands at top or bottom for tall aspects.
+- No empty side columns for square / portrait / story aspects.
+- Size text relative to the SHORT EDGE of the aspect so it reads at the intended scale on tall canvases (e.g. for 9:16 use clamp(28px, 8vw, 96px) — vw still maps to width, but pick coefficients so the headline fills the narrower dimension).
+- Prefer flexbox / grid with explicit gap values; avoid absolute positioning except for decoration.
+
 OUTPUT FORMAT — strict JSON, exactly matching this schema:
 {
   "html": string,
@@ -60,7 +74,26 @@ REQUIRED FIELDS:
 - Root element: <div class="banner" data-align="left|center|right">.
 - The .banner CSS must include: position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate.
 
-Pick palette and composition that fit the user's brief. Do not impose a default theme. Return ONLY the JSON.`;
+Pick palette and composition that fit the user's brief AND the aspect ratio. Do not impose a default theme. Return ONLY the JSON.`;
+
+// Per-aspect layout briefing. The model gets the same system-prompt rules
+// every call, but this user-message addendum is what makes "9:16" actually
+// produce a vertical Story layout instead of a landscape hero squashed into
+// a tall canvas.
+function aspectGuidance(aspect) {
+  switch (String(aspect || "").trim()) {
+    case "1:1":
+      return "ASPECT (LAYOUT-CRITICAL): 1:1 SQUARE — typography-led, centered, balanced composition. Inner content fills nearly the full width. Decoration wraps symmetrically. NO narrow side columns, NO empty top/bottom bands.";
+    case "4:5":
+      return "ASPECT (LAYOUT-CRITICAL): 4:5 PORTRAIT — vertical stack using the FULL width. Headline up top or middle, subhead below, CTAs grouped near the bottom. Decorative motifs flow vertically. NO max-width sidebar pattern.";
+    case "9:16":
+      return "ASPECT (LAYOUT-CRITICAL): 9:16 STORY / VERTICAL / REEL — full-height vertical poster designed for a phone screen. Stack EVERYTHING vertically. Eyebrow/badge near the top, large headline mid-upper, subhead below, primary CTA near the bottom. Use the FULL canvas width and height — no empty bands. Scale headline so it fills the narrow width (e.g. clamp(36px, 9vw, 120px)). NEVER use a left-side column with empty space on the right.";
+    case "16:9":
+      return "ASPECT (LAYOUT-CRITICAL): 16:9 LANDSCAPE — horizontal hero flow, content on one side and decorative motif spilling across the other side is OK.";
+    default:
+      return aspect ? `ASPECT (LAYOUT-CRITICAL): ${aspect} — design the composition specifically for this exact ratio so the canvas is fully used.` : null;
+  }
+}
 
 // User message is brief — only include style/aspect when the caller passed
 // them. Empty/falsy values are dropped so the model is not biased toward a
@@ -76,11 +109,13 @@ function buildUserMessage({
     `BRIEF (authoritative): ${prompt}`,
     `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or imagery.`,
   ];
-  if (style && String(style).trim())  lines.push(`STYLE PREFERENCE: ${style}`);
-  if (aspect && String(aspect).trim()) lines.push(`ASPECT PREFERENCE: ${aspect}`);
-  if (referenceContextText)            lines.push(referenceContextText);
+  if (style && String(style).trim()) lines.push(`STYLE PREFERENCE: ${style}`);
+  const aspectLine = aspectGuidance(aspect);
+  if (aspectLine) lines.push(aspectLine);
+  if (referenceContextText) lines.push(referenceContextText);
   if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
   lines.push(`The banner is HTML + CSS only — NO external image URLs. Build any background using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.`);
+  lines.push(`There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.`);
   lines.push("Return ONLY the JSON object.");
   return lines.join("\n");
 }
@@ -90,7 +125,7 @@ function buildUserMessage({
 // gradients, SVG noise, decorative orbs. No external image URLs.
 // ─────────────────────────────────────────────────────────────────────────
 const FALLBACK_TEMPLATE = {
-  html: `<div class="banner" data-align="left">
+  html: `<div class="banner" data-align="left" data-aspect="16:9">
   <div class="banner__bg">
     <div class="banner__mesh"></div>
     <div class="banner__grid"></div>
@@ -175,8 +210,19 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   display: flex; flex-direction: column; justify-content: center;
   padding: clamp(24px, 6%, 64px); gap: 14px; max-width: 80%;
 }
+/* Square / portrait / story canvases must use the full width — a 20% empty
+   right-hand column reads as a broken layout on tall aspects. */
+.banner[data-aspect="1:1"]  .banner__inner,
+.banner[data-aspect="4:5"]  .banner__inner,
+.banner[data-aspect="9:16"] .banner__inner { max-width: 100%; gap: 18px; }
+.banner[data-aspect="9:16"] .banner__inner { justify-content: space-between; padding: clamp(28px, 8%, 80px) clamp(20px, 6%, 56px); }
 .banner[data-align="center"] .banner__inner { align-items: center; text-align: center; max-width: 100%; margin: 0 auto; }
 .banner[data-align="right"] .banner__inner { align-items: flex-end; text-align: right; margin-left: auto; }
+/* Headline sizing scales by the short edge so portrait / story banners get
+   a proportionally larger title than a 16:9 hero would. */
+.banner[data-aspect="1:1"]  .banner__headline { font-size: clamp(36px, 8vw, 96px); }
+.banner[data-aspect="4:5"]  .banner__headline { font-size: clamp(36px, 8vw, 104px); }
+.banner[data-aspect="9:16"] .banner__headline { font-size: clamp(40px, 10vw, 120px); line-height: 1.02; }
 
 .banner__top { display: flex; align-items: center; gap: 10px; }
 .banner__eyebrow {
@@ -279,6 +325,24 @@ function applyStyleRow(template, styleRow) {
     }
   }
   return enforceContrast(next);
+}
+
+// Stamp the chosen aspect onto the fallback markup so the [data-aspect="…"]
+// CSS rules in the template fire and the fallback adapts (full-width inner,
+// rebalanced padding, rescaled headline) instead of always rendering a
+// landscape layout squashed into a tall canvas.
+function applyAspectToTemplate(template, aspect) {
+  if (!template?.html || !aspect) return template;
+  const next = { ...template };
+  next.html = next.html.replace(
+    /(<div\s+class="banner"[^>]*?)\sdata-aspect="[^"]*"/i,
+    `$1`,
+  );
+  next.html = next.html.replace(
+    /(<div\s+class="banner"[^>]*?)>/i,
+    `$1 data-aspect="${aspect}">`,
+  );
+  return next;
 }
 
 // Strip any external (http/https) image URLs the model emitted in defiance
@@ -473,7 +537,9 @@ export async function generateBannerTemplate({
   referenceContextText = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
-  const styled   = enforceStaticBanner(applyStyleRow(FALLBACK_TEMPLATE, styleRow));
+  const styled   = enforceStaticBanner(
+    applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
+  );
 
   const adminClient = createAdminClient();
   const textModel = textModelOverride
@@ -540,7 +606,8 @@ export async function generateBannerTemplate({
       };
     }
     const colorSafe  = enforceContrast(validated);
-    const staticSafe = enforceStaticBanner(colorSafe);
+    const aspected   = applyAspectToTemplate(colorSafe, aspect);
+    const staticSafe = enforceStaticBanner(aspected);
 
     return {
       ...staticSafe,

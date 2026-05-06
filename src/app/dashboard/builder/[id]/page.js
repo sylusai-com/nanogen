@@ -1,176 +1,224 @@
-// src/app/dashboard/builder/[id]/page.js
 "use client";
 
-import { use, useCallback, useEffect, useRef, useState, startTransition } from "react";
+import {
+  use, useCallback, useEffect, useRef, useState, startTransition,
+} from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
-  Check,
-  Layers,
-  Loader2,
-  Save,
-  Settings2,
-  Type,
+  ArrowLeft, Check, ChevronDown, Download,
+  Loader2, Save, Maximize2, ZoomIn,
 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
-import Tabs from "@/components/ui/Tabs";
 import { getBanner, updateBanner } from "@/lib/db/banners";
-import Canvas from "@/components/builder/Canvas";
-import Toolbar from "@/components/builder/Toolbar";
-import PropertiesPanel from "@/components/builder/PropertiesPanel";
-import LayersPanel from "@/components/builder/LayersPanel";
-import EditorPanel from "@/components/editor/EditorPanel";
+import { buildCompositeStandaloneHtml, rasterize, rasterizeToPdf, triggerDownload } from "@/lib/bannerDownload";
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
+import Canvas      from "@/components/builder/Canvas";
+import CanvaToolbar from "@/components/builder/Toolbar";
+import LeftPanel   from "@/components/builder/LeftPanel";
+import RightPanel  from "@/components/builder/RightPanel";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function defaultsFor(type) {
-  switch (type) {
-    case "text":
-      return {
-        content: "Edit this text",
-        w: 40,
-        h: null,
-        style: { color: "#ffffff", fontSize: "24px", fontWeight: "600", textAlign: "left", lineHeight: "1.3" },
-      };
-    case "rect":
-      return {
-        content: null,
-        w: 30,
-        h: 20,
-        style: { background: "#a78bfa", borderRadius: "8px", opacity: 1 },
-      };
-    case "button":
-      return {
-        content: "Click me",
-        w: 20,
-        h: 8,
-        style: { background: "#a78bfa", color: "#ffffff", borderRadius: "999px", fontSize: "14px", fontWeight: "600" },
-      };
-    case "image":
-      return {
-        content: "",
-        w: 40,
-        h: 30,
-        style: { borderRadius: "8px" },
-      };
-    case "divider":
-      return {
-        content: null,
-        w: 80,
-        h: 2,
-        style: { color: "rgba(255,255,255,0.2)", thickness: "2px" },
-      };
-    default:
-      return { content: null, w: 20, h: 10, style: {} };
-  }
+function defaultsFor(type, overrides = {}) {
+  const base = (() => {
+    switch (type) {
+      case "text":    return { content: "Edit this text", w: 40, h: null, style: { color: "#ffffff", fontSize: "24px", fontWeight: "600", textAlign: "left", lineHeight: "1.3" } };
+      case "rect":    return { content: null, w: 30, h: 20, style: { background: "#a78bfa", borderRadius: "8px", opacity: 1 } };
+      case "button":  return { content: "Click me", w: 22, h: 8, style: { background: "#a78bfa", color: "#ffffff", borderRadius: "999px", fontSize: "14px", fontWeight: "600" } };
+      case "image":   return { content: "", w: 40, h: 30, style: { borderRadius: "8px" } };
+      case "divider": return { content: null, w: 80, h: 2, style: { color: "rgba(255,255,255,0.2)", thickness: "2px" } };
+      default:        return { content: null, w: 20, h: 10, style: {} };
+    }
+  })();
+  return {
+    ...base,
+    ...overrides,
+    style: { ...base.style, ...(overrides.style || {}) },
+  };
 }
-
-const RIGHT_TABS = [
-  { id: "properties", label: <span className="inline-flex items-center gap-1.5"><Settings2 className="h-3.5 w-3.5" /> Properties</span> },
-  { id: "layers",     label: <span className="inline-flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" /> Layers</span> },
-  { id: "fields",     label: <span className="inline-flex items-center gap-1.5"><Type className="h-3.5 w-3.5" /> Fields</span> },
-];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BuilderPage({ params }) {
-  const { id } = use(params);
-  const { user, supabase } = useAuth();
+  const { id }              = use(params);
+  const { user, supabase }  = useAuth();
 
+  // ── Data state ────────────────────────────────────────────────────────────
   const [banner,    setBanner]    = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [saving,    setSaving]    = useState(false);
   const [savedAt,   setSavedAt]   = useState(null);
   const [justSaved, setJustSaved] = useState(false);
-  const justSavedTimer = useRef(null);
   const [error,     setError]     = useState(null);
+  const justSavedTimer            = useRef(null);
 
-  // Canvas state (for visual elements)
+  // ── Canvas state ──────────────────────────────────────────────────────────
   const [background,  setBackground]  = useState("#0c0c10");
   const [elements,    setElements]    = useState([]);
   const [selectedId,  setSelectedId]  = useState(null);
-  const [rightTab,    setRightTab]    = useState("properties");
-  const [mobilePanel, setMobilePanel] = useState(null); // null | "tools" | "props"
+  const [editingId,   setEditingId]   = useState(null);   // inline text edit
+  const [zoom,        setZoom]        = useState(0.6);
 
-  // Template state (for field editing)
-  const [template, setTemplate] = useState(null);
-  const [fields, setFields] = useState([]);
-  const [alignment, setAlignment] = useState("left");
+  // ── Template / fields state ───────────────────────────────────────────────
+  const [template,   setTemplate]   = useState(null);
+  const [fields,     setFields]     = useState([]);
+  const [alignment,  setAlignment]  = useState("left");
 
-  const initialElementsRef = useRef([]);
-  const initialBackgroundRef = useRef("#0c0c10");
-  const undoStackRef = useRef([]);
-  const redoStackRef = useRef([]);
-  const [, setHistoryTick] = useState(0);
-  const templateSeededRef = useRef(false);
+  // ── Export menu ───────────────────────────────────────────────────────────
+  const [exportOpen,  setExportOpen]  = useState(false);
+  const [exporting,   setExporting]   = useState(false);
+  const exportRef                     = useRef(null);
+
+  // ── History ───────────────────────────────────────────────────────────────
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  // Use proper state for canUndo/canRedo so they don't read refs during render
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const syncHistoryState = useCallback(() => {
+    setCanUndo(undoStack.current.length > 0);
+    setCanRedo(redoStack.current.length > 0);
+  }, []);
 
   const captureState = useCallback(() => ({
-    elements: JSON.parse(JSON.stringify(elements)),
+    elements:   JSON.parse(JSON.stringify(elements)),
     background,
     selectedId,
-    fields: JSON.parse(JSON.stringify(fields)),
+    fields:     JSON.parse(JSON.stringify(fields)),
     alignment,
   }), [elements, background, selectedId, fields, alignment]);
 
-  const applyState = useCallback((state) => {
-    if (!state) return;
-    setElements(state.elements || []);
-    setBackground(state.background || "#0c0c10");
-    setSelectedId(state.selectedId ?? null);
-    setFields(state.fields || []);
-    setAlignment(state.alignment || "left");
+  const applyState = useCallback((s) => {
+    if (!s) return;
+    setElements(s.elements || []);
+    setBackground(s.background || "#0c0c10");
+    setSelectedId(s.selectedId ?? null);
+    setFields(s.fields || []);
+    setAlignment(s.alignment || "left");
   }, []);
 
   const recordHistory = useCallback(() => {
-    undoStackRef.current.push(captureState());
-    if (undoStackRef.current.length > 50) undoStackRef.current.shift();
-    redoStackRef.current = [];
-    setHistoryTick((n) => n + 1);
-  }, [captureState]);
+    undoStack.current.push(captureState());
+    if (undoStack.current.length > 60) undoStack.current.shift();
+    redoStack.current = [];
+    syncHistoryState();
+  }, [captureState, syncHistoryState]);
 
   const undo = useCallback(() => {
-    const prev = undoStackRef.current.pop();
+    const prev = undoStack.current.pop();
     if (!prev) return;
-    redoStackRef.current.push(captureState());
+    redoStack.current.push(captureState());
     applyState(prev);
-    setHistoryTick((n) => n + 1);
-  }, [applyState, captureState]);
+    syncHistoryState();
+  }, [applyState, captureState, syncHistoryState]);
 
   const redo = useCallback(() => {
-    const next = redoStackRef.current.pop();
+    const next = redoStack.current.pop();
     if (!next) return;
-    undoStackRef.current.push(captureState());
+    undoStack.current.push(captureState());
     applyState(next);
-    setHistoryTick((n) => n + 1);
-  }, [applyState, captureState]);
+    syncHistoryState();
+  }, [applyState, captureState, syncHistoryState]);
 
-  const canUndo = undoStackRef.current.length > 0;
-  const canRedo = redoStackRef.current.length > 0;
+  // ── Canvas mutations (declared before keyboard effect) ───────────────────
+  // Use refs to give the keydown handler always-fresh callbacks without
+  // re-registering the listener on every render.
+  const selectedIdRef = useRef(selectedId);
+  const editingIdRef  = useRef(editingId);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
+  useEffect(() => { editingIdRef.current  = editingId;  }, [editingId]);
 
+  // duplicateSelected — no useCallback so React Compiler can optimize freely.
+  // Uses functional setState to read latest elements without a dep on them.
+  const duplicateSelected = () => {
+    const sid = selectedIdRef.current;
+    if (!sid) return;
+    setElements((prev) => {
+      const src = prev.find((el) => el.id === sid);
+      if (!src) return prev;
+      recordHistory();
+      const copy = { ...JSON.parse(JSON.stringify(src)), id: uid(), x: src.x + 3, y: src.y + 3 };
+      setSelectedId(copy.id);
+      return [...prev, copy];
+    });
+  };
+
+  const deleteSelected = () => {
+    const sid = selectedIdRef.current;
+    if (!sid || editingIdRef.current) return;
+    recordHistory();
+    setElements((prev) => prev.filter((el) => el.id !== sid));
+    setSelectedId(null);
+    setEditingId(null);
+  };
+
+  // Stable refs so the keydown listener always calls the latest version
+  const duplicateRef = useRef(duplicateSelected);
+  const deleteRef    = useRef(deleteSelected);
+  const onSaveRef    = useRef(null);
+
+  useEffect(() => { duplicateRef.current = duplicateSelected; });
+  useEffect(() => { deleteRef.current    = deleteSelected; });
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
-    const onKeyDown = (event) => {
+    const onKey = (e) => {
       const isMac = navigator.platform.toLowerCase().includes("mac");
-      const mod = isMac ? event.metaKey : event.ctrlKey;
-      if (!mod) return;
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        undo();
-      } else if (key === "y" || (key === "z" && event.shiftKey)) {
-        event.preventDefault();
-        redo();
+      const mod   = isMac ? e.metaKey : e.ctrlKey;
+      const key   = e.key.toLowerCase();
+      const tag   = document.activeElement?.tagName?.toLowerCase();
+
+      // Don't intercept when typing in an input/textarea
+      if (tag === "input" || tag === "textarea") return;
+
+      if (mod && key === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      if (mod && (key === "y" || (key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+      if (mod && key === "d") { e.preventDefault(); duplicateRef.current(); }
+      if (mod && key === "s") { e.preventDefault(); onSaveRef.current?.(); }
+      if (key === "backspace" || key === "delete") {
+        if (selectedIdRef.current && !editingIdRef.current) {
+          e.preventDefault();
+          deleteRef.current();
+        }
+      }
+      if (key === "escape") {
+        setEditingId(null);
+        setSelectedId(null);
+      }
+
+      // Arrow nudge
+      const sid = selectedIdRef.current;
+      if (sid && !editingIdRef.current && ["arrowleft","arrowright","arrowup","arrowdown"].includes(key)) {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : 0.25;
+        setElements((prev) => prev.map((el) => {
+          if (el.id !== sid) return el;
+          const dx = key === "arrowright" ? step : key === "arrowleft" ? -step : 0;
+          const dy = key === "arrowdown"  ? step : key === "arrowup"   ? -step : 0;
+          return { ...el, x: Math.max(0, el.x + dx), y: Math.max(0, el.y + dy) };
+        }));
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [redo, undo]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]); // stable — everything else accessed via refs
 
-  // ── Load banner ──────────────────────────────────────────────────────────
+  // Close export menu on outside click
+  useEffect(() => {
+    const onClick = (e) => {
+      if (exportRef.current && !exportRef.current.contains(e.target)) setExportOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  // ── Load banner ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -179,20 +227,13 @@ export default function BuilderPage({ params }) {
       .then((b) => {
         if (cancelled) return;
         startTransition(() => setBanner(b));
-
-        const stored      = b?.canvas;
-        const hasElements = Array.isArray(stored?.elements) && stored.elements.length > 0;
-        const fieldsBg    = (b?.fields || []).find((f) => f.id === "bg")?.value;
-        const initialBg   = stored?.background || fieldsBg || "#0c0c10";
-
-        initialBackgroundRef.current = initialBg;
-        initialElementsRef.current = hasElements ? stored.elements : [];
-        templateSeededRef.current = hasElements;
-
+        const stored  = b?.canvas;
+        const hasEls  = Array.isArray(stored?.elements) && stored.elements.length > 0;
+        const fieldBg = (b?.fields || []).find((f) => f.id === "bg")?.value;
+        const initBg  = stored?.background || fieldBg || "#0c0c10";
         startTransition(() => {
-          setBackground(initialBg);
-          setElements(hasElements ? stored.elements : []);
-          // Load template fields and HTML/CSS
+          setBackground(initBg);
+          setElements(hasEls ? stored.elements : []);
           setTemplate({ html: b?.html, css: b?.css });
           setFields(b?.fields || []);
           setAlignment(b?.alignment || "left");
@@ -203,89 +244,77 @@ export default function BuilderPage({ params }) {
     return () => { cancelled = true; };
   }, [id, user, supabase]);
 
-  // ── Fetch template if not present ────────────────────────────────────────
+  // Fetch template HTML/CSS if missing
   useEffect(() => {
-    if (!banner) return;
-    // If template already loaded, skip
-    if (template?.html && template?.css) return;
-    if (!banner.html || !banner.css) {
-      let cancelled = false;
-      (async () => {
-        try {
-          const res = await fetch("/api/banners/html", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: banner.prompt || banner.title,
-              style: banner.style,
-              aspect: banner.aspect,
-            }),
-          });
-          if (!res.ok) throw new Error(`Request failed (${res.status})`);
-          const data = await res.json();
-          if (cancelled) return;
-          startTransition(() => {
-            setTemplate({ html: data.html, css: data.css });
-            setFields(data.fields);
-            setAlignment(data.alignment || "left");
-          });
-        } catch (e) {
-          if (!cancelled) setError(e.message || "Failed to load template");
-        }
-      })();
-      return () => { cancelled = true; };
-    }
+    if (!banner || (template?.html && template?.css)) return;
+    if (banner.html || banner.css) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res  = await fetch("/api/banners/html", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: banner.prompt || banner.title, style: banner.style, aspect: banner.aspect }),
+        });
+        if (!res.ok) throw new Error(`Request failed (${res.status})`);
+        const data = await res.json();
+        if (cancelled) return;
+        startTransition(() => {
+          setTemplate({ html: data.html, css: data.css });
+          setFields(data.fields);
+          setAlignment(data.alignment || "left");
+        });
+      } catch (e) {
+        if (!cancelled) setError(e.message || "Failed to load template");
+      }
+    })();
+    return () => { cancelled = true; };
   }, [banner, template?.html, template?.css]);
 
-  // ── Canvas mutations ─────────────────────────────────────────────────────
-  const addElement = useCallback((type) => {
+  // ── Canvas mutations ──────────────────────────────────────────────────────
+  const addElement = useCallback((type, overrides = {}) => {
     recordHistory();
-    const newEl = {
-      id: uid(),
-      type,
-      x: 10 + Math.random() * 20,
-      y: 10 + Math.random() * 20,
-      ...defaultsFor(type),
+    const el = {
+      id: uid(), type,
+      x: 10 + Math.random() * 30,
+      y: 10 + Math.random() * 30,
+      rotation: 0,
+      ...defaultsFor(type, overrides),
     };
-    setElements((prev) => [...prev, newEl]);
-    setSelectedId(newEl.id);
+    setElements((prev) => [...prev, el]);
+    setSelectedId(el.id);
+    setEditingId(null);
   }, [recordHistory]);
 
   const updateElement = useCallback((updated) => {
+    setElements((prev) => prev.map((el) => el.id === updated.id ? updated : el));
+  }, []);
+
+  const updateElementAndRecord = useCallback((updated) => {
     recordHistory();
-    setElements((prev) => prev.map((el) => (el.id === updated.id ? updated : el)));
+    setElements((prev) => prev.map((el) => el.id === updated.id ? updated : el));
   }, [recordHistory]);
 
-  const duplicateSelected = useCallback(() => {
-    recordHistory();
-    const src = elements.find((el) => el.id === selectedId);
-    if (!src) return;
-    const copy = { ...JSON.parse(JSON.stringify(src)), id: uid(), x: src.x + 3, y: src.y + 3 };
-    setElements((prev) => [...prev, copy]);
-    setSelectedId(copy.id);
-  }, [elements, selectedId, recordHistory]);
-
-  const deleteSelected = useCallback(() => {
-    recordHistory();
-    setElements((prev) => prev.filter((el) => el.id !== selectedId));
-    setSelectedId(null);
-  }, [selectedId, recordHistory]);
-
   const alignSelected = useCallback((align) => {
+    const el = elements.find((e) => e.id === selectedId);
+    if (!el) return;
     recordHistory();
-    setElements((prev) =>
-      prev.map((el) => {
-        if (el.id !== selectedId) return el;
-        const xMap = { left: 5, center: (100 - el.w) / 2, right: 95 - el.w };
-        return { ...el, x: xMap[align] ?? el.x };
-      })
-    );
-  }, [selectedId, recordHistory]);
+    setElements((prev) => prev.map((e) => {
+      if (e.id !== selectedId) return e;
+      const xMap = { left: 2, center: (100 - e.w) / 2, right: 98 - e.w };
+      const yMap = { top: 2, middle: (100 - (e.h ?? 10)) / 2 };
+      return {
+        ...e,
+        ...(xMap[align] !== undefined ? { x: xMap[align] } : {}),
+        ...(yMap[align] !== undefined ? { y: yMap[align] } : {}),
+      };
+    }));
+  }, [elements, selectedId, recordHistory]);
 
   const moveLayer = useCallback((idx, dir) => {
     recordHistory();
     setElements((prev) => {
-      const next = [...prev];
+      const next   = [...prev];
       const target = idx + dir;
       if (target < 0 || target >= next.length) return prev;
       [next[idx], next[target]] = [next[target], next[idx]];
@@ -298,10 +327,9 @@ export default function BuilderPage({ params }) {
     setBackground(value);
   }, [recordHistory]);
 
-  // ── Field editing (for template fields) ─────────────────────────────────
   const onFieldChange = useCallback((fieldId, value) => {
     recordHistory();
-    setFields((prev) => prev.map((f) => (f.id === fieldId ? { ...f, value } : f)));
+    setFields((prev) => prev.map((f) => f.id === fieldId ? { ...f, value } : f));
   }, [recordHistory]);
 
   const onAlignmentChange = useCallback((a) => {
@@ -309,46 +337,85 @@ export default function BuilderPage({ params }) {
     setAlignment(a);
   }, [recordHistory]);
 
-  // ── Save ─────────────────────────────────────────────────────────────────
+  // ── Zoom helpers ──────────────────────────────────────────────────────────
+  const fitToScreen = useCallback(() => {
+    // Trigger Canvas internal fit by resetting zoom to sentinel
+    setZoom((z) => z); // canvas re-centers on mount; trigger via key workaround
+    // We re-trigger fit by briefly setting a special value then restoring
+    setZoom(0.001);
+    setTimeout(() => setZoom(0.001), 0);
+  }, []);
+
+  // ── Save ──────────────────────────────────────────────────────────────────
   const onSave = async () => {
     if (!banner) return;
     setSaving(true);
     setError(null);
     try {
-      const canvas = { background, elements };
-      const patch = {
-        canvas,
+      const updated = await updateBanner(supabase, banner.id, {
+        canvas:    { background, elements },
         fields,
         alignment,
-        html: template?.html,
-        css: template?.css,
-      };
-
-      const updated = await updateBanner(supabase, banner.id, patch);
+        html:      template?.html,
+        css:       template?.css,
+      });
       if (updated) setBanner(updated);
       setSavedAt(Date.now());
       if (justSavedTimer.current) clearTimeout(justSavedTimer.current);
       setJustSaved(true);
-      justSavedTimer.current = setTimeout(() => setJustSaved(false), 1500);
-      initialElementsRef.current = JSON.parse(JSON.stringify(elements));
-      initialBackgroundRef.current = background;
-      undoStackRef.current = [];
-      redoStackRef.current = [];
-      setHistoryTick((n) => n + 1);
+      justSavedTimer.current = setTimeout(() => setJustSaved(false), 1800);
+      undoStack.current = [];
+      redoStack.current = [];
+      setCanUndo(false);
+      setCanRedo(false);
     } catch (e) {
       setError(e.message || "Failed to save");
     } finally {
       setSaving(false);
     }
   };
+  // Keep ref in sync so ⌘S in the keydown listener always calls latest onSave
+  useEffect(() => { onSaveRef.current = onSave; });
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Export ────────────────────────────────────────────────────────────────
+  const handleExport = async (format) => {
+    setExportOpen(false);
+    setExporting(true);
+    try {
+      const html = template?.html;
+      const css  = template?.css;
+      const slug = (banner?.title || "banner").toLowerCase().replace(/\s+/g, "-").slice(0, 40);
+
+      if (format === "html") {
+        const doc = buildCompositeStandaloneHtml({ html, css, fields, alignment, title: banner?.title || "banner", elements, aspect: banner?.aspect || "16:9", background });
+        triggerDownload(`${slug}.html`, doc, "text/html");
+      } else if (format === "png") {
+        const dataUrl = await rasterize({ html, css, fields, alignment, aspect: banner?.aspect || "16:9", format: "image/png", scale: 2 });
+        triggerDownload(`${slug}.png`, dataUrl);
+      } else if (format === "jpg") {
+        const dataUrl = await rasterize({ html, css, fields, alignment, aspect: banner?.aspect || "16:9", format: "image/jpeg", scale: 2, background: "#ffffff" });
+        triggerDownload(`${slug}.jpg`, dataUrl);
+      } else if (format === "pdf") {
+        const blob = await rasterizeToPdf({ html, css, fields, alignment, aspect: banner?.aspect || "16:9" });
+        triggerDownload(`${slug}.pdf`, URL.createObjectURL(blob), "application/pdf");
+      }
+    } catch (e) {
+      setError(e.message || "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── Render: loading ───────────────────────────────────────────────────────
   if (loading) {
     return (
       <>
         <TopBar title="Builder" />
-        <div className="mx-auto w-full max-w-7xl space-y-6 px-5 py-8">
-          <div className="h-96 rounded-lg bg-surface-2 animate-pulse" />
+        <div className="flex h-[calc(100dvh-4rem)] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <p className="text-sm text-muted">Loading banner…</p>
+          </div>
         </div>
       </>
     );
@@ -369,156 +436,155 @@ export default function BuilderPage({ params }) {
     );
   }
 
-
   const selectedEl = elements.find((el) => el.id === selectedId) || null;
 
   return (
-    <>
-      <TopBar
-        title="Builder"
-        action={
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={onSave}
-              disabled={saving}
-              leftIcon={
-                saving ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : justSaved ? (
-                  <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-                ) : (
-                  <Save className="h-3.5 w-3.5" />
-                )
-              }
+    <div className="flex h-screen flex-col overflow-hidden" style={{ background: "var(--background)" }}>
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface/90 px-3 backdrop-blur z-30">
+        {/* Back */}
+        <Link
+          href={`/dashboard/banners/${banner.id}`}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span className="hidden max-w-30 truncate sm:block">{banner.title}</span>
+        </Link>
+
+        {/* Title */}
+        <div className="hidden items-center gap-2 md:flex">
+          <span className="text-xs font-medium text-foreground truncate max-w-50">{banner.title}</span>
+          {banner.aspect && (
+            <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[10px] text-muted">
+              {banner.aspect}
+            </span>
+          )}
+        </div>
+
+        {/* Error */}
+        {error && (
+          <span className="truncate text-xs text-red-400 max-w-50">{error}</span>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          {/* Export */}
+          <div ref={exportRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setExportOpen((v) => !v)}
+              disabled={exporting}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-3 text-xs font-medium text-muted-strong transition-colors hover:border-border-strong hover:text-foreground disabled:opacity-50"
             >
-              {saving ? "Saving" : justSaved ? "Saved" : "Save"}
-            </Button>
+              {exporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Export
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 top-10 z-50 w-36 rounded-xl border border-border bg-surface shadow-xl overflow-hidden">
+                {[
+                  { fmt: "html", label: "HTML file" },
+                  { fmt: "png",  label: "PNG image" },
+                  { fmt: "jpg",  label: "JPEG image" },
+                  { fmt: "pdf",  label: "PDF document" },
+                ].map(({ fmt, label }) => (
+                  <button
+                    key={fmt}
+                    type="button"
+                    onClick={() => handleExport(fmt)}
+                    className="flex w-full items-center px-4 py-2.5 text-left text-xs text-muted-strong transition-colors hover:bg-surface-2 hover:text-foreground"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        }
+
+          {/* Save */}
+          <Button
+            size="sm"
+            onClick={onSave}
+            disabled={saving}
+            leftIcon={
+              saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : justSaved ? (
+                <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )
+            }
+          >
+            {saving ? "Saving…" : justSaved ? "Saved!" : "Save"}
+          </Button>
+        </div>
+      </header>
+
+      {/* ── Canva-style secondary toolbar ────────────────────────────────── */}
+      <CanvaToolbar
+        selectedId={selectedId}
+        selectedElement={selectedEl}
+        onDuplicate={duplicateSelected}
+        onDelete={deleteSelected}
+        onAlignElement={alignSelected}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        zoom={zoom}
+        onZoomChange={setZoom}
+        onFitToScreen={() => setZoom(0.001)}
+        onZoom100={() => setZoom(1)}
       />
 
-      {/* Full-height builder layout */}
-      <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden">
-        {/* Sub-header */}
-        <div className="flex items-center gap-3 border-b border-border bg-surface/60 px-3 py-2 backdrop-blur md:px-4">
-          <Link
-            href={`/dashboard/banners/${banner.id}`}
-            className="inline-flex items-center gap-1.5 text-xs text-muted hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="max-w-[40vw] truncate md:max-w-none">{banner.title}</span>
-          </Link>
-          {error && (
-            <span className="ml-auto truncate text-xs text-red-400">{error}</span>
-          )}
-          {/* Mobile-only toggles for the side panels */}
-          <div className="ml-auto flex items-center gap-1 md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobilePanel((p) => (p === "tools" ? null : "tools"))}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-muted-strong hover:text-foreground"
-            >
-              <Layers className="h-3 w-3" /> Tools
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobilePanel((p) => (p === "props" ? null : "props"))}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-[11px] text-muted-strong hover:text-foreground"
-            >
-              <Settings2 className="h-3 w-3" /> Edit
-            </button>
-          </div>
-        </div>
+      {/* ── Three-column layout ───────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left: elements/layers/upload panel */}
+        <LeftPanel
+          elements={elements}
+          selectedId={selectedId}
+          background={background}
+          onAddElement={addElement}
+          onSelectElement={(eid) => { setSelectedId(eid); setEditingId(null); }}
+          onMoveUp={(idx) => moveLayer(idx, 1)}
+          onMoveDown={(idx) => moveLayer(idx, -1)}
+          onBackgroundChange={changeBackground}
+        />
 
-        {/* Three-panel layout */}
-        <div className="relative flex flex-1 overflow-hidden">
-          {/* Left: Toolbar */}
-          <div
-            className={
-              "absolute inset-y-0 left-0 z-20 transition-transform duration-200 md:static md:translate-x-0 " +
-              (mobilePanel === "tools" ? "translate-x-0" : "-translate-x-full md:translate-x-0")
-            }
-          >
-            <Toolbar
-              onAddElement={(t) => { addElement(t); setMobilePanel(null); }}
-              selectedId={selectedId}
-              selectedElement={selectedEl}
-              onDuplicate={duplicateSelected}
-              onDelete={deleteSelected}
-              onAlignElement={alignSelected}
-              background={background}
-              onBackgroundChange={changeBackground}
-              onUndo={undo}
-              onRedo={redo}
-              canUndo={canUndo}
-              canRedo={canRedo}
-            />
-          </div>
+        {/* Center: infinite canvas */}
+        <Canvas
+          elements={elements}
+          selectedId={selectedId}
+          editingId={editingId}
+          background={background}
+          aspect={banner.aspect || "16:9"}
+          html={template?.html}
+          css={template?.css}
+          fields={fields}
+          alignment={alignment}
+          zoom={zoom}
+          onZoomChange={setZoom}
+          onSelectElement={(eid) => { setSelectedId(eid); setEditingId(null); }}
+          onUpdateElement={updateElement}
+          onDeselectAll={() => { setSelectedId(null); setEditingId(null); }}
+          onStartEdit={(eid) => { setSelectedId(eid); setEditingId(eid); }}
+          onEndEdit={() => setEditingId(null)}
+        />
 
-          {/* Backdrop to close mobile panels by tapping outside */}
-          {mobilePanel && (
-            <button
-              type="button"
-              aria-label="Close panel"
-              onClick={() => setMobilePanel(null)}
-              className="absolute inset-0 z-10 bg-black/40 md:hidden"
-            />
-          )}
-
-          {/* Center: Canvas */}
-          <Canvas
-            elements={elements}
-            selectedId={selectedId}
-            background={background}
-            aspect={banner.aspect || "16:9"}
-            html={template?.html}
-            css={template?.css}
-            fields={fields}
-            alignment={alignment}
-            onSelectElement={setSelectedId}
-            onUpdateElement={updateElement}
-            onDeselectAll={() => setSelectedId(null)}
-          />
-
-          {/* Right: Properties / Layers / Fields */}
-          <aside
-            className={
-              "absolute inset-y-0 right-0 z-20 flex w-72 max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface/95 backdrop-blur transition-transform duration-200 md:static md:max-w-none md:translate-x-0 md:bg-surface/60 " +
-              (mobilePanel === "props" ? "translate-x-0" : "translate-x-full md:translate-x-0")
-            }
-          >
-            <div className="border-b border-border px-3 py-2">
-              <Tabs
-                size="sm"
-                value={rightTab}
-                onChange={setRightTab}
-                tabs={RIGHT_TABS}
-              />
-            </div>
-            <div className="flex-1 overflow-y-auto p-3">
-              {rightTab === "properties" ? (
-                <PropertiesPanel element={selectedEl} onChange={updateElement} />
-              ) : rightTab === "layers" ? (
-                <LayersPanel
-                  elements={elements}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onMoveUp={(idx) => moveLayer(idx, 1)}
-                  onMoveDown={(idx) => moveLayer(idx, -1)}
-                />
-              ) : (
-                <EditorPanel
-                  fields={fields}
-                  alignment={alignment}
-                  onFieldChange={onFieldChange}
-                  onAlignmentChange={onAlignmentChange}
-                />
-              )}
-            </div>
-          </aside>
-        </div>
+        {/* Right: properties + fields */}
+        <RightPanel
+          element={selectedEl}
+          onChange={updateElementAndRecord}
+          fields={fields}
+          alignment={alignment}
+          onFieldChange={onFieldChange}
+          onAlignmentChange={onAlignmentChange}
+        />
       </div>
-    </>
+    </div>
   );
 }

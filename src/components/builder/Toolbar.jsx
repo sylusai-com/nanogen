@@ -1,38 +1,21 @@
-// src/components/builder/Toolbar.jsx
 "use client";
 
 import {
-  AlignCenter,
-  AlignLeft,
-  AlignRight,
-  Copy,
-  Image as ImageIcon,
-  LayoutTemplate,
-  MinusSquare,
-  MousePointer2,
-  Square,
-  Redo2,
-  Undo2,
-  Trash2,
-  Type,
+  AlignCenter, AlignLeft, AlignRight,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  Copy, Flip2, 
+  Minus, Plus,
+  Redo2, Trash2, Undo2,
+  ZoomIn, ZoomOut,
+  ChevronDown,
+  Lock, Unlock,
+  Group,
+  Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-const ELEMENTS = [
-  { type: "text",    icon: Type,          label: "Text" },
-  { type: "rect",    icon: Square,        label: "Shape" },
-  { type: "button",  icon: MousePointer2, label: "Button" },
-  { type: "image",   icon: ImageIcon,     label: "Image" },
-  { type: "divider", icon: MinusSquare,   label: "Divider" },
-];
-
-const ALIGN = [
-  { value: "left",   icon: AlignLeft,   label: "Left" },
-  { value: "center", icon: AlignCenter, label: "Center" },
-  { value: "right",  icon: AlignRight,  label: "Right" },
-];
-
-function ToolButton({ icon: Icon, label, onClick, active, danger, disabled }) {
+function ToolBtn({ icon: Icon, label, onClick, disabled, active, danger, size = "default" }) {
   return (
     <button
       type="button"
@@ -40,136 +23,153 @@ function ToolButton({ icon: Icon, label, onClick, active, danger, disabled }) {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex flex-col items-center justify-center gap-1 rounded-lg px-3 py-2 text-[10px] transition-colors",
+        "inline-flex items-center justify-center rounded-md transition-all",
+        size === "sm" ? "h-7 w-7" : "h-8 w-8",
         active
-          ? "bg-primary/20 text-primary ring-1 ring-primary/40"
+          ? "bg-primary/20 text-primary"
           : danger
-          ? "text-red-400 hover:bg-red-500/10"
-          : "text-muted hover:bg-surface-2 hover:text-foreground",
-        disabled && "pointer-events-none opacity-40",
+          ? "text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          : "text-muted-strong hover:bg-surface-2 hover:text-foreground",
+        disabled && "pointer-events-none opacity-35",
       )}
     >
-      <Icon className="h-4 w-4" strokeWidth={1.75} />
-      <span>{label}</span>
+      <Icon className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} strokeWidth={1.75} />
     </button>
   );
 }
 
-function Divider() {
-  return <div className="mx-1 my-2 h-px w-full bg-border" />;
+function Separator() {
+  return <div className="mx-1 h-5 w-px bg-border" />;
 }
 
-export default function Toolbar({
-  onAddElement,
+function ZoomInput({ zoom, onZoomChange }) {
+  const pct = Math.round(zoom * 100);
+  return (
+    <div className="flex items-center gap-0.5">
+      <ToolBtn icon={ZoomOut} label="Zoom out" size="sm" onClick={() => onZoomChange(Math.max(0.15, zoom - 0.1))} />
+      <div className="relative">
+        <input
+          type="number"
+          value={pct}
+          min={15}
+          max={400}
+          onChange={(e) => onZoomChange(Math.max(0.15, Math.min(4, (parseInt(e.target.value) || 100) / 100)))}
+          className="h-7 w-14 rounded-md border border-border bg-surface-2 text-center font-mono text-[11px] text-foreground focus:border-primary focus:outline-none"
+        />
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-muted">%</span>
+      </div>
+      <ToolBtn icon={ZoomIn} label="Zoom in" size="sm" onClick={() => onZoomChange(Math.min(4, zoom + 0.1))} />
+    </div>
+  );
+}
+
+const ALIGN_PRESETS = [
+  { label: "Align left",   value: "left",   icon: AlignLeft },
+  { label: "Align center", value: "center", icon: AlignCenter },
+  { label: "Align right",  value: "right",  icon: AlignRight },
+  { label: "Align top",    value: "top",    icon: AlignCenterHorizontal },
+  { label: "Align middle", value: "middle", icon: AlignCenterVertical },
+];
+
+export default function CanvaToolbar({
   selectedId,
   selectedElement,
   onDuplicate,
   onDelete,
   onAlignElement,
-  background,
-  onBackgroundChange,
   onUndo,
   onRedo,
   canUndo,
   canRedo,
+  zoom,
+  onZoomChange,
+  onFitToScreen,
+  onZoom100,
 }) {
+  const hasSelection = !!selectedId;
+
   return (
-    <aside className="flex h-full w-22 shrink-0 flex-col border-r border-border bg-surface/60 py-3 backdrop-blur">
-      {/* Section: Add */}
-      <div className="px-2">
-        <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
-          Add
-        </div>
-        <div className="space-y-0.5">
-          {ELEMENTS.map((el) => (
-            <ToolButton
-              key={el.type}
-              icon={el.icon}
-              label={el.label}
-              onClick={() => onAddElement(el.type)}
-            />
-          ))}
-        </div>
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface/90 px-3 backdrop-blur">
+      {/* Undo/Redo */}
+      <div className="flex items-center gap-0.5">
+        <ToolBtn icon={Undo2} label="Undo (⌘Z)" disabled={!canUndo} onClick={onUndo} />
+        <ToolBtn icon={Redo2} label="Redo (⌘Y)" disabled={!canRedo} onClick={onRedo} />
       </div>
 
-      <Divider />
+      <Separator />
 
-      {/* Section: Selected element actions */}
-      <div className="px-2">
-        <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
-          Selection
-        </div>
-        <div className="space-y-0.5">
-          {ALIGN.map((a) => (
-            <ToolButton
-              key={a.value}
-              icon={a.icon}
-              label={a.label}
-              disabled={!selectedId}
-              onClick={() => onAlignElement?.(a.value)}
-            />
-          ))}
-          <ToolButton
-            icon={Copy}
-            label="Duplicate"
-            disabled={!selectedId}
-            onClick={onDuplicate}
+      {/* Zoom */}
+      <ZoomInput zoom={zoom} onZoomChange={onZoomChange} />
+      <button
+        type="button"
+        title="Fit to screen"
+        onClick={onFitToScreen}
+        className="ml-0.5 inline-flex h-7 items-center rounded-md border border-border bg-surface-2 px-2 text-[10px] font-medium text-muted-strong hover:border-border-strong hover:text-foreground transition-colors"
+      >
+        Fit
+      </button>
+      <button
+        type="button"
+        title="Actual size (100%)"
+        onClick={onZoom100}
+        className="ml-0.5 inline-flex h-7 items-center rounded-md border border-border bg-surface-2 px-2 text-[10px] font-medium text-muted-strong hover:border-border-strong hover:text-foreground transition-colors"
+      >
+        100%
+      </button>
+
+      <Separator />
+
+      {/* Alignment — enabled only when element selected */}
+      <div className="flex items-center gap-0.5">
+        {ALIGN_PRESETS.map((a) => (
+          <ToolBtn
+            key={a.value}
+            icon={a.icon}
+            label={a.label}
+            size="sm"
+            disabled={!hasSelection}
+            onClick={() => onAlignElement?.(a.value)}
           />
-          <ToolButton
-            icon={Trash2}
-            label="Delete"
-            disabled={!selectedId}
-            danger
-            onClick={onDelete}
-          />
-        </div>
+        ))}
       </div>
 
-      <Divider />
+      <Separator />
 
-      {/* Section: History */}
-      <div className="px-2">
-        <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
-          History
-        </div>
-        <div className="space-y-0.5">
-          <ToolButton
-            icon={Undo2}
-            label="Undo"
-            disabled={!canUndo}
-            onClick={onUndo}
-          />
-          <ToolButton
-            icon={Redo2}
-            label="Redo"
-            disabled={!canRedo}
-            onClick={onRedo}
-          />
-        </div>
+      {/* Selection actions */}
+      <div className="flex items-center gap-0.5">
+        <ToolBtn
+          icon={Copy}
+          label="Duplicate (⌘D)"
+          size="sm"
+          disabled={!hasSelection}
+          onClick={onDuplicate}
+        />
+        <ToolBtn
+          icon={Trash2}
+          label="Delete (⌫)"
+          size="sm"
+          danger
+          disabled={!hasSelection}
+          onClick={onDelete}
+        />
       </div>
 
-      {/* Section: Canvas background */}
-      <div className="px-2">
-        <div className="mb-2 px-1 text-[9px] font-semibold uppercase tracking-widest text-muted">
-          Canvas
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <label
-            title="Canvas background"
-            className="group relative flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-border transition-colors hover:border-border-strong"
-            style={{ background }}
-          >
-            <LayoutTemplate className="h-3.5 w-3.5 text-white/50 opacity-0 transition-opacity group-hover:opacity-100" />
-            <input
-              type="color"
-              value={background || "#0c0c10"}
-              onChange={(e) => onBackgroundChange?.(e.target.value)}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-            />
-          </label>
-          <span className="text-[9px] text-muted">Bg color</span>
-        </div>
-      </div>
-    </aside>
+      {/* Selected element info */}
+      {selectedElement && (
+        <>
+          <Separator />
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 items-center rounded-full bg-primary/10 px-2 text-[9px] font-semibold uppercase tracking-widest text-primary">
+              {selectedElement.type}
+            </span>
+            <span className="font-mono text-[10px] text-muted">
+              {selectedElement.x?.toFixed(0)},{selectedElement.y?.toFixed(0)} ·{" "}
+              {selectedElement.w?.toFixed(0)}w
+              {selectedElement.h ? ` × ${selectedElement.h?.toFixed(0)}h` : ""}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

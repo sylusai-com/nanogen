@@ -11,114 +11,24 @@
 
 import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
 import { getStyleByName } from "@/lib/db/styles";
-import { getActiveSystemPrompt } from "@/lib/db/settings";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  composeBannerMessages,
+  getActivePrompts,
+} from "@/lib/prompts";
 import {
   accentFor,
   contrastRatio,
   readableForegroundFor,
 } from "@/lib/color";
 
-// ─────────────────────────────────────────────────────────────────────────
-// SYSTEM PROMPT (fallback)
-//
-// Used when no admin-configured prompt is set in the app_settings table.
-// Admins can override this from /admin/prompt and the change applies to
-// every subsequent banner generation request.
-// ─────────────────────────────────────────────────────────────────────────
-export const DEFAULT_SYSTEM_PROMPT = `You generate marketing banners as a single JSON object. Output ONLY JSON, no prose, no markdown fences.
-
-The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
-
-ASPECT RATIO IS LAYOUT-CRITICAL — design the composition specifically for the requested aspect. Do NOT reuse a 16:9 layout pattern for other aspects.
-- 16:9 (Landscape / Wide): horizontal hero flow — text on one side, decorative motif spilling across the rest; CTAs sit inline on a baseline. Inner content can use a side margin so the right side breathes.
-- 1:1 (Square / Social post): centered, typography-led, balanced composition. Inner content fills nearly the full width (no narrow side columns); decoration wraps symmetrically.
-- 4:5 (Portrait / Feed): vertical stack with full-width content. Headline near the top or middle, supporting copy below, CTAs grouped near the bottom. Use the full width — no max-width sidebar.
-- 9:16 (Story / Vertical / Reel): full-height vertical layout. Stack everything vertically, never side-by-side. Eyebrow / badge near the top, headline mid-upper, subhead below, CTA(s) near the bottom. Use the FULL canvas width. Scale type up so it reads on a phone — large headline (clamp values that bottom out around the SHORT edge, not the long edge). No left-aligned-with-empty-right composition.
-
-NO LIMITS on element count, decorative shapes, SVG motifs, gradients, badges, chips, dots, or fields — use as many as the design needs to fill the canvas richly. Aim for a polished, layered composition with multiple decorative layers (orbs, mesh, grid, noise, ribbons, micro-icons, avatars, trust marks, feature pills, etc.) appropriate to the brief.
-
-LAYOUT MUST FILL THE CANVAS:
-- No large empty bands at top or bottom for tall aspects.
-- No empty side columns for square / portrait / story aspects.
-- Size text relative to the SHORT EDGE of the aspect so it reads at the intended scale on tall canvases (e.g. for 9:16 use clamp(28px, 8vw, 96px) — vw still maps to width, but pick coefficients so the headline fills the narrower dimension).
-- Prefer flexbox / grid with explicit gap values; avoid absolute positioning except for decoration.
-
-OUTPUT FORMAT — strict JSON, exactly matching this schema:
-{
-  "html": string,
-  "css":  string,
-  "alignment": "left" | "center" | "right",
-  "fields": [
-    { "id": string, "type": "text",   "slot":     string, "label": string, "value": string },
-    { "id": string, "type": "color",  "cssVar":   string, "label": string, "value": string },
-    { "id": string, "type": "range",  "cssVar":   string, "label": string, "value": number, "min": number, "max": number, "step": number, "unit": string },
-    { "id": string, "type": "select", "cssVar":   string, "label": string, "value": string, "options": [{ "value": string, "label": string }] },
-    { "id": string, "type": "toggle", "selector": string, "label": string, "value": boolean }
-  ]
-}
-
-OUTPUT MUST BE PURE HTML + CSS:
-- Only the html and css strings define the banner. No JavaScript. No external scripts.
-- DO NOT load external fonts and DO NOT reference external image hosts (Unsplash, Pexels, Imgur, Giphy, CDNs, etc.). External http(s) image URLs are FORBIDDEN.
-- Backgrounds must be produced ENTIRELY with CSS — gradients (linear/radial/conic), color-mix(in oklab, …), background-blend-mode, mix-blend-mode, mask-image, clip-path, filter, transform — and inline SVG embedded as data: URIs (url("data:image/svg+xml;utf8,…")). Inline SVG patterns are encouraged for noise, dots, grids, waves.
-- Background imagery must be relevant to the brief: pick gradient palettes, shapes, and SVG motifs that match the topic/category (e.g. food brief → warm earthy gradients with subtle plate/leaf SVG silhouettes; tech brief → cool cyber-violet mesh with circuit / dot patterns). Do NOT default to the same theme on every banner.
-- The "image" field type is supported by the schema but you MUST NOT use it. Do not emit any field with type "image". Do not include any url("https://…") references.
-
-REQUIRED FIELDS:
-- A "headline" text field and color fields with ids "bg", "fg", "accent".
-- Editable text uses [data-slot="<id>"] in HTML, where <id> matches a text field's id.
-- Colors are CSS variables defined in :root and referenced by cssVar.
-- bg vs fg contrast must be readable (≥ 4.5:1 WCAG).
-- Root element: <div class="banner" data-align="left|center|right">.
-- The .banner CSS must include: position: relative; width: 100%; height: 100%; overflow: hidden; isolation: isolate.
-
-Pick palette and composition that fit the user's brief AND the aspect ratio. Do not impose a default theme. Return ONLY the JSON.`;
-
-// Per-aspect layout briefing. The model gets the same system-prompt rules
-// every call, but this user-message addendum is what makes "9:16" actually
-// produce a vertical Story layout instead of a landscape hero squashed into
-// a tall canvas.
-function aspectGuidance(aspect) {
-  switch (String(aspect || "").trim()) {
-    case "1:1":
-      return "ASPECT (LAYOUT-CRITICAL): 1:1 SQUARE — typography-led, centered, balanced composition. Inner content fills nearly the full width. Decoration wraps symmetrically. NO narrow side columns, NO empty top/bottom bands.";
-    case "4:5":
-      return "ASPECT (LAYOUT-CRITICAL): 4:5 PORTRAIT — vertical stack using the FULL width. Headline up top or middle, subhead below, CTAs grouped near the bottom. Decorative motifs flow vertically. NO max-width sidebar pattern.";
-    case "9:16":
-      return "ASPECT (LAYOUT-CRITICAL): 9:16 STORY / VERTICAL / REEL — full-height vertical poster designed for a phone screen. Stack EVERYTHING vertically. Eyebrow/badge near the top, large headline mid-upper, subhead below, primary CTA near the bottom. Use the FULL canvas width and height — no empty bands. Scale headline so it fills the narrow width (e.g. clamp(36px, 9vw, 120px)). NEVER use a left-side column with empty space on the right.";
-    case "16:9":
-      return "ASPECT (LAYOUT-CRITICAL): 16:9 LANDSCAPE — horizontal hero flow, content on one side and decorative motif spilling across the other side is OK.";
-    default:
-      return aspect ? `ASPECT (LAYOUT-CRITICAL): ${aspect} — design the composition specifically for this exact ratio so the canvas is fully used.` : null;
-  }
-}
-
-// User message is brief — only include style/aspect when the caller passed
-// them. Empty/falsy values are dropped so the model is not biased toward a
-// theme the user did not actually request.
-function buildUserMessage({
-  prompt,
-  style,
-  aspect,
-  variantSeed = 0,
-  referenceContextText = null,
-}) {
-  const lines = [
-    `BRIEF (authoritative): ${prompt}`,
-    `Use the brief as the source of truth for the banner subject, copy, visual direction, and any stated preference such as light bg, dark bg, or imagery.`,
-  ];
-  if (style && String(style).trim()) lines.push(`STYLE PREFERENCE: ${style}`);
-  const aspectLine = aspectGuidance(aspect);
-  if (aspectLine) lines.push(aspectLine);
-  if (referenceContextText) lines.push(referenceContextText);
-  if (variantSeed > 0) lines.push(`VARIANT: ${variantSeed}`);
-  lines.push(`The banner is HTML + CSS only — NO external image URLs. Build any background using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.`);
-  lines.push(`There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.`);
-  lines.push("Return ONLY the JSON object.");
-  return lines.join("\n");
-}
+// All banner-generation prompts (system, per-aspect briefing, user-message
+// scaffold) live in src/lib/prompts.js. This file used to hard-code its
+// own copies, which silently drifted from the admin-editable versions in
+// app_settings whenever one side moved. Now there is a single source of
+// truth: composeBannerMessages() pulls from the active prompts loaded in
+// generateBannerTemplate(), and the admin UI edits the same defaults.
 
 // ─────────────────────────────────────────────────────────────────────────
 // FALLBACK — used when no model is configured / call fails. CSS-only:
@@ -574,13 +484,34 @@ export async function generateBannerTemplate({
     };
   }
 
-  // Resolve the system prompt: caller override → admin-managed setting →
-  // hard-coded default. Admins can edit the active prompt at /admin/prompt.
-  const systemPrompt = systemPromptOverride
-    || (await getActiveSystemPrompt(adminClient).catch(() => null))
-    || DEFAULT_SYSTEM_PROMPT;
+  // Pull the entire prompt set (system, user scaffold, per-aspect guidance)
+  // in one DB round-trip. Any DB override edited at /admin/prompt is
+  // honored automatically; keys with no override fall back to the in-code
+  // defaults defined in @/lib/prompts.
+  const activePrompts = await getActivePrompts(adminClient).catch(() => null);
+  if (systemPromptOverride && activePrompts) {
+    activePrompts.bannerSystem = systemPromptOverride;
+  }
 
   try {
+    const messages = activePrompts
+      ? composeBannerMessages({
+          prompts:               activePrompts,
+          brief:                 prompt,
+          style,
+          aspect,
+          variantSeed,
+          referenceContextText,
+        })
+      : null;
+    if (!messages) {
+      return {
+        ...styled,
+        generator: "fallback",
+        reason: "Could not load prompts from app_settings — using fallback template.",
+        styleRow,
+      };
+    }
     const { content } = await callOpenRouter({
       apiKey,
       endpoint:    endpoint || undefined,
@@ -588,10 +519,7 @@ export async function generateBannerTemplate({
       jsonMode:    true,
       temperature: textModel.config?.temperature ?? 0.9,
       maxTokens:   textModel.config?.maxTokens   ?? 6000,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: buildUserMessage({ prompt, style, aspect, variantSeed, referenceContextText }) },
-      ],
+      messages,
     });
 
     const parsed     = extractJson(content);

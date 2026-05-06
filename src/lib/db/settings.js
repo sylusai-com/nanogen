@@ -1,23 +1,13 @@
 // src/lib/db/settings.js
-// app_settings table queries. RLS restricts reads to admins, so the public
-// (cookie-bound) supabase client is fine for /admin pages but NOT for the
-// banner generation server flow — that path runs as a regular user. The
-// admin (service-role) client bypasses RLS and is the right choice from
-// /api/banners.
-
-export const SYSTEM_PROMPT_KEY = "banner_system_prompt";
-
-// Returns the active system prompt text, or null when no row is set.
-// Caller is expected to fall back to the in-code DEFAULT_SYSTEM_PROMPT.
-export async function getActiveSystemPrompt(adminClient) {
-  const { data, error } = await adminClient
-    .from("app_settings")
-    .select("value")
-    .eq("key", SYSTEM_PROMPT_KEY)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.value || null;
-}
+//
+// Generic key/value access for the `app_settings` table. RLS restricts
+// reads to admins, so this module is meant to be used with the admin
+// (service-role) client.
+//
+// Prompt-specific reads/writes live in src/lib/prompts.js — that module
+// is the single source of truth for which keys exist, how they're
+// serialized, and what the in-code defaults are. Don't reintroduce
+// hard-coded prompt logic here.
 
 export async function getSetting(adminClient, key) {
   const { data, error } = await adminClient

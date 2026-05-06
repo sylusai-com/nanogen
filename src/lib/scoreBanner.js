@@ -22,58 +22,16 @@ import {
   pickEndpoint,
   templateRichness,
 } from "@/lib/bannerTemplate";
+import {
+  composeScoreImageMessages,
+  composeScoreMessages,
+  getActivePrompts,
+} from "@/lib/prompts";
 
-const SYSTEM_PROMPT = `You are a senior brand designer and design critic. You evaluate marketing banners against the bar set by Apple, Stripe, Linear, and Vercel.
-
-You will receive:
-  - a brief (what the banner is for)
-  - the banner's HTML
-  - the banner's CSS
-
-Score the banner on a 0–100 scale where:
-  100 — could ship as a flagship hero on the homepage of a top-tier product company.
-   90 — clearly modern, distinctive, multiple components, on-brief.
-   80 — solid, on-brief, would pass review with minor tweaks.
-   70 — generic but functional. Looks like a placeholder.
-   60 — basic / boring. Headline + subhead + button on a flat gradient.
-   50 or below — broken, ugly, or off-brief.
-
-Rubric (each 0–20):
-  RELEVANCE       — does it match the brief subject and tone?
-  COMPOSITION     — is the layout intentional, balanced, with visual hierarchy?
-  RICHNESS        — element density, decorative layers, multiple components?
-  POLISH          — typography, spacing, color harmony, modern CSS?
-  DISTINCTIVENESS — does it stand out, or is it the generic "centered headline + button" stack?
-
-OUTPUT — return ONLY a JSON object exactly matching:
-
-{
-  "score": number,
-  "breakdown": {
-    "relevance": number,
-    "composition": number,
-    "richness": number,
-    "polish": number,
-    "distinctiveness": number
-  },
-  "reason": string
-}
-
-Be honest. Generic banners get 60–70, not 90.`;
-
-function buildUserMessage({ prompt = "", style = "", aspect = "", html = "", css = "" }) {
-  return `BRIEF: ${prompt || "(none provided)"}
-STYLE: ${style || "—"}
-ASPECT: ${aspect || "—"}
-
-HTML:
-${html.slice(0, 12000)}
-
-CSS:
-${css.slice(0, 12000)}
-
-Return ONLY the JSON object — no prose, no markdown.`;
-}
+// All scoring prompts (system + user scaffold for HTML/CSS scoring, plus
+// the image-scoring variant) come from src/lib/prompts.js — the same
+// module that drives banner generation. Admins edit them at /admin/prompt
+// and changes apply to every subsequent score call automatically.
 
 function clampScore(n) {
   if (typeof n !== "number" || !Number.isFinite(n)) return null;
@@ -139,7 +97,25 @@ export async function scoreBannerTemplate({
     };
   }
 
+  const adminClient = createAdminClient();
+  const activePrompts = await getActivePrompts(adminClient).catch(() => null);
+  if (!activePrompts) {
+    return {
+      score:  heuristic,
+      source: "heuristic",
+      reason: "Could not load scoring prompts — using heuristic score.",
+    };
+  }
+
   try {
+    const messages = composeScoreMessages({
+      prompts: activePrompts,
+      brief:   prompt,
+      style,
+      aspect,
+      html,
+      css,
+    });
     const { content } = await callOpenRouter({
       apiKey,
       endpoint:    endpoint || undefined,
@@ -148,10 +124,7 @@ export async function scoreBannerTemplate({
       // Low temperature for stable, repeatable scoring.
       temperature: model.config?.scoringTemperature ?? 0.2,
       maxTokens:   model.config?.scoringMaxTokens   ?? 600,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user",   content: buildUserMessage({ prompt, style, aspect, html, css }) },
-      ],
+      messages,
     });
 
     const parsed = extractJson(content);
@@ -202,7 +175,18 @@ export async function scoreBannerImage({ supabase, prompt = "", imageUrl }) {
     };
   }
 
+  const adminClient = createAdminClient();
+  const activePrompts = await getActivePrompts(adminClient).catch(() => null);
+  if (!activePrompts) {
+    return { score: 75, source: "heuristic", reason: "Could not load scoring prompts — neutral score returned." };
+  }
+
   try {
+    const messages = composeScoreImageMessages({
+      prompts: activePrompts,
+      brief:   prompt,
+      imageUrl,
+    });
     const { content } = await callOpenRouter({
       apiKey,
       endpoint:    endpoint || undefined,
@@ -210,16 +194,7 @@ export async function scoreBannerImage({ supabase, prompt = "", imageUrl }) {
       jsonMode:    true,
       temperature: 0.2,
       maxTokens:   400,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT.replace("HTML", "image").replace("CSS", "rendered output") },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: `BRIEF: ${prompt || "(none provided)"}\nReturn ONLY the JSON object — score, breakdown, reason.` },
-            { type: "image_url", image_url: { url: imageUrl } },
-          ],
-        },
-      ],
+      messages,
     });
     const parsed = extractJson(content);
     const score  = clampScore(parsed?.score);

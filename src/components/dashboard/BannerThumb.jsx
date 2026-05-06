@@ -19,10 +19,21 @@ function fmtDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function BannerThumb({ banner, href, index = 0 }) {
+// `frameAspect` forces the outer card to a fixed shape (typically "16:9"
+// for the dashboard grid). The banner itself still renders at its true
+// proportions inside that frame, with letter-boxing on whichever axis is
+// shorter — so a 9:16 Story shows as a centered tall preview inside a
+// 16:9 card instead of stretching the row to phone-screen height.
+export default function BannerThumb({
+  banner,
+  href,
+  index = 0,
+  frameAspect = null,
+}) {
   const link = href || `/dashboard/banners/${banner.id}`;
   const isTopScore = banner.score != null && banner.score >= 80;
   const hasTemplate = Boolean(banner.html && banner.css);
+  const useFrame = Boolean(frameAspect) && banner.aspect !== frameAspect;
 
   return (
     <motion.div
@@ -42,13 +53,24 @@ export default function BannerThumb({ banner, href, index = 0 }) {
         <div className="p-2">
           <div
             className={cn(
-              aspectClass(banner.aspect),
+              aspectClass(useFrame ? frameAspect : banner.aspect),
               "relative overflow-hidden rounded-[22px] border border-white/8 bg-surface-2",
             )}
             style={!hasTemplate ? { background: banner.gradient || "#0c0c10" } : undefined}
           >
             {hasTemplate ? (
-              <BannerPreview banner={banner} className="h-full w-full" />
+              useFrame ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(135deg,#0c0c10,#17172a)]">
+                  <div
+                    className="max-h-full max-w-full"
+                    style={{ aspectRatio: banner.aspect.replace(":", " / "), height: "100%" }}
+                  >
+                    <BannerPreview banner={banner} className="h-full w-full" />
+                  </div>
+                </div>
+              ) : (
+                <BannerPreview banner={banner} className="h-full w-full" />
+              )
             ) : (
               <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_34%),linear-gradient(135deg,#0c0c10,#17172a)] p-4">
                 <div className="max-w-[80%] rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-left text-white/85 backdrop-blur-md">

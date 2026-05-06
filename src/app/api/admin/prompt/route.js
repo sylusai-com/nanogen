@@ -1,25 +1,37 @@
 // src/app/api/admin/prompt/route.js
 //
-// Admin-only endpoint for the banner-generation system prompt.
+// Admin-only endpoint for every LLM prompt the app sends.
 //
-//   GET  — returns the current active system prompt (and a copy of the
-//          built-in default for reference).
-//   PUT  — overwrites the active system prompt. Body: { value: string }.
-//          Caller must be an admin; we re-verify against the profiles
-//          table even though RLS already gates the table.
+//   GET    — returns the full prompt overview (current value, default,
+//            customization metadata) for every key exposed by
+//            src/lib/prompts.js. The admin UI renders itself from this
+//            payload, so adding a new prompt only requires editing
+//            prompts.js — no route changes needed.
+//
+//   PUT    — saves an override. Body: { key: string, value: string|object }.
+//            `key` is the in-code key (e.g. "bannerSystem"); `value` is a
+//            string for "string" prompts and any JSON-serializable shape
+//            for "json" prompts. The route validates against PROMPTS so
+//            unknown keys are rejected.
+//
+//   DELETE — removes the override and reverts to the in-code default.
+//            Body or query: { key: string } — same key-space as PUT.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  SYSTEM_PROMPT_KEY,
-  getSetting,
-  upsertSetting,
-} from "@/lib/db/settings";
-import { DEFAULT_SYSTEM_PROMPT } from "@/lib/bannerTemplate";
+  PROMPTS,
+  deletePromptOverride,
+  getAdminPromptOverview,
+  isValidPromptKey,
+  savePromptOverride,
+} from "@/lib/prompts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const MAX_PROMPT_BYTES = 64 * 1024; // generous; the largest default is ~3KB
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -38,23 +50,41 @@ async function requireAdmin() {
   return { user };
 }
 
-const MAX_PROMPT_BYTES = 64 * 1024; // 64KB — generous; the default is ~3KB.
+function validateValueShape(meta, value) {
+  if (meta.kind === "string") {
+    if (typeof value !== "string" || !value.trim()) {
+      return "value must be a non-empty string";
+    }
+    if (Buffer.byteLength(value, "utf8") > MAX_PROMPT_BYTES) {
+      return "value is too large";
+    }
+    return null;
+  }
+  if (meta.kind === "json") {
+    if (value == null || typeof value !== "object") {
+      return "value must be a JSON object";
+    }
+    const serialized = JSON.stringify(value);
+    if (Buffer.byteLength(serialized, "utf8") > MAX_PROMPT_BYTES) {
+      return "value is too large";
+    }
+    return null;
+  }
+  return `unsupported prompt kind: ${meta.kind}`;
+}
 
 export async function GET() {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;
 
-  const adminDb = createAdminClient();
-  const row = await getSetting(adminDb, SYSTEM_PROMPT_KEY);
+  const adminDb  = createAdminClient();
+  const overview = await getAdminPromptOverview(adminDb);
 
   const res = NextResponse.json({
-    key:          SYSTEM_PROMPT_KEY,
-    value:        row?.value || DEFAULT_SYSTEM_PROMPT,
-    description:  row?.description || null,
-    isCustomized: !!row?.value && row.value !== DEFAULT_SYSTEM_PROMPT,
-    updatedAt:    row?.updated_at || null,
-    updatedBy:    row?.updated_by || null,
-    defaultValue: DEFAULT_SYSTEM_PROMPT,
+    keys: Object.fromEntries(
+      Object.entries(PROMPTS).map(([k, v]) => [k, v.dbKey]),
+    ),
+    prompts: overview,
   });
   res.headers.set("Cache-Control", "private, no-store");
   return res;
@@ -68,46 +98,63 @@ export async function PUT(req) {
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const value = body?.value;
-  if (typeof value !== "string" || !value.trim()) {
-    return NextResponse.json({ error: "value must be a non-empty string" }, { status: 400 });
-  }
-  if (Buffer.byteLength(value, "utf8") > MAX_PROMPT_BYTES) {
-    return NextResponse.json({ error: "Prompt is too large" }, { status: 413 });
+  const key = body?.key;
+  if (typeof key !== "string" || !isValidPromptKey(key)) {
+    return NextResponse.json({ error: `Unknown prompt key: ${key}` }, { status: 400 });
   }
 
-  const adminDb = createAdminClient();
+  const meta = PROMPTS[key];
+  const reason = validateValueShape(meta, body.value);
+  if (reason) {
+    return NextResponse.json({ error: reason }, { status: 400 });
+  }
+
   try {
-    const row = await upsertSetting(adminDb, {
-      key:         SYSTEM_PROMPT_KEY,
-      value,
-      description: typeof body.description === "string" ? body.description : undefined,
-      updatedBy:   gate.user.id,
+    const row = await savePromptOverride(createAdminClient(), {
+      key,
+      value:     body.value,
+      updatedBy: gate.user.id,
     });
     return NextResponse.json({
-      key:         row.key,
-      value:       row.value,
-      description: row.description,
-      updatedAt:   row.updated_at,
-      updatedBy:   row.updated_by,
+      key,
+      dbKey:        row.key,
+      value:        body.value,
+      isCustomized: true,
+      updatedAt:    row.updated_at,
+      updatedBy:    row.updated_by,
     });
   } catch (e) {
     return NextResponse.json({ error: e?.message || "Failed to save prompt" }, { status: 500 });
   }
 }
 
-// DELETE — revert to the in-code default by removing the row.
-export async function DELETE() {
+export async function DELETE(req) {
   const gate = await requireAdmin();
   if (gate.error) return gate.error;
 
-  const adminDb = createAdminClient();
-  const { error } = await adminDb
-    .from("app_settings")
-    .delete()
-    .eq("key", SYSTEM_PROMPT_KEY);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Accept the key from either the JSON body or the query string. The
+  // browser fetch wrapper sends DELETE with a body; curl users prefer
+  // a query param.
+  let key = null;
+  try {
+    const body = await req.clone().json().catch(() => null);
+    key = body?.key || null;
+  } catch { /* ignore */ }
+  if (!key) {
+    key = new URL(req.url).searchParams.get("key");
   }
-  return NextResponse.json({ ok: true, value: DEFAULT_SYSTEM_PROMPT });
+  if (typeof key !== "string" || !isValidPromptKey(key)) {
+    return NextResponse.json({ error: `Unknown prompt key: ${key}` }, { status: 400 });
+  }
+
+  try {
+    const defaultValue = await deletePromptOverride(createAdminClient(), key);
+    return NextResponse.json({
+      key,
+      value:        defaultValue,
+      isCustomized: false,
+    });
+  } catch (e) {
+    return NextResponse.json({ error: e?.message || "Failed to revert prompt" }, { status: 500 });
+  }
 }

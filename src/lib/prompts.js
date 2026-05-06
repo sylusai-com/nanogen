@@ -86,7 +86,13 @@ REFERENCE IMAGE vs SUBJECT IMAGE — these are TWO DIFFERENT inputs and must be 
 - If neither is present, design a CSS-only banner that looks complete without any photographic background.
 
 REQUIRED FIELDS:
-- A "headline" text field and color fields with ids "bg", "fg", "accent".
+REQUIRED FIELDS — FIELD IDS ARE STRICT AND CASE-SENSITIVE:
+- You MUST emit a text field with id EXACTLY "headline" (NOT "title", "heading", "main_title", or any synonym).
+- You MUST emit three color fields with these EXACT ids (NOT synonyms):
+  · "bg"   — the background color (NOT "background", "background_color", "canvas", "surface")
+  · "fg"   — the foreground/text color (NOT "foreground", "text_color", "font_color", "primary_text_color")
+  · "accent" — the accent/highlight color (NOT "primary", "primary_color", "highlight", "brand", "cta_color")
+- The id values must be these exact strings. Even though your training data may suggest "title" or "primary" as field names, the downstream validator requires "headline", "bg", "fg", "accent" verbatim.
 - Editable text uses [data-slot="<id>"] in HTML, where <id> matches a text field's id.
 - Colors are CSS variables defined in :root and referenced by cssVar.
 - bg vs fg contrast must be readable (≥ 4.5:1 WCAG).

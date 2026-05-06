@@ -34,6 +34,109 @@ import {
 // FALLBACK — used when no model is configured / call fails. CSS-only:
 // gradients, SVG noise, decorative orbs. No external image URLs.
 // ─────────────────────────────────────────────────────────────────────────
+
+const FIELD_ALIASES = Object.freeze({
+  // headline variants
+  title:              "headline",
+  heading:            "headline",
+  main_title:         "headline",
+  mainTitle:          "headline",
+  hero_title:         "headline",
+  heroTitle:          "headline",
+  banner_title:       "headline",
+  page_title:         "headline",
+  display_title:      "headline",
+  primary_text:       "headline",
+
+  // bg variants
+  background_color:   "bg",
+  background:         "bg",
+  bg_color:           "bg",
+  backgroundColor:    "bg",
+  backgroundColour:   "bg",
+  canvas_bg:          "bg",
+  canvas:             "bg",
+  page_bg:            "bg",
+  surface:            "bg",
+
+  // fg variants
+  foreground:         "fg",
+  text_color:         "fg",
+  font_color:         "fg",
+  foreground_color:   "fg",
+  foregroundColor:    "fg",
+  textColour:         "fg",
+  primary_text_color: "fg",
+  copy_color:         "fg",
+  content_color:      "fg",
+
+  // accent variants
+  primary:            "accent",
+  primary_color:      "accent",
+  primaryColor:       "accent",
+  accent_color:       "accent",
+  accentColor:        "accent",
+  highlight:          "accent",
+  highlight_color:    "accent",
+  brand:              "accent",
+  brand_color:        "accent",
+  cta_color:          "accent",
+  action_color:       "accent",
+  link_color:         "accent",
+});
+
+// Track which aliases have been logged (module-level) so noisy models
+// don't flood stderr. Operators can still see the log on the very first
+// occurrence per process — usually that's one per deploy / cold start.
+const _loggedAliases = new Set();
+
+function _logAlias(from, to, label) {
+  const key = `${from}→${to}`;
+  if (_loggedAliases.has(key)) return;
+  _loggedAliases.add(key);
+  console.log(
+    `[auto-repair] "${from}" → "${to}"${label ? ` (${label})` : ""}`,
+  );
+}
+
+function autoRepairFields(template) {
+  if (!template?.fields) return template;
+
+  // First pass: rename aliased fields. Only rename when the canonical id
+  // is NOT already present — if the model emitted both "title" and
+  // "headline", we keep "headline" and drop "title" in the dedup pass.
+  const canonicalIds = new Set(
+    template.fields.map((f) => f?.id).filter(Boolean),
+  );
+
+  const repaired = template.fields.map((field) => {
+    if (!field || typeof field.id !== "string") return field;
+    const canonical = FIELD_ALIASES[field.id];
+    if (!canonical || field.id === canonical) return field;
+    // Never overwrite an existing canonical field.
+    if (canonicalIds.has(canonical)) {
+      _logAlias(field.id, canonical, "skipped — canonical already present");
+      return field;
+    }
+    _logAlias(field.id, canonical, field.label || "");
+    return { ...field, id: canonical };
+  });
+
+  // Second pass: deduplicate by id (first occurrence wins). This handles
+  // the case where the model emitted BOTH "title" AND "headline", and we
+  // kept both above because canonical existed.
+  const seen = new Set();
+  const deduped = repaired.filter((field) => {
+    if (!field || typeof field.id !== "string") return false;
+    const key = `${field.id}:${field.type || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { ...template, fields: deduped };
+}
+
 const FALLBACK_TEMPLATE = {
   html: `<div class="banner" data-align="left" data-aspect="16:9">
   <div class="banner__bg">
@@ -664,7 +767,7 @@ export async function generateBannerTemplate({
     });
 
     const parsed     = extractJson(content);
-    if (!parsed) {
+     if (!parsed) {
       return {
         ...styled,
         generator: "fallback",
@@ -673,26 +776,27 @@ export async function generateBannerTemplate({
       };
     }
     const cleaned    = stripExternalImageUrls(parsed);
-    const validated  = validateTemplate(cleaned);
-    if (!validated) {
+    const repaired   = autoRepairFields(cleaned);
+    const validated  = validateTemplate(repaired);
+        if (!validated) {
       // Surface a more useful reason than the generic "thin HTML" — admins
       // can tell at a glance whether the model emitted no fields, missing
       // required ids, or a CSS block that's too short.
       const missing = [];
-      const ids = new Set((cleaned?.fields || []).map((f) => f?.id));
+      const ids = new Set((repaired?.fields || []).map((f) => f?.id));
       for (const required of ["headline", "bg", "fg", "accent"]) {
         if (!ids.has(required)) missing.push(required);
       }
       let why;
-      if (typeof cleaned?.html !== "string" || typeof cleaned?.css !== "string") {
+      if (typeof repaired?.html !== "string" || typeof repaired?.css !== "string") {
         why = "missing html or css string";
-      } else if (!Array.isArray(cleaned?.fields) || cleaned.fields.length === 0) {
+      } else if (!Array.isArray(repaired?.fields) || repaired.fields.length === 0) {
         why = "fields array empty";
       } else if (missing.length) {
         why = `missing required fields: ${missing.join(", ")}`;
-      } else if ((cleaned.html.match(/<[a-zA-Z][^>/]*>/g) || []).length < 3) {
+      } else if ((repaired.html.match(/<[a-zA-Z][^>/]*>/g) || []).length < 3) {
         why = "html had fewer than 3 tags";
-      } else if ((cleaned.css || "").length < 100) {
+      } else if ((repaired.css || "").length < 100) {
         why = "css was too short (< 100 chars)";
       } else {
         why = "schema validation failed";

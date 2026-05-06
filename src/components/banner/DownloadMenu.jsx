@@ -16,7 +16,7 @@ import Dropdown, {
   DropdownSection,
 } from "@/components/ui/Dropdown";
 import {
-  buildStandaloneHtml,
+  buildCompositeStandaloneHtml,
   buildSvgString,
   exportSize,
   rasterize,
@@ -56,17 +56,29 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
     .slice(0, 60) || "banner";
 
   const exportPayload = () => ({
-    html:      banner.html,
-    css:       banner.css,
-    fields:    banner.fields || [],
-    alignment: banner.alignment || "left",
-    aspect:    banner.aspect || "16:9",
+    html:             banner.html,
+    css:              banner.css,
+    fields:           banner.fields || [],
+    alignment:        banner.alignment || "left",
+    aspect:           banner.aspect || "16:9",
+    elements:         banner.canvas?.elements || [],
+    canvasBackground: banner.canvas?.background || "#0c0c10",
   });
 
   const onHtml = async () => {
     setBusy("html");
     try {
-      const doc = buildStandaloneHtml({ ...exportPayload(), title: banner.title });
+      const payload = exportPayload();
+      const doc = buildCompositeStandaloneHtml({
+        html:       payload.html,
+        css:        payload.css,
+        fields:     payload.fields,
+        alignment:  payload.alignment,
+        elements:   payload.elements,
+        background: payload.canvasBackground,
+        aspect:     payload.aspect,
+        title:      banner.title,
+      });
       triggerDownload(`${baseName}.html`, doc, "text/html");
     } finally {
       setBusy(null);

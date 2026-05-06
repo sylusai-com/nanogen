@@ -13,8 +13,6 @@ import Button from "@/components/ui/Button";
 import PromptInput from "./PromptInput";
 import AspectSelector from "./AspectSelector";
 import StyleSelector from "./StyleSelector";
-import ReferenceUpload from "./ReferenceUpload";
-import ModelPicker from "./ModelPicker";
 
 // HTML banner studio. Pulls aspects + styles + enabled text models from DB
 // (with stale-while-revalidate caching so opening the page is instant
@@ -33,9 +31,6 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   // server as `referenceImage` and used as the bg_image in every variant.
   const [reference, setReference] = useState(null);
 
-  // Catalog data is admin-managed and rarely changes. Cache for 5 minutes
-  // and revalidate in the background — the form re-renders if a new
-  // aspect / style / model is added between visits.
   const aspectsQ = useCachedQuery(
     ["catalog", "aspects"],
     () => listAspectRatios(supabase),
@@ -57,19 +52,13 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const textModels = modelsQ.data;
   const loadError = aspectsQ.error || stylesQ.error || modelsQ.error;
 
-  // Default the aspect ratio once the catalog loads (16:9 is a sensible
-  // physical default — the canvas needs SOME shape). Style is intentionally
-  // left empty: we don't want to bias the model toward a theme the user
-  // never asked for. The user can still pick one explicitly.
   useEffect(() => {
     if (aspect == null && aspects?.length) {
-      // schedule to avoid synchronous setState inside effect
       Promise.resolve().then(() => setAspect(aspects[0].ratio));
     }
   }, [aspect, aspects]);
 
   const ready = aspects && styles;
-  // Style is OPTIONAL — submit is allowed without one.
   const canSubmit =
     !isGenerating && prompt.trim() && aspect && ready;
 
@@ -79,11 +68,7 @@ export default function PromptForm({ onSubmit, isGenerating }) {
     onSubmit({
       prompt: prompt.trim(),
       aspect,
-      // null when the user didn't pick anything — the API treats that as
-      // "no preference" and lets the model choose freely.
       style: style || null,
-      // "auto" → fan-out across every enabled model. Otherwise the slug
-      // of the single model the user picked.
       model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
       referenceImage: reference?.dataUrl || null,
     });
@@ -91,7 +76,16 @@ export default function PromptForm({ onSubmit, isGenerating }) {
 
   return (
     <Card elevated as="form" className="p-5 md:p-6 space-y-6">
-      <PromptInput value={prompt} onChange={setPrompt} />
+      <PromptInput
+        value={prompt}
+        onChange={setPrompt}
+        reference={reference}
+        onReferenceChange={setReference}
+        models={textModels}
+        modelsLoading={modelsQ.isLoading && !textModels}
+        modelSlug={modelSlug}
+        onModelChange={setModelSlug}
+      />
 
       {!ready ? (
         <div className="flex items-center gap-2 text-xs text-muted">
@@ -102,34 +96,18 @@ export default function PromptForm({ onSubmit, isGenerating }) {
           {loadError}
         </div>
       ) : (
-        <>
-          <div className="grid gap-5 md:grid-cols-2">
-            <AspectSelector
-              options={aspects}
-              value={aspect}
-              onChange={setAspect}
-            />
-            <StyleSelector
-              options={styles}
-              value={style}
-              onChange={setStyle}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-medium uppercase tracking-wider text-muted">
-              Model
-            </label>
-            <ModelPicker
-              models={textModels}
-              value={modelSlug}
-              onChange={setModelSlug}
-              loading={modelsQ.isLoading && !textModels}
-            />
-          </div>
-
-          <ReferenceUpload value={reference} onChange={setReference} />
-        </>
+        <div className="grid gap-5 md:grid-cols-2">
+          <AspectSelector
+            options={aspects}
+            value={aspect}
+            onChange={setAspect}
+          />
+          <StyleSelector
+            options={styles}
+            value={style}
+            onChange={setStyle}
+          />
+        </div>
       )}
 
       <div className="divider-soft" />

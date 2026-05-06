@@ -1,9 +1,8 @@
 // src/components/editor/EditorPreview.jsx
 "use client";
 
-import { useMemo } from "react";
-import { buildStandaloneHtml } from "@/lib/bannerDownload";
 import { cn } from "@/lib/cn";
+import BannerPreview from "@/components/banner/BannerPreview";
 
 function aspectRatio(a) {
   if (a === "1:1") return "1 / 1";
@@ -19,17 +18,6 @@ export default function EditorPreview({
   aspect = "16:9",
   className,
 }) {
-  const srcDoc = useMemo(() => {
-    if (!template) return "";
-    return buildStandaloneHtml({
-      html: template.html,
-      css: template.css,
-      fields,
-      alignment,
-      title: "Banner preview",
-    });
-  }, [template, fields, alignment]);
-
   if (!template) {
     return (
       <div
@@ -42,6 +30,18 @@ export default function EditorPreview({
     );
   }
 
+  // Adapt the editor's `template` shape to the BannerPreview banner shape
+  // so the editor preview, the saved-banner preview, and every download
+  // format share a single rendering pipeline.
+  const banner = {
+    aspect,
+    html: template.html,
+    css: template.css,
+    fields,
+    alignment,
+    title: "Banner preview",
+  };
+
   return (
     <div
       className={cn(
@@ -51,18 +51,9 @@ export default function EditorPreview({
     >
       <div
         className="block w-full max-w-full overflow-hidden rounded-xl"
-        style={{
-          aspectRatio: aspectRatio(aspect),
-          // Never let the preview frame exceed the parent column's height.
-          maxHeight: "100%",
-        }}
+        style={{ aspectRatio: aspectRatio(aspect), maxHeight: "100%" }}
       >
-        <iframe
-          title="Banner preview"
-          srcDoc={srcDoc}
-          sandbox="allow-scripts allow-same-origin"
-          className="block h-full w-full border-0 bg-white"
-        />
+        <BannerPreview banner={banner} className="h-full w-full" />
       </div>
     </div>
   );

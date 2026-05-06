@@ -27,7 +27,7 @@ function aspectClass(a) {
 //   - When `done` flips true (the API has returned and the parent is
 //     redirecting), the bar smoothly animates from wherever it is up to
 //     100 so the user sees a satisfying finish before the route changes.
-function useFakeProgress({ expectedMs = 30000, holdAt = 90, done = false } = {}) {
+function useFakeProgress({ expectedMs = 40000, holdAt = 90, done = false } = {}) {
   const [pct, setPct] = useState(2);
 
   useEffect(() => {

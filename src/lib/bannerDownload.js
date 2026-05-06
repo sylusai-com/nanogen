@@ -149,10 +149,15 @@ export function buildSvgString({
   css,
   fields = [],
   alignment = "left",
+  elements = [],
+  canvasBackground = "#0c0c10",
+  aspect = "16:9",
   width = 1600,
   height = 900,
 }) {
-  const standalone = buildStandaloneHtml({ html, css, fields, alignment });
+  const standalone = buildCompositeStandaloneHtml({
+    html, css, fields, alignment, elements, background: canvasBackground, aspect,
+  });
   // Strip the doctype / outer html — foreignObject wants a fragment.
   const inner = standalone
     .replace(/^[\s\S]*?<body[^>]*>/i, "")
@@ -160,9 +165,14 @@ export function buildSvgString({
   const cssMatch = standalone.match(/<style>([\s\S]*?)<\/style>/i);
   const styleBlock = cssMatch ? `<style>${cssMatch[1]}</style>` : "";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <foreignObject x="0" y="0" width="${width}" height="${height}">
-    <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px">
+  // Lay out the inner DOM at the design render size so vw-based clamps
+  // resolve to the same values as the in-app preview, then let the SVG
+  // viewBox scale the result up to the requested export size.
+  const render = exportRenderSize(aspect);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${render.width} ${render.height}">
+  <foreignObject x="0" y="0" width="${render.width}" height="${render.height}">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="width:${render.width}px;height:${render.height}px">
       ${styleBlock}
       ${inner}
     </div>
@@ -205,13 +215,17 @@ export function buildCompositeStandaloneHtml({
   background = "#0c0c10",
 }) {
   const hasOverlay = elements.length > 0;
+  // Slots are intentionally NOT hidden when an overlay exists — keeping
+  // every AI-generated decoration visible (orbs, eyebrow chips, version
+  // tags, feature pills, trust avatars) is what makes the rendering
+  // identical in the list view, the detail view, the builder, and
+  // every download format. Canvas elements layer on top as additions.
   const baseDoc = html && css
-    ? buildStandaloneHtml({ html, css, fields, alignment, title, hideSlots: hasOverlay })
+    ? buildStandaloneHtml({ html, css, fields, alignment, title })
     : buildStandaloneHtml({
         ...buildTemplateFromCanvas({ elements: [], background, aspect, fields }),
         fields,
         alignment,
-        hideSlots: hasOverlay,
         title,
       });
 
@@ -315,12 +329,25 @@ export function exportSize(aspect = "16:9") {
   }
 }
 
+// CSS-pixel size at which the export iframe lays out its DOM. Picked to
+// match the typical in-app preview width so viewport-relative units
+// (vw, %, clamp) resolve to the same values the user sees in preview.
+// Pixel-ratio scaling on top yields a high-resolution raster.
+export function exportRenderSize(aspect = "16:9") {
+  const [w, h] = String(aspect).split(":").map(Number);
+  const designWidth = 900;
+  if (!w || !h) return { width: designWidth, height: Math.round((designWidth * 9) / 16) };
+  return { width: designWidth, height: Math.round((designWidth * h) / w) };
+}
+
 // Rasterize the SVG to a PNG/JPEG data URL.
 export async function rasterize({
   html,
   css,
   fields,
   alignment,
+  elements = [],
+  canvasBackground = "#0c0c10",
   aspect = "16:9",
   format = "image/png",
   scale = 1,
@@ -330,11 +357,18 @@ export async function rasterize({
     throw new Error("rasterize() must be called from the browser.");
   }
   try {
-    const { node, cleanup } = await createBannerRenderNode({ html, css, fields, alignment, aspect });
+    const { node, cleanup } = await createBannerRenderNode({
+      html, css, fields, alignment, aspect, elements, canvasBackground,
+    });
     try {
+      const target = exportSize(aspect);
+      const render = exportRenderSize(aspect);
+      // Lay out at design size, scale the raster up to the export
+      // resolution. `scale` multiplies on top for retina sharpness.
+      const pixelRatio = (target.width / render.width) * scale;
       const options = {
         cacheBust: true,
-        pixelRatio: scale,
+        pixelRatio,
         backgroundColor: background,
       };
       if (format === "image/jpeg") {
@@ -348,12 +382,14 @@ export async function rasterize({
   }
 }
 
-async function createBannerRenderNode({ html, css, fields, alignment, aspect }) {
+async function createBannerRenderNode({
+  html, css, fields, alignment, aspect, elements = [], canvasBackground = "#0c0c10",
+}) {
   if (typeof document === "undefined") {
     throw new Error("createBannerRenderNode() must be called from the browser.");
   }
 
-  const { width, height } = exportSize(aspect);
+  const { width, height } = exportRenderSize(aspect);
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.tabIndex = -1;
@@ -366,7 +402,12 @@ async function createBannerRenderNode({ html, css, fields, alignment, aspect }) 
   iframe.style.opacity = "0";
   iframe.style.pointerEvents = "none";
 
-  const doc = buildStandaloneHtml({ html, css, fields, alignment, title: "banner-export" });
+  const doc = buildCompositeStandaloneHtml({
+    html, css, fields, alignment,
+    title: "banner-export",
+    elements, aspect,
+    background: canvasBackground,
+  });
   document.body.appendChild(iframe);
 
   await new Promise((resolve, reject) => {
@@ -399,7 +440,11 @@ async function createBannerRenderNode({ html, css, fields, alignment, aspect }) 
     )),
   );
 
-  const node = docRoot?.querySelector?.(".banner") || docRoot?.body || docRoot?.documentElement;
+  const node =
+    docRoot?.querySelector?.(".banner-shell") ||
+    docRoot?.querySelector?.(".banner") ||
+    docRoot?.body ||
+    docRoot?.documentElement;
   if (!node) {
     iframe.remove();
     throw new Error("Banner export node unavailable");
@@ -468,10 +513,12 @@ export function triggerDownload(filename, data, mime = "text/plain") {
 // page, no metadata/fonts. Avoids the ~150KB jsPDF dep entirely.
 export async function rasterizeToPdf({
   html, css, fields, alignment, aspect = "16:9",
+  elements = [], canvasBackground = "#0c0c10",
 }) {
   const { width, height } = exportSize(aspect);
   const dataUrl = await rasterize({
     html, css, fields, alignment, aspect,
+    elements, canvasBackground,
     format: "image/jpeg",
     scale: 1,
     background: "#ffffff",

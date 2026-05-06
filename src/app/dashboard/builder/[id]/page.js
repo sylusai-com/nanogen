@@ -386,17 +386,19 @@ export default function BuilderPage({ params }) {
       const css  = template?.css;
       const slug = (banner?.title || "banner").toLowerCase().replace(/\s+/g, "-").slice(0, 40);
 
+      const aspect = banner?.aspect || "16:9";
+      const shared = { html, css, fields, alignment, aspect, elements, canvasBackground: background };
       if (format === "html") {
-        const doc = buildCompositeStandaloneHtml({ html, css, fields, alignment, title: banner?.title || "banner", elements, aspect: banner?.aspect || "16:9", background });
+        const doc = buildCompositeStandaloneHtml({ html, css, fields, alignment, title: banner?.title || "banner", elements, aspect, background });
         triggerDownload(`${slug}.html`, doc, "text/html");
       } else if (format === "png") {
-        const dataUrl = await rasterize({ html, css, fields, alignment, aspect: banner?.aspect || "16:9", format: "image/png", scale: 2 });
+        const dataUrl = await rasterize({ ...shared, format: "image/png", scale: 2 });
         triggerDownload(`${slug}.png`, dataUrl);
       } else if (format === "jpg") {
-        const dataUrl = await rasterize({ html, css, fields, alignment, aspect: banner?.aspect || "16:9", format: "image/jpeg", scale: 2, background: "#ffffff" });
+        const dataUrl = await rasterize({ ...shared, format: "image/jpeg", scale: 2, background: "#ffffff" });
         triggerDownload(`${slug}.jpg`, dataUrl);
       } else if (format === "pdf") {
-        const blob = await rasterizeToPdf({ html, css, fields, alignment, aspect: banner?.aspect || "16:9" });
+        const blob = await rasterizeToPdf(shared);
         triggerDownload(`${slug}.pdf`, URL.createObjectURL(blob), "application/pdf");
       }
     } catch (e) {

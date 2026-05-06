@@ -22,8 +22,8 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import ReferencePanel from "@/components/banner/ReferencePanel";
+import BannerPreview from "@/components/banner/BannerPreview";
 import { cn } from "@/lib/cn";
-import { buildCompositeStandaloneHtml } from "@/lib/bannerDownload";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
 
@@ -117,16 +117,7 @@ export default function BannerDetail({ params }) {
     );
   }
 
-  const srcDoc = buildCompositeStandaloneHtml({
-    html: banner.html,
-    css: banner.css,
-    fields: banner.fields || [],
-    alignment: banner.alignment || "left",
-    title: banner.title,
-    elements: banner.canvas?.elements || [],
-    aspect: banner.aspect || "16:9",
-    background: banner.canvas?.background || "#0c0c10",
-  });
+  const hasTemplate = Boolean(banner.html && banner.css);
 
   const meta = [
     { label: "Model",   value: banner.modelLabel || "—" },
@@ -154,15 +145,10 @@ export default function BannerDetail({ params }) {
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
           {/* Preview */}
           <Card elevated className="p-3">
-            <div className={cn(aspectClass(banner.aspect), "rounded-xl overflow-hidden")}>
-              {srcDoc ? (
-                <iframe
-                  title={banner.title}
-                  srcDoc={srcDoc}
-                  sandbox="allow-scripts allow-same-origin"
-                  className="h-full w-full border-0"
-                />
-              ) : (
+            {hasTemplate ? (
+              <BannerPreview banner={banner} className="rounded-xl" />
+            ) : (
+              <div className={cn(aspectClass(banner.aspect), "rounded-xl overflow-hidden")}>
                 <div className="flex h-full w-full items-center justify-center rounded-xl border border-border bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_38%),linear-gradient(135deg,#0c0c10,#17172a)] p-8 text-center">
                   <div className="max-w-sm space-y-2">
                     <div className="text-[11px] uppercase tracking-[0.18em] text-muted">HTML + CSS banner</div>
@@ -170,8 +156,8 @@ export default function BannerDetail({ params }) {
                     <div className="text-sm text-muted">This banner should render from the stored HTML/CSS template. If you see this state, the template is missing or invalid.</div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </Card>
 
           <div className="space-y-4">

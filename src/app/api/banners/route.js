@@ -12,6 +12,7 @@ import { scoreBannerTemplate } from "@/lib/scoreBanner";
 import {
   getEnabledTextModelByRefWithSecrets,
   listEnabledTextModelsWithSecrets,
+  listImageModelsWithSecrets,
 } from "@/lib/db/models";
 import {
   extractReferenceImageContext,
@@ -19,6 +20,7 @@ import {
   formatReferenceContextForPrompt,
   formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
+import { generateBannerBackground } from "@/lib/imageGen";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
   clientKey,
@@ -209,6 +211,42 @@ export async function POST(req) {
   const referenceContextText = formatReferenceContextForPrompt(referenceContext);
   const subjectContextText   = formatSubjectContextForPrompt(subjectContext);
 
+  // 2b. If no user-uploaded subject image is present AND the admin has
+  //     enabled an image model, generate a banner-quality background
+  //     image now and inject it as bg_image on every text-model variant.
+  //     The subject upload is authoritative when present — image-gen is
+  //     only a substitute for a missing subject.
+  //
+  //     Best-effort: a failed image call falls back to the existing
+  //     "text model emits inline SVG / CSS-only background" behavior.
+  let aiBackgroundImage = null;
+  let aiBackgroundError = null;
+  let aiBackgroundModel = null;
+  if (!subjectImage) {
+    const imageModels = await listImageModelsWithSecrets(adminClient).catch(() => []);
+    const imageModel = imageModels.find((m) => pickApiKey(m)) || null;
+    if (imageModel) {
+      const result = await generateBannerBackground({
+        imageModel,
+        brief: prompt,
+        style,
+        aspect,
+        referenceContext,
+        subjectContext,
+      });
+      if (result?.dataUrl) {
+        aiBackgroundImage = result.dataUrl;
+        aiBackgroundModel = {
+          modelId: result.modelId,
+          modelLabel: result.modelLabel,
+          provider: result.provider,
+        };
+      } else if (result?.error) {
+        aiBackgroundError = result.error;
+      }
+    }
+  }
+
   // 3. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
   //    so the user actually gets cross-model variety. With 1 model, run
   //    SOLO_VARIANT_COUNT variants (different archetype seeds). With 0
@@ -240,13 +278,23 @@ export async function POST(req) {
         referenceContextText,
         subjectContextText,
         subjectImage,
+        backgroundImage: aiBackgroundImage,
       }),
     ),
   );
 
   // Track per-model failures so the dashboard can show admins which
   // configurations are broken without forcing them to read server logs.
+  // The image-gen failure (when present) lands here too so admins can
+  // see "image model called but errored, fell back to text-only bg".
   const modelErrors = [];
+  if (aiBackgroundError) {
+    modelErrors.push({
+      modelId:    null,
+      modelLabel: "image-bg",
+      reason:     aiBackgroundError,
+    });
+  }
   const variants = settled.map((s, i) => {
     const planned = plan[i];
     if (s.status === "fulfilled") {
@@ -463,5 +511,9 @@ export async function POST(req) {
     // "Regenerate" button. The client uses this to update the active
     // banner row instead of pushing the user to the new variant.
     regeneratedFrom: regenerateContext ? regenerateFromId : null,
+    // Which image model produced the bg layer this run, if any. Null
+    // when no image model was configured / the user supplied a subject
+    // (subject upload always wins) / image-gen failed.
+    backgroundModel: aiBackgroundModel,
   });
 }

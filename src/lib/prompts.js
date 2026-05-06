@@ -69,14 +69,11 @@ OUTPUT MUST BE PURE HTML + CSS:
 - Backgrounds must be produced ENTIRELY with CSS — gradients (linear/radial/conic), color-mix(in oklab, …), background-blend-mode, mix-blend-mode, mask-image, clip-path, filter, transform — and inline SVG embedded as data: URIs (url("data:image/svg+xml;utf8,…")). Inline SVG patterns are encouraged for noise, dots, grids, waves.
 - Background imagery must be relevant to the brief: pick gradient palettes, shapes, and SVG motifs that match the topic/category (e.g. food brief → warm earthy gradients with subtle plate/leaf SVG silhouettes; tech brief → cool cyber-violet mesh with circuit / dot patterns). Do NOT default to the same theme on every banner.
 
-BACKGROUND IMAGE FIELD (REQUIRED for consistency across models):
-- ALWAYS include a field with id "bg_image", type "image", cssVar "--bg-image", slot "bg_image", label "Background image".
-- The CSS in :root must declare --bg-image as the default value (use "none" when you do not provide an image).
-- The HTML must include a layer that uses var(--bg-image) — e.g. <div class="banner__bg-image"></div> with CSS background-image: var(--bg-image); background-size: var(--bg-zoom, 110%); background-position: var(--bg-position, center center); background-repeat: no-repeat. This layer must render gracefully when var(--bg-image) is "none" (the layer simply shows nothing and the CSS-only background takes over).
-- POPULATE the bg_image VALUE with a context-relevant inline-SVG data URI when it would strengthen the banner: an abstract illustration / pattern / silhouette / scene that visually echoes the brief (e.g. food brief → plate, leaves, steam silhouettes; tech brief → circuit traces, isometric grid; travel brief → mountain or skyline silhouettes). Format: url("data:image/svg+xml;utf8,…").
-- When the brief is best served WITHOUT a photo-style background (typography-led, minimal, editorial), set the bg_image value to the empty string "". The layout MUST still look complete using only the CSS-only background.
-- Either way, the field MUST appear in the fields[] array. This keeps banner shape consistent across every model.
-- Do NOT include any other "image" type field. Do NOT include any url("https://…") references.
+BACKGROUND IMAGE LAYER (lightweight requirement — the application owns the bg_image FIELD):
+- The application guarantees a field with id "bg_image", cssVar "--bg-image" exists on every banner. You do NOT need to emit it. If you don't, the application appends it. If you do, keep its value as the empty string "" — never invent inline-SVG data URIs unless you are confident they parse.
+- Your only job for backgrounds is to make the LAYOUT ready for an optional photographic background. Include a layer in the HTML that consumes var(--bg-image), e.g. <div class="banner__bg-image"></div>, and style it in CSS as: background-image: var(--bg-image); background-size: var(--bg-zoom, 110%); background-position: var(--bg-position, center center); background-repeat: no-repeat. Declare --bg-image in :root with a sane default (use "none" when none provided).
+- That layer MUST render gracefully when var(--bg-image) is "none" — the CSS-only background (gradients, mesh, orbs) carries the banner.
+- Do NOT include any other "image" type field. Do NOT include any url("https://…") references. Do NOT load external fonts.
 
 REFERENCE IMAGE vs SUBJECT IMAGE — these are TWO DIFFERENT inputs and must be handled differently:
 - A REFERENCE IMAGE (when supplied via "REFERENCE IMAGE CONTEXT" in the user message) is INSPIRATION ONLY. Use its mood / palette / motifs / composition to shape the banner. Never embed it. Never set its data into bg_image. The reference image is NOT shown in the rendered banner.

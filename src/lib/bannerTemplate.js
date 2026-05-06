@@ -569,14 +569,23 @@ export async function generateBannerTemplate({
   referenceContextText = null,
   subjectContextText = null,
   subjectImage = null,
+  // AI-generated background (from an image model). Only used when no
+  // user-uploaded subjectImage is present — a real subject always wins,
+  // because the user explicitly chose what should appear IN the banner.
+  backgroundImage = null,
 }) {
+  // Resolve which image actually lands in the bg_image field. The
+  // subject upload is the authoritative source whenever the user gave
+  // us one; otherwise we use whatever an image model produced.
+  const effectiveBgImage = subjectImage || backgroundImage || null;
+
   const styleRow = await getStyleByName(supabase, style);
   const styled   = enforceStaticBanner(
     applySubjectImage(
       ensureBgImageField(
         applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
       ),
-      subjectImage,
+      effectiveBgImage,
     ),
   );
 
@@ -648,25 +657,57 @@ export async function generateBannerTemplate({
       model:       textModel.modelId,
       jsonMode:    true,
       temperature: textModel.config?.temperature ?? 0.9,
-      maxTokens:   textModel.config?.maxTokens   ?? 6000,
+      // Banner JSON tends to run 2-4k tokens; bigger inline-SVG attempts
+      // can push past 6k. Default to 8k so the model rarely truncates.
+      maxTokens:   textModel.config?.maxTokens   ?? 8000,
       messages,
     });
 
     const parsed     = extractJson(content);
-    const cleaned    = stripExternalImageUrls(parsed);
-    const validated  = validateTemplate(cleaned);
-    if (!validated) {
+    if (!parsed) {
       return {
         ...styled,
         generator: "fallback",
-        reason: "Model output failed validation (HTML too thin or invalid). Try again or pick a different model.",
+        reason: `Model "${textModel.label}" returned malformed JSON. Try regenerating or pick a different model.`,
+        styleRow,
+      };
+    }
+    const cleaned    = stripExternalImageUrls(parsed);
+    const validated  = validateTemplate(cleaned);
+    if (!validated) {
+      // Surface a more useful reason than the generic "thin HTML" — admins
+      // can tell at a glance whether the model emitted no fields, missing
+      // required ids, or a CSS block that's too short.
+      const missing = [];
+      const ids = new Set((cleaned?.fields || []).map((f) => f?.id));
+      for (const required of ["headline", "bg", "fg", "accent"]) {
+        if (!ids.has(required)) missing.push(required);
+      }
+      let why;
+      if (typeof cleaned?.html !== "string" || typeof cleaned?.css !== "string") {
+        why = "missing html or css string";
+      } else if (!Array.isArray(cleaned?.fields) || cleaned.fields.length === 0) {
+        why = "fields array empty";
+      } else if (missing.length) {
+        why = `missing required fields: ${missing.join(", ")}`;
+      } else if ((cleaned.html.match(/<[a-zA-Z][^>/]*>/g) || []).length < 3) {
+        why = "html had fewer than 3 tags";
+      } else if ((cleaned.css || "").length < 100) {
+        why = "css was too short (< 100 chars)";
+      } else {
+        why = "schema validation failed";
+      }
+      return {
+        ...styled,
+        generator: "fallback",
+        reason: `Model "${textModel.label}" output failed validation (${why}). Regenerate or pick a different model.`,
         styleRow,
       };
     }
     const colorSafe  = enforceContrast(validated);
     const aspected   = applyAspectToTemplate(colorSafe, aspect);
     const withBgField = ensureBgImageField(aspected);
-    const subjectApplied = applySubjectImage(withBgField, subjectImage);
+    const subjectApplied = applySubjectImage(withBgField, effectiveBgImage);
     const staticSafe = enforceStaticBanner(subjectApplied);
 
     return {
@@ -677,10 +718,17 @@ export async function generateBannerTemplate({
       styleRow,
     };
   } catch (e) {
+    // Network / upstream errors land here. The OpenRouterError class
+    // already pretty-prints provider responses, but tag the model label
+    // so admins can see which row is misbehaving when several models
+    // fan out in parallel.
+    const reason = e?.message
+      ? `Model "${textModel.label}": ${e.message}`
+      : `Model "${textModel.label}" request failed`;
     return {
       ...styled,
       generator: "fallback",
-      reason: e?.message || "Model request failed",
+      reason,
       styleRow,
     };
   }

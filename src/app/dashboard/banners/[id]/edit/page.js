@@ -3,7 +3,7 @@
 
 import { use, useEffect, useState, useRef, startTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2, RefreshCw, Save } from "lucide-react";
+import { ArrowLeft, Check, Loader2, RefreshCcw, RefreshCw, Save } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import EditorPreview from "@/components/editor/EditorPreview";
 import EditorPanel from "@/components/editor/EditorPanel";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import ReferencePanel from "@/components/banner/ReferencePanel";
+import RegenerateDialog from "@/components/banner/RegenerateDialog";
 import { getBanner, updateBanner } from "@/lib/db/banners";
 
 function aspectClass(a) {
@@ -59,6 +60,7 @@ export default function BannerEditor({ params }) {
   const [justSaved, setJustSaved] = useState(false);
   const justSavedTimer = useRef(null);
   const [error, setError] = useState(null);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   // 1. Load banner from DB. We depend on user?.id (stable) instead of
   //    `user` (a new object reference on every profile re-fetch) so
@@ -194,6 +196,13 @@ export default function BannerEditor({ params }) {
         title="Editor"
         action={
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => setRegenerateOpen(true)}
+              leftIcon={<RefreshCcw className="h-3.5 w-3.5" />}
+            >
+              Regenerate
+            </Button>
             <DownloadMenu
               banner={{
                 title:     banner.title,
@@ -279,10 +288,18 @@ export default function BannerEditor({ params }) {
             <ReferencePanel
               imageUrl={banner.referenceImageUrl}
               context={banner.referenceContext}
+              subjectImageUrl={banner.subjectImageUrl}
+              subjectContext={banner.subjectContext}
             />
           </div>
         </div>
       </div>
+
+      <RegenerateDialog
+        banner={banner}
+        open={regenerateOpen}
+        onClose={() => setRegenerateOpen(false)}
+      />
     </>
   );
 }

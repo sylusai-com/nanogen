@@ -170,7 +170,9 @@ export default function DashboardCreate() {
         {submitting ? (
           // Skeleton replaces the form entirely while generating — the
           // user gets a single, focused "we're working on it" view.
-          <GenerationProgress aspect={submittedAspect} />
+          // `done` flips true the moment /api/banners returns so the bar
+          // sprints from its 90% hold up to 100% before we redirect.
+          <GenerationProgress aspect={submittedAspect} done={generationDone} />
         ) : (
           <PromptForm onSubmit={onSubmit} isGenerating={submitting} />
         )}

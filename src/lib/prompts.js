@@ -68,7 +68,25 @@ OUTPUT MUST BE PURE HTML + CSS:
 - DO NOT load external fonts and DO NOT reference external image hosts (Unsplash, Pexels, Imgur, Giphy, CDNs, etc.). External http(s) image URLs are FORBIDDEN.
 - Backgrounds must be produced ENTIRELY with CSS — gradients (linear/radial/conic), color-mix(in oklab, …), background-blend-mode, mix-blend-mode, mask-image, clip-path, filter, transform — and inline SVG embedded as data: URIs (url("data:image/svg+xml;utf8,…")). Inline SVG patterns are encouraged for noise, dots, grids, waves.
 - Background imagery must be relevant to the brief: pick gradient palettes, shapes, and SVG motifs that match the topic/category (e.g. food brief → warm earthy gradients with subtle plate/leaf SVG silhouettes; tech brief → cool cyber-violet mesh with circuit / dot patterns). Do NOT default to the same theme on every banner.
-- The "image" field type is supported by the schema but you MUST NOT use it. Do not emit any field with type "image". Do not include any url("https://…") references.
+
+BACKGROUND IMAGE FIELD (REQUIRED for consistency across models):
+- ALWAYS include a field with id "bg_image", type "image", cssVar "--bg-image", slot "bg_image", label "Background image".
+- The CSS in :root must declare --bg-image as the default value (use "none" when you do not provide an image).
+- The HTML must include a layer that uses var(--bg-image) — e.g. <div class="banner__bg-image"></div> with CSS background-image: var(--bg-image); background-size: var(--bg-zoom, 110%); background-position: var(--bg-position, center center); background-repeat: no-repeat. This layer must render gracefully when var(--bg-image) is "none" (the layer simply shows nothing and the CSS-only background takes over).
+- POPULATE the bg_image VALUE with a context-relevant inline-SVG data URI when it would strengthen the banner: an abstract illustration / pattern / silhouette / scene that visually echoes the brief (e.g. food brief → plate, leaves, steam silhouettes; tech brief → circuit traces, isometric grid; travel brief → mountain or skyline silhouettes). Format: url("data:image/svg+xml;utf8,…").
+- When the brief is best served WITHOUT a photo-style background (typography-led, minimal, editorial), set the bg_image value to the empty string "". The layout MUST still look complete using only the CSS-only background.
+- Either way, the field MUST appear in the fields[] array. This keeps banner shape consistent across every model.
+- Do NOT include any other "image" type field. Do NOT include any url("https://…") references.
+
+REFERENCE IMAGE vs SUBJECT IMAGE — these are TWO DIFFERENT inputs and must be handled differently:
+- A REFERENCE IMAGE (when supplied via "REFERENCE IMAGE CONTEXT" in the user message) is INSPIRATION ONLY. Use its mood / palette / motifs / composition to shape the banner. Never embed it. Never set its data into bg_image. The reference image is NOT shown in the rendered banner.
+- A SUBJECT IMAGE (when supplied via "SUBJECT IMAGE CONTEXT" in the user message) IS the asset that appears IN the rendered banner. The application has already injected the subject's data: URI into the bg_image field's value for you — you must NOT change that value. Treat it as a real photographic asset:
+  · Build a dedicated layer that renders var(--bg-image) so the subject is actually visible.
+  · Apply the suggested CSS treatment (feather-mask / circular-crop / soft-vignette / blend-multiply / blend-screen / as-is) so any unwanted background in the photo integrates cleanly. Photos of people / products almost always need a soft mask or blend mode unless they are pre-cut-out.
+  · Position the subject according to the SUBJECT IMAGE CONTEXT's "placement" hint and arrange headline / CTAs around it — never on top of the subject's face or focal area.
+  · Harmonize bg / fg / accent with the subject's dominant colors so the photo and the layout read as one composition.
+- If BOTH a reference image and a subject image are present: take inspiration from the reference (mood / palette / vibe) AND show the subject. The subject is the hero photo; the reference shapes everything else.
+- If neither is present, design a CSS-only banner that looks complete without any photographic background.
 
 REQUIRED FIELDS:
 - A "headline" text field and color fields with ids "bg", "fg", "accent".
@@ -84,7 +102,8 @@ Pick palette and composition that fit the user's brief AND the aspect ratio. Do 
 //   {brief}            — the user's prompt (authoritative)
 //   {stylePreference}  — "STYLE PREFERENCE: …" or empty
 //   {aspectGuidance}   — resolved per-aspect block (see DEFAULT_BANNER_ASPECT_GUIDANCE) or empty
-//   {referenceContext} — optional reference-image context block or empty
+//   {referenceContext} — optional reference-image context block or empty (INSPIRATION ONLY)
+//   {subjectContext}   — optional subject-image context block or empty (FEATURED IN BANNER)
 //   {variantNote}      — "VARIANT: N" when N > 0 or empty
 // Lines that resolve to an empty string are dropped.
 const DEFAULT_BANNER_USER_SCAFFOLD = `BRIEF (authoritative): {brief}
@@ -92,8 +111,13 @@ Use the brief as the source of truth for the banner subject, copy, visual direct
 {stylePreference}
 {aspectGuidance}
 {referenceContext}
+{subjectContext}
 {variantNote}
-The banner is HTML + CSS only — NO external image URLs. Build any background using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.
+IMAGE INPUTS — IMPORTANT DISTINCTION:
+- A "reference image" (when present) is INSPIRATION ONLY. Use its mood / palette / motifs to guide the design. Never embed it. Never set its data into bg_image.
+- A "subject image" (when present) IS the asset to feature IN the banner — it has already been written into the bg_image field's value as a url("data:…") data URI by the application. Do NOT overwrite that value. Build the layout around it: render var(--bg-image) on a dedicated layer with the suggested CSS treatment so the subject reads cleanly, place headline/CTAs so they don't cover the subject's focal area, and harmonize the palette with the subject's dominant colors.
+- If neither image is present, design a CSS-only banner that looks great without any photographic background.
+The banner is HTML + CSS only — NO external image URLs. Build any background decoration using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.
 There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.
 Return ONLY the JSON object.`;
 
@@ -233,8 +257,8 @@ export const PROMPTS = Object.freeze({
     kind: "string",
     label: "Banner user-message scaffold",
     description:
-      "Wraps the user's brief into the user message. Empty placeholders drop their line. Available: {brief}, {stylePreference}, {aspectGuidance}, {referenceContext}, {variantNote}.",
-    placeholders: ["brief", "stylePreference", "aspectGuidance", "referenceContext", "variantNote"],
+      "Wraps the user's brief into the user message. Empty placeholders drop their line. Available: {brief}, {stylePreference}, {aspectGuidance}, {referenceContext}, {subjectContext}, {variantNote}.",
+    placeholders: ["brief", "stylePreference", "aspectGuidance", "referenceContext", "subjectContext", "variantNote"],
     section: "banner",
   },
   bannerAspectGuidance: {
@@ -435,6 +459,7 @@ export function composeBannerMessages({
   aspect,
   variantSeed = 0,
   referenceContextText = null,
+  subjectContextText = null,
 }) {
   const stylePreference =
     style && String(style).trim() ? `STYLE PREFERENCE: ${style}` : "";
@@ -443,6 +468,7 @@ export function composeBannerMessages({
     prompts.bannerAspectGuidance,
   );
   const referenceContext = referenceContextText ? String(referenceContextText) : "";
+  const subjectContext   = subjectContextText   ? String(subjectContextText)   : "";
   const variantNote = variantSeed > 0 ? `VARIANT: ${variantSeed}` : "";
 
   const userContent = substitutePlaceholders(prompts.bannerUserScaffold, {
@@ -450,6 +476,7 @@ export function composeBannerMessages({
     stylePreference,
     aspectGuidance,
     referenceContext,
+    subjectContext,
     variantNote,
   });
 

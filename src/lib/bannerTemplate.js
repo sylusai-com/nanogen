@@ -37,6 +37,7 @@ import {
 const FALLBACK_TEMPLATE = {
   html: `<div class="banner" data-align="left" data-aspect="16:9">
   <div class="banner__bg">
+    <div class="banner__bg-image"></div>
     <div class="banner__mesh"></div>
     <div class="banner__grid"></div>
     <div class="banner__noise"></div>
@@ -73,6 +74,12 @@ const FALLBACK_TEMPLATE = {
   --accent2: #22d3ee;
   --accent3: #f472b6;
   --headline-size: 64px;
+  --bg-image: none;
+  --bg-brightness: 0.7;
+  --bg-blur: 0px;
+  --bg-overlay: 0.45;
+  --bg-zoom: 110%;
+  --bg-position: center center;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: transparent; }
@@ -84,6 +91,23 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   background: var(--bg); color: var(--fg); isolation: isolate;
 }
 .banner__bg { position: absolute; inset: 0; z-index: 0; }
+/* Optional bg image layer — the model may emit a context-aware inline SVG
+   data URI in the bg_image field, OR the user may upload a subject image
+   from the dashboard. When --bg-image is the literal "none" we render
+   nothing and the CSS-only background takes over. */
+.banner__bg-image {
+  position: absolute; inset: 0; z-index: 0;
+  background-image: var(--bg-image);
+  background-size: var(--bg-zoom, 110%);
+  background-position: var(--bg-position, center center);
+  background-repeat: no-repeat;
+  filter: brightness(var(--bg-brightness, 0.7)) blur(var(--bg-blur, 0px));
+}
+.banner__bg-image::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay, 0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay, 0.45)));
+  pointer-events: none;
+}
 .banner__mesh {
   position: absolute; inset: 0;
   background:
@@ -217,6 +241,19 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
     { id: "accent2",        type: "color",  cssVar: "--accent2",    label: "Accent 2",         value: "#22d3ee" },
     { id: "accent3",        type: "color",  cssVar: "--accent3",    label: "Accent 3",         value: "#f472b6" },
     { id: "headline_size",  type: "range",  cssVar: "--headline-size", label: "Headline size", value: 64, min: 32, max: 120, step: 2, unit: "px" },
+    { id: "bg_image",       type: "image",  cssVar: "--bg-image",   slot: "bg_image", label: "Background image", value: "" },
+    { id: "bg_brightness",  type: "range",  cssVar: "--bg-brightness", label: "Image brightness", value: 0.7, min: 0.2, max: 1.2, step: 0.05, unit: "" },
+    { id: "bg_blur",        type: "range",  cssVar: "--bg-blur",       label: "Image blur",       value: 0,   min: 0,   max: 20,  step: 1,    unit: "px" },
+    { id: "bg_overlay",     type: "range",  cssVar: "--bg-overlay",    label: "Image overlay",    value: 0.45, min: 0,  max: 0.9, step: 0.05, unit: "" },
+    { id: "bg_zoom",        type: "range",  cssVar: "--bg-zoom",       label: "Image zoom",       value: 110, min: 100, max: 200, step: 5,    unit: "%" },
+    { id: "bg_position",    type: "select", cssVar: "--bg-position",   label: "Image position",   value: "center center",
+      options: [
+        { value: "center center", label: "Center" },
+        { value: "center top",    label: "Top" },
+        { value: "center bottom", label: "Bottom" },
+        { value: "left center",   label: "Left" },
+        { value: "right center",  label: "Right" },
+      ] },
     { id: "show_eyebrow",   type: "toggle", selector: ".banner__eyebrow", label: "Show eyebrow", value: true },
     { id: "show_features",  type: "toggle", selector: ".banner__features", label: "Show features", value: true },
     { id: "show_trust",     type: "toggle", selector: ".banner__trust",    label: "Show trust line", value: true },
@@ -339,6 +376,91 @@ function validateTemplate(t) {
   return t;
 }
 
+// Guarantee a bg_image field exists (with value === "" when absent) so
+// downstream consumers (editor, server inserts, exports) can rely on the
+// field shape regardless of which model produced the template. We append
+// the field plus the visual-tuning companions only when missing — never
+// overwrite values the model emitted.
+function ensureBgImageField(template) {
+  if (!template?.fields) return template;
+  const fields = [...template.fields];
+  const has = (id) => fields.some((f) => f?.id === id);
+
+  if (!has("bg_image")) {
+    fields.push({
+      id: "bg_image", type: "image", cssVar: "--bg-image", slot: "bg_image",
+      label: "Background image", value: "",
+    });
+  }
+  if (!has("bg_brightness")) {
+    fields.push({
+      id: "bg_brightness", type: "range", cssVar: "--bg-brightness",
+      label: "Image brightness", value: 0.7, min: 0.2, max: 1.2, step: 0.05, unit: "",
+    });
+  }
+  if (!has("bg_blur")) {
+    fields.push({
+      id: "bg_blur", type: "range", cssVar: "--bg-blur",
+      label: "Image blur", value: 0, min: 0, max: 20, step: 1, unit: "px",
+    });
+  }
+  if (!has("bg_overlay")) {
+    fields.push({
+      id: "bg_overlay", type: "range", cssVar: "--bg-overlay",
+      label: "Image overlay", value: 0.45, min: 0, max: 0.9, step: 0.05, unit: "",
+    });
+  }
+  if (!has("bg_zoom")) {
+    fields.push({
+      id: "bg_zoom", type: "range", cssVar: "--bg-zoom",
+      label: "Image zoom", value: 110, min: 100, max: 200, step: 5, unit: "%",
+    });
+  }
+  if (!has("bg_position")) {
+    fields.push({
+      id: "bg_position", type: "select", cssVar: "--bg-position",
+      label: "Image position", value: "center center",
+      options: [
+        { value: "center center", label: "Center" },
+        { value: "center top",    label: "Top" },
+        { value: "center bottom", label: "Bottom" },
+        { value: "left center",   label: "Left" },
+        { value: "right center",  label: "Right" },
+      ],
+    });
+  }
+  return { ...template, fields };
+}
+
+// Apply the user-supplied subject image (a data: URI uploaded from the
+// dashboard) as the bg_image value, overriding whatever the model emitted.
+// We always wrap with url(...) so the CSS variable resolves cleanly, and
+// degrade gracefully when no subject image is provided.
+function applySubjectImage(template, subjectImage) {
+  if (!template?.fields) return template;
+  if (!subjectImage || typeof subjectImage !== "string") return template;
+  const trimmed = subjectImage.trim();
+  if (!trimmed.startsWith("data:image/") && !/^https?:\/\//i.test(trimmed)) {
+    return template;
+  }
+  const wrapped = `url("${trimmed}")`;
+  const next = { ...template, fields: template.fields.map((f) => ({ ...f })) };
+  let found = false;
+  for (const f of next.fields) {
+    if (f.id === "bg_image") {
+      f.value = wrapped;
+      found = true;
+    }
+  }
+  if (!found) {
+    next.fields.push({
+      id: "bg_image", type: "image", cssVar: "--bg-image", slot: "bg_image",
+      label: "Background image", value: wrapped,
+    });
+  }
+  return next;
+}
+
 // Walks the fields[] for the bg / fg / accent triplet, swaps or coerces
 // values so contrast is readable and saves the user from invisible text.
 function enforceContrast(template) {
@@ -445,10 +567,17 @@ export async function generateBannerTemplate({
   textModel: textModelOverride = null,
   systemPromptOverride = null,
   referenceContextText = null,
+  subjectContextText = null,
+  subjectImage = null,
 }) {
   const styleRow = await getStyleByName(supabase, style);
   const styled   = enforceStaticBanner(
-    applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
+    applySubjectImage(
+      ensureBgImageField(
+        applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
+      ),
+      subjectImage,
+    ),
   );
 
   const adminClient = createAdminClient();
@@ -502,6 +631,7 @@ export async function generateBannerTemplate({
           aspect,
           variantSeed,
           referenceContextText,
+          subjectContextText,
         })
       : null;
     if (!messages) {
@@ -535,7 +665,9 @@ export async function generateBannerTemplate({
     }
     const colorSafe  = enforceContrast(validated);
     const aspected   = applyAspectToTemplate(colorSafe, aspect);
-    const staticSafe = enforceStaticBanner(aspected);
+    const withBgField = ensureBgImageField(aspected);
+    const subjectApplied = applySubjectImage(withBgField, subjectImage);
+    const staticSafe = enforceStaticBanner(subjectApplied);
 
     return {
       ...staticSafe,

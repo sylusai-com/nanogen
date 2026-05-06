@@ -11,25 +11,40 @@ import { useCachedQuery } from "@/lib/cache";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import PromptInput from "./PromptInput";
-import AspectSelector from "./AspectSelector";
-import StyleSelector from "./StyleSelector";
 
 // HTML banner studio. Pulls aspects + styles + enabled text models from DB
 // (with stale-while-revalidate caching so opening the page is instant
-// after the first visit) and submits to /api/banners.
-export default function PromptForm({ onSubmit, isGenerating }) {
+// after the first visit) and submits to /api/banners. Aspect ratio and
+// style now live inline with the prompt (next to the reference / model /
+// subject pills) so the whole composer reads as one surface.
+export default function PromptForm({
+  onSubmit,
+  isGenerating,
+  initialPrompt = "",
+  initialAspect = null,
+  initialStyle = null,
+  initialModel = "auto",
+  initialReference = null,
+  initialSubject = null,
+  submitLabel = "Generate banner",
+  busyLabel = "Generating",
+}) {
   const { supabase } = useAuth();
 
-  const [prompt, setPrompt] = useState("");
-  const [aspect, setAspect] = useState(null);
-  const [style, setStyle] = useState(null);
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const [aspect, setAspect] = useState(initialAspect);
+  const [style, setStyle] = useState(initialStyle);
   // ChatGPT-style model picker. "auto" → run every enabled model in
   // parallel and keep the best (legacy behavior). A specific slug →
   // generate with that model only.
-  const [modelSlug, setModelSlug] = useState("auto");
+  const [modelSlug, setModelSlug] = useState(initialModel || "auto");
   // Optional reference image — { name, dataUrl } or null. Sent to the
-  // server as `referenceImage` and used as the bg_image in every variant.
-  const [reference, setReference] = useState(null);
+  // server as `referenceImage`; the AI extracts subject/palette/mood.
+  const [reference, setReference] = useState(initialReference);
+  // Optional subject image — { name, dataUrl } or null. Sent to the
+  // server as `subjectImage`; lands as the bg_image so the user's photo
+  // / product / person actually appears IN the rendered banner.
+  const [subject, setSubject] = useState(initialSubject);
 
   const aspectsQ = useCachedQuery(
     ["catalog", "aspects"],
@@ -51,6 +66,7 @@ export default function PromptForm({ onSubmit, isGenerating }) {
   const styles    = stylesQ.data;
   const textModels = modelsQ.data;
   const loadError = aspectsQ.error || stylesQ.error || modelsQ.error;
+  const catalogLoading = (aspectsQ.isLoading && !aspects) || (stylesQ.isLoading && !styles);
 
   useEffect(() => {
     if (aspect == null && aspects?.length) {
@@ -71,42 +87,35 @@ export default function PromptForm({ onSubmit, isGenerating }) {
       style: style || null,
       model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
       referenceImage: reference?.dataUrl || null,
+      subjectImage: subject?.dataUrl || null,
     });
   };
 
   return (
-    <Card elevated as="form" className="p-5 md:p-6 space-y-6">
+    <Card elevated as="form" className="p-5 md:p-6 space-y-5">
       <PromptInput
         value={prompt}
         onChange={setPrompt}
         reference={reference}
         onReferenceChange={setReference}
+        subject={subject}
+        onSubjectChange={setSubject}
         models={textModels}
         modelsLoading={modelsQ.isLoading && !textModels}
         modelSlug={modelSlug}
         onModelChange={setModelSlug}
+        aspects={aspects}
+        aspect={aspect}
+        onAspectChange={setAspect}
+        styles={styles}
+        style={style}
+        onStyleChange={setStyle}
+        catalogLoading={catalogLoading}
       />
 
-      {!ready ? (
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading catalog…
-        </div>
-      ) : loadError ? (
+      {loadError && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {loadError}
-        </div>
-      ) : (
-        <div className="grid gap-5 md:grid-cols-2">
-          <AspectSelector
-            options={aspects}
-            value={aspect}
-            onChange={setAspect}
-          />
-          <StyleSelector
-            options={styles}
-            value={style}
-            onChange={setStyle}
-          />
         </div>
       )}
 
@@ -129,7 +138,7 @@ export default function PromptForm({ onSubmit, isGenerating }) {
             )
           }
         >
-          {isGenerating ? "Generating" : "Generate banner"}
+          {isGenerating ? busyLabel : submitLabel}
         </Button>
       </div>
     </Card>

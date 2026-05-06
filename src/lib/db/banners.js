@@ -32,6 +32,8 @@ const COLUMNS = `
   favourite,
   referenceImageUrl:reference_image_url,
   referenceContext:reference_context,
+  subjectImageUrl:subject_image_url,
+  subjectContext:subject_context,
   createdAt:created_at,
   updatedAt:updated_at
 `;

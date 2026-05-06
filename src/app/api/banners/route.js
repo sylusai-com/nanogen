@@ -15,7 +15,9 @@ import {
 } from "@/lib/db/models";
 import {
   extractReferenceImageContext,
+  extractSubjectImageContext,
   formatReferenceContextForPrompt,
+  formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
@@ -83,7 +85,7 @@ export async function POST(req) {
   try { body = await readJson(req, { maxBytes: 4 * 1024 * 1024 }); }
   catch (e) { return errorResponse(e); }
 
-  let prompt, style, aspect, referenceImage, modelRef;
+  let prompt, style, aspect, referenceImage, subjectImage, modelRef, regenerateFromId, regenerateContext;
   try {
     prompt = validateString(body.prompt, {
       name: "prompt", min: 3, max: 4000, required: true,
@@ -99,13 +101,61 @@ export async function POST(req) {
     // Otherwise we look up that specific model and use only it.
     modelRef = validateString(body.model, { name: "model", max: 80 }) || null;
 
-    // Optional user-uploaded reference image. Accept either a data URL
-    // or an https URL. Anything else is ignored — we don't want to feed
-    // arbitrary strings into the bg_image field.
+    // Optional user-uploaded reference image (inspiration only — the AI
+    // extracts subject/palette/mood from it). Accept either a data URL
+    // or an https URL.
     if (typeof body.referenceImage === "string") {
       const ri = body.referenceImage.trim();
       if (ri.startsWith("data:image/") || /^https?:\/\//i.test(ri)) {
         referenceImage = ri;
+      }
+    }
+
+    // Optional user-uploaded subject image (a person, product, etc the
+    // user wants visible IN the banner — used as the bg_image value).
+    if (typeof body.subjectImage === "string") {
+      const si = body.subjectImage.trim();
+      if (si.startsWith("data:image/") || /^https?:\/\//i.test(si)) {
+        subjectImage = si;
+      }
+    }
+
+    // Regenerate flow: when set, the client is asking us to refresh an
+    // existing banner using the new prompt + the existing context. We
+    // load the prior banner here so its prompt/style/aspect/reference
+    // become the defaults the user can override.
+    regenerateFromId = validateString(body.regenerateFromId, { name: "regenerateFromId", max: 80 }) || null;
+    if (regenerateFromId) {
+      const { data: prior } = await supabase
+        .from("banners")
+        .select("id, prompt, style, aspect, reference_image_url, reference_context, subject_image_url, fields, model_id")
+        .eq("id", regenerateFromId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (prior) {
+        regenerateContext = prior;
+        // Inherit prior settings whenever the client did not supply them.
+        if (!style)  style  = prior.style  || null;
+        if (!body.aspect) aspect = prior.aspect || aspect;
+        if (!referenceImage && prior.reference_image_url) {
+          referenceImage = prior.reference_image_url;
+        }
+        // Carry the subject image forward when the client did not upload
+        // a new one. Prefer the dedicated column; fall back to digging
+        // the data URI out of the prior banner's bg_image field for
+        // banners created before 0011_banner_subject_image landed.
+        if (!subjectImage && prior.subject_image_url) {
+          subjectImage = prior.subject_image_url;
+        }
+        if (!subjectImage && Array.isArray(prior.fields)) {
+          const bg = prior.fields.find((f) => f?.id === "bg_image");
+          const raw = String(bg?.value || "");
+          const m = raw.match(/^url\(["']?(.+?)["']?\)$/i);
+          const inner = (m ? m[1] : raw).trim();
+          if (inner.startsWith("data:image/") || /^https?:\/\//i.test(inner)) {
+            subjectImage = inner;
+          }
+        }
       }
     }
   } catch (e) { return errorResponse(e); }
@@ -138,21 +188,26 @@ export async function POST(req) {
     usable = allModels.filter((m) => pickApiKey(m));
   }
 
-  // 2. If the user uploaded a reference image, ask a vision model to
-  //    extract structured context (subject, palette, mood, composition).
-  //    This runs once per request — the resulting paragraph is appended
-  //    to the user message sent to every banner-generation variant. We
-  //    swallow extractor failures: missing context is acceptable, the
-  //    pipeline degrades to the brief alone.
-  let referenceContext = null;
-  let referenceContextText = null;
-  if (referenceImage) {
-    referenceContext = await extractReferenceImageContext({
-      adminClient,
-      imageUrl: referenceImage,
-    });
-    referenceContextText = formatReferenceContextForPrompt(referenceContext);
-  }
+  // 2. Vision-extract context for whichever images the user uploaded.
+  //    Reference image → mood/palette/motifs (inspiration only).
+  //    Subject image  → placement/treatment guidance + dominant colors
+  //                     (this image will be visible IN the banner via
+  //                      the bg_image field, so the model needs to know
+  //                      how to integrate it cleanly — masks, blends,
+  //                      where to place headlines so they don't cover
+  //                      a person's face, etc).
+  //    Both run in parallel — they're independent vision calls. Failure
+  //    in either degrades the prompt without aborting the request.
+  const [referenceContext, subjectContext] = await Promise.all([
+    referenceImage
+      ? extractReferenceImageContext({ adminClient, imageUrl: referenceImage })
+      : Promise.resolve(null),
+    subjectImage
+      ? extractSubjectImageContext({ adminClient, imageUrl: subjectImage })
+      : Promise.resolve(null),
+  ]);
+  const referenceContextText = formatReferenceContextForPrompt(referenceContext);
+  const subjectContextText   = formatSubjectContextForPrompt(subjectContext);
 
   // 3. Build the work plan. With ≥ 2 usable models, fan out 1-per-model
   //    so the user actually gets cross-model variety. With 1 model, run
@@ -183,6 +238,8 @@ export async function POST(req) {
         variantSeed,
         textModel: model,
         referenceContextText,
+        subjectContextText,
+        subjectImage,
       }),
     ),
   );
@@ -275,6 +332,8 @@ export async function POST(req) {
       models: modelsForRun.length ? modelsForRun : ["fallback"],
       reference_image_url: referenceImage || null,
       reference_context:   referenceContext  || null,
+      subject_image_url:   subjectImage      || null,
+      subject_context:     subjectContext    || null,
     })
     .select("id")
     .single();
@@ -356,6 +415,8 @@ export async function POST(req) {
       canvas: { background: bg, elements: [] },
       reference_image_url: referenceImage   || null,
       reference_context:   referenceContext || null,
+      subject_image_url:   subjectImage     || null,
+      subject_context:     subjectContext   || null,
     };
   });
 
@@ -398,5 +459,9 @@ export async function POST(req) {
     })),
     // Per-model errors — admin can fix configurations without reading logs.
     modelErrors,
+    // True when this run was triggered by /dashboard/banners/[id]/edit's
+    // "Regenerate" button. The client uses this to update the active
+    // banner row instead of pushing the user to the new variant.
+    regeneratedFrom: regenerateContext ? regenerateFromId : null,
   });
 }

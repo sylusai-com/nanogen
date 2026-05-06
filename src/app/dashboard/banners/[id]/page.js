@@ -9,6 +9,7 @@ import {
   Edit3,
   Loader2,
   PenTool,
+  RefreshCcw,
   Share2,
   Star,
   Trash2,
@@ -22,6 +23,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import ReferencePanel from "@/components/banner/ReferencePanel";
+import RegenerateDialog from "@/components/banner/RegenerateDialog";
 import BannerPreview from "@/components/banner/BannerPreview";
 import { cn } from "@/lib/cn";
 import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
@@ -40,6 +42,7 @@ export default function BannerDetail({ params }) {
   const router = useRouter();
   const userId = user?.id;
   const [busy, setBusy] = useState(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   // Cached + stale-while-revalidate. Tagged on `banner:{id}` so updates
   // / deletes / favourites in the dashboard or editor invalidate this
@@ -223,6 +226,15 @@ export default function BannerDetail({ params }) {
                 <Button
                   variant="secondary"
                   className="w-full"
+                  onClick={() => setRegenerateOpen(true)}
+                  leftIcon={<RefreshCcw className="h-3.5 w-3.5" />}
+                >
+                  Regenerate with new prompt
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  className="w-full"
                   onClick={onToggleFavourite}
                   disabled={busy}
                   leftIcon={
@@ -258,10 +270,18 @@ export default function BannerDetail({ params }) {
             <ReferencePanel
               imageUrl={banner.referenceImageUrl}
               context={banner.referenceContext}
+              subjectImageUrl={banner.subjectImageUrl}
+              subjectContext={banner.subjectContext}
             />
           </div>
         </div>
       </div>
+
+      <RegenerateDialog
+        banner={banner}
+        open={regenerateOpen}
+        onClose={() => setRegenerateOpen(false)}
+      />
     </>
   );
 }

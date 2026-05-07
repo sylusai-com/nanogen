@@ -17,6 +17,7 @@ export default function EditorPreview({
   alignment,
   aspect = "16:9",
   className,
+  subjectImageUrl,
 }) {
   if (!template) {
     return (
@@ -40,6 +41,7 @@ export default function EditorPreview({
     fields,
     alignment,
     title: "Banner preview",
+    subjectImageUrl: subjectImageUrl || null,
   };
 
   return (

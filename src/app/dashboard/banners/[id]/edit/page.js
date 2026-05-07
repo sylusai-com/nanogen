@@ -268,8 +268,7 @@ export default function BannerEditor({ params }) {
                 fields={fields}
                 alignment={alignment}
                 aspect={banner.aspect}
-                className="h-full"
-              />
+                className="h-full"                subjectImageUrl={banner.subjectImageUrl}              />
             )}
           </div>
           <div className="min-w-0 space-y-4 lg:sticky lg:top-20 lg:h-full lg:self-start lg:overflow-y-auto lg:pr-4" style={{ scrollbarGutter: 'stable' }}>

@@ -42,9 +42,15 @@
 - Canvas state stores the builder elements and background used in the editor.
 - The subject image is stored separately in `subject_image_url`.
 
-## 5. How the banner is shown later
-- `BannerPreview` and the export helpers normalize `subject_image_url` back into `bg_image`.
+## 5. How the banner is shown later (with subject image rendering)
+- `BannerPreview` and the export helpers normalize `subject_image_url` back into `bg_image` at render time.
 - That keeps the dashboard detail page, the edit page, the builder, and downloads consistent.
+- **Subject image rendering flow:**
+  - `BannerPreview.jsx` receives `banner.subjectImageUrl` and passes it to `buildCompositeStandaloneHtml()`
+  - `EditorPreview.jsx` (used in `/dashboard/banners/[id]/edit`) receives `subjectImageUrl` prop from the banner and passes it to `BannerPreview`
+  - `Canvas.jsx` (used in `/dashboard/builder/[id]`) receives `subjectImageUrl` prop and passes it to `buildStandaloneHtml()` for the iframe render
+  - `normalizeRenderFields()` function in `bannerDownload.js` injects the base64 data URI into the `bg_image` field if present
+  - The subject image displays identically across: dashboard thumbnails → detail preview → editor preview → builder canvas → all downloads
 - The reference image is still shown only in the side panel and is never embedded in the banner.
 
 ## 6. The Builder: Adding and storing HTML/CSS elements
@@ -69,8 +75,11 @@
 - The banner's `html` and `css` are NOT rewritten — they stay as the AI-generated template.
 
 ### 6c. How elements are rendered and viewed
-- In the builder, canvas elements render as an overlay on top of the banner template.
+- In the builder, the canvas displays in an iframe with the banner template + subject image, then canvas elements render as an overlay.
+- Canvas renders in stages:
+  1. **Banner base layer:** `<iframe>` renders the AI-generated HTML/CSS template with the subject image normalized into the `bg_image` field
+  2. **Elements overlay:** Canvas elements layer on top at z-index 5
 - When exported or viewed on the dashboard, the elements are rendered as additional HTML markup with z-index layering.
 - `renderCanvasElementsMarkup()` converts each element to HTML with inline styles.
 - All canvas elements render at z-index 5, sitting above the template (z-index -1, -2).
-- The export process merges the template HTML + CSS with the canvas element markup so downloads include both layers.
+- The export process merges the template HTML + CSS + subject image + canvas element markup so downloads include all layers.

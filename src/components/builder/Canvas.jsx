@@ -30,6 +30,7 @@ export default function Canvas({
   editingId,
   onStartEdit,
   onEndEdit,
+  subjectImageUrl,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -139,7 +140,7 @@ export default function Canvas({
   const srcDoc = html && css
     ? buildStandaloneHtml({
         html, css, fields: fields || [], alignment: alignment || "left",
-        title: "preview", hideSlots: false,
+        title: "preview", hideSlots: false, subjectImageUrl: subjectImageUrl || null,
       })
     : null;
 

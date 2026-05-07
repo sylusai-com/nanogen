@@ -575,6 +575,7 @@ export default function BuilderPage({ params }) {
           onDeselectAll={() => { setSelectedId(null); setEditingId(null); }}
           onStartEdit={(eid) => { setSelectedId(eid); setEditingId(eid); }}
           onEndEdit={() => setEditingId(null)}
+          subjectImageUrl={banner?.subjectImageUrl || null}
         />
 
         {/* Right: properties + fields */}

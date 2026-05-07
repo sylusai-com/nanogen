@@ -41,24 +41,35 @@ export default function ElementRenderer({
   const pxH = h != null ? (h / 100) * canvasH : null;
 
   // ── Drag to move ──────────────────────────────────────────────────────────
+  // Properly accounts for zoom, offset, and container position
   const onDragStart = useCallback((e) => {
     if (isPreview || isEditing) return;
     e.preventDefault();
     e.stopPropagation();
     onSelect?.(id);
 
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
     const startEX = element.x;
     const startEY = element.y;
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!containerRect) return;
 
     const onMove = (me) => {
-      const dx = ((me.clientX - startX) / zoom / canvasW) * 100;
-      const dy = ((me.clientY - startY) / zoom / canvasH) * 100;
+      // Calculate delta in canvas coordinate space
+      const clientDeltaX = me.clientX - startClientX;
+      const clientDeltaY = me.clientY - startClientY;
+      const canvasDeltaX = (clientDeltaX / zoom / canvasW) * 100;
+      const canvasDeltaY = (clientDeltaY / zoom / canvasH) * 100;
+
+      const newX = startEX + canvasDeltaX;
+      const newY = startEY + canvasDeltaY;
+
+      // Clamp to banner bounds
       onUpdateElement?.({
         ...element,
-        x: Math.max(0, Math.min(100 - w, startEX + dx)),
-        y: Math.max(0, Math.min(100 - (h ?? 10), startEY + dy)),
+        x: Math.max(0, Math.min(100 - w, newX)),
+        y: Math.max(0, Math.min(100 - (h ?? 10), newY)),
       });
     };
     const onUp = () => {
@@ -67,31 +78,41 @@ export default function ElementRenderer({
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [isPreview, isEditing, id, element, zoom, canvasW, canvasH, w, h, onSelect, onUpdateElement]);
+  }, [isPreview, isEditing, id, element, zoom, canvasW, canvasH, w, h, onSelect, onUpdateElement, containerRef]);
 
   // ── Resize handles ────────────────────────────────────────────────────────
+  // Properly scales resize deltas based on zoom level
   const onResizeHandleMouseDown = useCallback((e, handle) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const startX = e.clientX;
-    const startY = e.clientY;
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
     const origX = element.x;
     const origY = element.y;
     const origW = element.w;
     const origH = element.h ?? 20;
 
     const onMove = (me) => {
-      const dx = ((me.clientX - startX) / zoom / canvasW) * 100;
-      const dy = ((me.clientY - startY) / zoom / canvasH) * 100;
+      const clientDeltaX = me.clientX - startClientX;
+      const clientDeltaY = me.clientY - startClientY;
+      const canvasDeltaX = (clientDeltaX / zoom / canvasW) * 100;
+      const canvasDeltaY = (clientDeltaY / zoom / canvasH) * 100;
       let nx = origX, ny = origY, nw = origW, nh = origH;
 
-      if (handle.includes("e")) nw = Math.max(3, origW + dx);
-      if (handle.includes("s")) nh = Math.max(2, origH + dy);
-      if (handle.includes("w")) { nw = Math.max(3, origW - dx); nx = origX + dx; }
-      if (handle.includes("n")) { nh = Math.max(2, origH - dy); ny = origY + dy; }
+      if (handle.includes("e")) nw = Math.max(3, origW + canvasDeltaX);
+      if (handle.includes("s")) nh = Math.max(2, origH + canvasDeltaY);
+      if (handle.includes("w")) { nw = Math.max(3, origW - canvasDeltaX); nx = origX + canvasDeltaX; }
+      if (handle.includes("n")) { nh = Math.max(2, origH - canvasDeltaY); ny = origY + canvasDeltaY; }
 
-      onUpdateElement?.({ ...element, x: nx, y: ny, w: nw, h: nh });
+      // Clamp to banner bounds
+      onUpdateElement?({
+        ...element,
+        x: Math.max(0, Math.min(100 - nw, nx)),
+        y: Math.max(0, Math.min(100 - nh, ny)),
+        w: Math.min(100, nw),
+        h: Math.min(100, nh),
+      });
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);

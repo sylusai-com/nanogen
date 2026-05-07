@@ -61,6 +61,7 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
     fields:           banner.fields || [],
     alignment:        banner.alignment || "left",
     aspect:           banner.aspect || "16:9",
+    subjectImageUrl:  banner.subjectImageUrl || null,
     elements:         banner.canvas?.elements || [],
     canvasBackground: banner.canvas?.background || "#0c0c10",
   });
@@ -74,6 +75,7 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
         css:        payload.css,
         fields:     payload.fields,
         alignment:  payload.alignment,
+        subjectImageUrl: payload.subjectImageUrl,
         elements:   payload.elements,
         background: payload.canvasBackground,
         aspect:     payload.aspect,

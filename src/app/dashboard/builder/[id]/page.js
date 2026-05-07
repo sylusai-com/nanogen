@@ -387,9 +387,9 @@ export default function BuilderPage({ params }) {
       const slug = (banner?.title || "banner").toLowerCase().replace(/\s+/g, "-").slice(0, 40);
 
       const aspect = banner?.aspect || "16:9";
-      const shared = { html, css, fields, alignment, aspect, elements, canvasBackground: background };
+      const shared = { html, css, fields, alignment, aspect, subjectImageUrl: banner?.subjectImageUrl || null, elements, canvasBackground: background };
       if (format === "html") {
-        const doc = buildCompositeStandaloneHtml({ html, css, fields, alignment, title: banner?.title || "banner", elements, aspect, background });
+        const doc = buildCompositeStandaloneHtml({ html, css, fields, alignment, subjectImageUrl: banner?.subjectImageUrl || null, title: banner?.title || "banner", elements, aspect, background });
         triggerDownload(`${slug}.html`, doc, "text/html");
       } else if (format === "png") {
         const dataUrl = await rasterize({ ...shared, format: "image/png", scale: 2 });

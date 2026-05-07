@@ -44,6 +44,36 @@ function getFieldCssVar(field) {
   return field?.cssVar || (field?.id === "bg_image" ? "--bg-image" : "");
 }
 
+function wrapImageUrl(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  return value.startsWith("url(") ? value : `url("${value}")`;
+}
+
+function normalizeRenderFields(fields = [], subjectImageUrl = null) {
+  const next = (fields || []).map((field) => ({ ...field }));
+  if (!subjectImageUrl) return next;
+
+  const wrapped = wrapImageUrl(subjectImageUrl);
+  if (!wrapped) return next;
+
+  const bgField = next.find((field) => field?.id === "bg_image");
+  if (bgField) {
+    bgField.value = wrapped;
+    return next;
+  }
+
+  next.push({
+    id: "bg_image",
+    type: "image",
+    cssVar: "--bg-image",
+    slot: "bg_image",
+    label: "Background image",
+    value: wrapped,
+  });
+  return next;
+}
+
 function getFieldById(fields, id) {
   return (fields || []).find((field) => field?.id === id) || null;
 }
@@ -84,9 +114,10 @@ function extractStyleBlock(docHtml) {
 
 // Build the full HTML document the iframe would have shown, with the
 // patched field values applied to the markup and the chosen alignment set.
-export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false }) {
+export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, subjectImageUrl = null }) {
   let cssOut = css || "";
-  const overrides = fields
+  const renderFields = normalizeRenderFields(fields, subjectImageUrl);
+  const overrides = renderFields
     .filter((f) => getFieldCssVar(f))
     .map((f) => {
       return `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`;
@@ -103,7 +134,7 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   }
 
   let htmlOut = html || "";
-  for (const f of fields) {
+  for (const f of renderFields) {
     if (f.type === "text" && f.slot) {
       htmlOut = htmlOut.replace(
         new RegExp(`(data-slot="${f.slot}"[^>]*)>([^<]*)`, "g"),
@@ -149,6 +180,7 @@ export function buildSvgString({
   css,
   fields = [],
   alignment = "left",
+  subjectImageUrl = null,
   elements = [],
   canvasBackground = "#0c0c10",
   aspect = "16:9",
@@ -156,7 +188,7 @@ export function buildSvgString({
   height = 900,
 }) {
   const standalone = buildCompositeStandaloneHtml({
-    html, css, fields, alignment, elements, background: canvasBackground, aspect,
+    html, css, fields, alignment, subjectImageUrl, elements, background: canvasBackground, aspect,
   });
   // Strip the doctype / outer html — foreignObject wants a fragment.
   const inner = standalone
@@ -210,6 +242,7 @@ export function buildCompositeStandaloneHtml({
   fields = [],
   alignment = "left",
   title = "banner",
+  subjectImageUrl = null,
   elements = [],
   aspect = "16:9",
   background = "#0c0c10",
@@ -221,12 +254,13 @@ export function buildCompositeStandaloneHtml({
   // identical in the list view, the detail view, the builder, and
   // every download format. Canvas elements layer on top as additions.
   const baseDoc = html && css
-    ? buildStandaloneHtml({ html, css, fields, alignment, title })
+    ? buildStandaloneHtml({ html, css, fields, alignment, title, subjectImageUrl })
     : buildStandaloneHtml({
         ...buildTemplateFromCanvas({ elements: [], background, aspect, fields }),
         fields,
         alignment,
         title,
+        subjectImageUrl,
       });
 
   const shellStyle = `position:relative;width:100%;height:100%;overflow:hidden;`;
@@ -346,6 +380,7 @@ export async function rasterize({
   css,
   fields,
   alignment,
+  subjectImageUrl = null,
   elements = [],
   canvasBackground = "#0c0c10",
   aspect = "16:9",
@@ -358,7 +393,7 @@ export async function rasterize({
   }
   try {
     const { node, cleanup } = await createBannerRenderNode({
-      html, css, fields, alignment, aspect, elements, canvasBackground,
+      html, css, fields, alignment, subjectImageUrl, aspect, elements, canvasBackground,
     });
     try {
       const target = exportSize(aspect);
@@ -383,7 +418,7 @@ export async function rasterize({
 }
 
 async function createBannerRenderNode({
-  html, css, fields, alignment, aspect, elements = [], canvasBackground = "#0c0c10",
+  html, css, fields, alignment, subjectImageUrl = null, aspect, elements = [], canvasBackground = "#0c0c10",
 }) {
   if (typeof document === "undefined") {
     throw new Error("createBannerRenderNode() must be called from the browser.");
@@ -403,7 +438,7 @@ async function createBannerRenderNode({
   iframe.style.pointerEvents = "none";
 
   const doc = buildCompositeStandaloneHtml({
-    html, css, fields, alignment,
+    html, css, fields, alignment, subjectImageUrl,
     title: "banner-export",
     elements, aspect,
     background: canvasBackground,
@@ -512,12 +547,12 @@ export function triggerDownload(filename, data, mime = "text/plain") {
 // The generated PDF is intentionally simple: one page, banner fills the
 // page, no metadata/fonts. Avoids the ~150KB jsPDF dep entirely.
 export async function rasterizeToPdf({
-  html, css, fields, alignment, aspect = "16:9",
+  html, css, fields, alignment, subjectImageUrl = null, aspect = "16:9",
   elements = [], canvasBackground = "#0c0c10",
 }) {
   const { width, height } = exportSize(aspect);
   const dataUrl = await rasterize({
-    html, css, fields, alignment, aspect,
+    html, css, fields, alignment, subjectImageUrl, aspect,
     elements, canvasBackground,
     format: "image/jpeg",
     scale: 1,

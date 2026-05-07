@@ -1,7 +1,7 @@
 // src/components/banner/BannerPreview.jsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
   buildCompositeStandaloneHtml,
@@ -28,28 +28,19 @@ export default function BannerPreview({
   const aspect = banner?.aspect || "16:9";
   const { width: designW, height: designH } = exportRenderSize(aspect);
 
-  const srcDoc = useMemo(() => {
-    if (!banner?.html || !banner?.css) return null;
-    return buildCompositeStandaloneHtml({
-      html: banner.html,
-      css: banner.css,
-      fields: banner.fields || [],
-      alignment: banner.alignment || "left",
-      title: banner.title || "banner",
-      elements: banner.canvas?.elements || [],
-      background: banner.canvas?.background || "#0c0c10",
-      aspect,
-    });
-  }, [
-    banner?.html,
-    banner?.css,
-    banner?.fields,
-    banner?.alignment,
-    banner?.title,
-    banner?.canvas?.elements,
-    banner?.canvas?.background,
-    aspect,
-  ]);
+  const srcDoc = !banner?.html || !banner?.css
+    ? null
+    : buildCompositeStandaloneHtml({
+        html: banner.html,
+        css: banner.css,
+        fields: banner.fields || [],
+        alignment: banner.alignment || "left",
+        title: banner.title || "banner",
+        subjectImageUrl: banner.subjectImageUrl || null,
+        elements: banner.canvas?.elements || [],
+        background: banner.canvas?.background || "#0c0c10",
+        aspect,
+      });
 
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);

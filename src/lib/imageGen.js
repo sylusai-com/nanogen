@@ -43,6 +43,14 @@ async function blobToDataUri(blob) {
   return `data:${type};base64,${b64}`;
 }
 
+// Convert a remote image URL to a base64-encoded data URI.
+export async function urlToBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image (HTTP ${res.status})`);
+  const blob = await res.blob();
+  return blobToDataUri(blob);
+}
+
 // Build the user-facing image prompt from the brief + extracted contexts.
 // The text-model path uses long structured prompts; image models perform
 // better with a short scene-style description, so we synthesise one.

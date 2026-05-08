@@ -87,7 +87,6 @@ export default function AdminStyles() {
     }
   };
 
-  const onDelete = async (item) => {
   const onDelete = async () => {
     if (!deleteTarget?.id) return;
     setBusyId(deleteTarget.id);

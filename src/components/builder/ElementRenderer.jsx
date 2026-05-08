@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "@/lib/cn";
 
 // 8-handle selection box, rotation grip, inline text editing
 export default function ElementRenderer({
@@ -85,28 +84,32 @@ export default function ElementRenderer({
   const onResizeHandleMouseDown = useCallback((e, handle) => {
     e.preventDefault();
     e.stopPropagation();
-
     const startClientX = e.clientX;
     const startClientY = e.clientY;
     const origX = element.x;
     const origY = element.y;
     const origW = element.w;
     const origH = element.h ?? 20;
-
     const onMove = (me) => {
       const clientDeltaX = me.clientX - startClientX;
       const clientDeltaY = me.clientY - startClientY;
       const canvasDeltaX = (clientDeltaX / zoom / canvasW) * 100;
       const canvasDeltaY = (clientDeltaY / zoom / canvasH) * 100;
-      let nx = origX, ny = origY, nw = origW, nh = origH;
-
+      let nx = origX;
+      let ny = origY;
+      let nw = origW;
+      let nh = origH;
       if (handle.includes("e")) nw = Math.max(3, origW + canvasDeltaX);
       if (handle.includes("s")) nh = Math.max(2, origH + canvasDeltaY);
-      if (handle.includes("w")) { nw = Math.max(3, origW - canvasDeltaX); nx = origX + canvasDeltaX; }
-      if (handle.includes("n")) { nh = Math.max(2, origH - canvasDeltaY); ny = origY + canvasDeltaY; }
-
-      // Clamp to banner bounds
-      onUpdateElement?({
+      if (handle.includes("w")) {
+        nw = Math.max(3, origW - canvasDeltaX);
+        nx = origX + canvasDeltaX;
+      }
+      if (handle.includes("n")) {
+        nh = Math.max(2, origH - canvasDeltaY);
+        ny = origY + canvasDeltaY;
+      }
+      onUpdateElement({
         ...element,
         x: Math.max(0, Math.min(100 - nw, nx)),
         y: Math.max(0, Math.min(100 - nh, ny)),

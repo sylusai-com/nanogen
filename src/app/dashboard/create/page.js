@@ -31,6 +31,10 @@ export default function DashboardCreate() {
         const res = await fetch(`/api/generation-status/${jobId}`);
         const data = await res.json();
 
+        if (!res.ok) {
+          throw new Error(data.error || `Status request failed (${res.status})`);
+        }
+
         if (data.status === "completed") {
           setGenerationDone(true);
           return data;

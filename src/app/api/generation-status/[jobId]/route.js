@@ -6,6 +6,7 @@ import { getJob } from "@/lib/generationQueue";
 
 export async function GET(req, { params }) {
   try {
+    const resolvedParams = await params;
     const supabase = await createClient();
     const {
       data: { user },
@@ -15,7 +16,7 @@ export async function GET(req, { params }) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { jobId } = params;
+    const { jobId } = resolvedParams;
     const job = getJob(jobId);
 
     if (!job) {

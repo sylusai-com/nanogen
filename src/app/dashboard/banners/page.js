@@ -22,6 +22,7 @@ import { listBanners } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
 
 const PAGE_SIZE = 12;
+const ACTIVE_JOB_POLL_MS = 2000;
 
 export default function BannersList() {
   const { user, supabase } = useAuth();
@@ -47,6 +48,7 @@ export default function BannersList() {
     if (!userId) return;
 
     let cancelled = false;
+
     const loadActiveJobs = async () => {
       try {
         const response = await fetch("/api/generation-status", { cache: "no-store" });
@@ -60,13 +62,39 @@ export default function BannersList() {
     };
 
     loadActiveJobs();
-    const interval = setInterval(loadActiveJobs, 2000);
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
     };
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+    let intervalId = null;
+
+    const loadActiveJobs = async () => {
+      try {
+        const response = await fetch("/api/generation-status", { cache: "no-store" });
+        const data = await response.json();
+        if (!cancelled && response.ok) {
+          setActiveJobs(Array.isArray(data.jobs) ? data.jobs : []);
+        }
+      } catch {
+        if (!cancelled) setActiveJobs([]);
+      }
+    };
+
+    if (activeJobs.length > 0) {
+      intervalId = setInterval(loadActiveJobs, ACTIVE_JOB_POLL_MS);
+    }
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [userId, activeJobs.length]);
 
   const grouped = useMemo(() => {
     if (!all) return [];

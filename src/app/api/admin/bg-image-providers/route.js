@@ -4,18 +4,25 @@
 import { NextResponse } from "next/server";
 import { validateAdminRole, validateString } from "@/lib/server/security";
 import {
-  listBgImageProviders,
+  listAllBgImageProviders,
   createBgImageProvider,
-  updateBgImageProvider,
-  deleteBgImageProvider,
 } from "@/lib/db/bgImageProviders";
+
+function sanitizeProvider(provider) {
+  if (!provider) return provider;
+  return {
+    ...provider,
+    hasApiKey: !!provider.api_key,
+    api_key: undefined,
+  };
+}
 
 export async function GET(req) {
   try {
     const { supabase } = await validateAdminRole();
 
-    const providers = await listBgImageProviders(supabase);
-    return NextResponse.json({ providers });
+    const providers = await listAllBgImageProviders(supabase);
+    return NextResponse.json({ providers: providers.map(sanitizeProvider) });
   } catch (error) {
     const status = error.status || 500;
     return NextResponse.json({ error: error.message }, { status });
@@ -24,13 +31,13 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const { supabase } = await validateAdminRole();
+    const { supabase, user } = await validateAdminRole();
 
     const body = await req.json();
-    const name = validateString(body.name, { name: "name", min: 1, max: 255 });
-    const type = validateString(body.type, { name: "type", max: 50 });
-    const apiKey = validateString(body.api_key, { name: "api_key", max: 1000 });
-    const apiEndpoint = validateString(body.api_endpoint, { name: "api_endpoint", max: 500 });
+    const name = validateString(body.name, { name: "name", min: 1, max: 255, required: true });
+    const type = validateString(body.type, { name: "type", max: 50, required: true });
+    const apiKey = validateString(body.api_key, { name: "api_key", max: 1000, required: true });
+    const apiEndpoint = validateString(body.api_endpoint, { name: "api_endpoint", max: 500, required: true });
 
     if (!["unsplash", "pexels", "pixabay", "custom"].includes(type)) {
       return Response.json({ error: "Invalid provider type" }, { status: 400 });
@@ -45,7 +52,7 @@ export async function POST(req) {
       created_by: user.id,
     });
 
-    return NextResponse.json({ provider }, { status: 201 });
+    return NextResponse.json({ provider: sanitizeProvider(provider) }, { status: 201 });
   } catch (error) {
     const status = error.status || 400;
     return NextResponse.json({ error: error.message }, { status });

@@ -1,234 +1,249 @@
 // src/app/admin/bg-image-providers/page.js
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, CheckCircle2, Edit3, Plus, RefreshCw, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
-import Eyebrow from "@/components/ui/Eyebrow";
+import Card from "@/components/ui/Card";
+import Badge from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import Switch from "@/components/ui/Switch";
+import Skeleton from "@/components/ui/Skeleton";
+import EmptyData from "@/components/ui/EmptyData";
+import BgProviderFormModal from "@/components/admin/BgProviderFormModal";
+import { invalidateTags } from "@/lib/cache";
+
+async function adminFetch(url, init = {}) {
+  const res = await fetch(url, {
+    ...init,
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  return data;
+}
+
+function ProviderCard({ provider, busy, onEdit, onToggle, onDelete }) {
+  const endpoint = provider.api_endpoint || "—";
+  const hasConfig = provider.config && Object.keys(provider.config).length > 0;
+
+  return (
+    <Card elevated className="group relative overflow-hidden p-5">
+      <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-cyan-400 via-sky-500 to-indigo-500 opacity-80" />
+
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-base font-semibold tracking-tight text-foreground">{provider.name}</h3>
+            <Badge tone={provider.enabled ? "primary" : "neutral"}>{provider.enabled ? "Enabled" : "Disabled"}</Badge>
+            {provider.hasApiKey ? (
+              <Badge tone="primary"><CheckCircle2 className="mr-1 h-2.5 w-2.5" /> Key set</Badge>
+            ) : (
+              <Badge tone="neutral"><AlertCircle className="mr-1 h-2.5 w-2.5" /> Missing key</Badge>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <span className="rounded-full border border-border bg-surface px-2.5 py-1 font-medium uppercase tracking-[0.14em] text-muted-strong">{provider.type}</span>
+            <span className="truncate font-mono text-[11px] text-muted-strong">{endpoint}</span>
+          </div>
+        </div>
+
+        <Switch checked={provider.enabled} disabled={busy} onChange={() => onToggle(provider)} ariaLabel="Toggle provider enabled" />
+      </div>
+
+      <div className="mt-5 grid gap-3 text-xs sm:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+          <div className="uppercase tracking-[0.16em] text-muted">Endpoint</div>
+          <div className="mt-1 truncate font-mono text-foreground">{endpoint}</div>
+        </div>
+        <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+          <div className="uppercase tracking-[0.16em] text-muted">Config</div>
+          <div className="mt-1 text-foreground">{hasConfig ? `${Object.keys(provider.config).length} settings` : "No extra config"}</div>
+        </div>
+      </div>
+
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="text-[11px] text-muted">Used by background-image fetches and generation diagnostics.</div>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => onEdit(provider)} disabled={busy} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-muted-strong hover:bg-surface-2 hover:text-foreground transition-colors">
+            <Edit3 className="h-3.5 w-3.5" /> Edit
+          </button>
+          <button type="button" onClick={() => onDelete(provider)} disabled={busy} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors">
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export default function AdminBgImageProviders() {
-  const [providers, setProviders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [providers, setProviders] = useState(null);
   const [error, setError] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    type: "unsplash",
-    api_key: "",
-    api_endpoint: "",
-    config: {},
-  });
+  const [modal, setModal] = useState({ open: false, provider: null });
+  const [busyId, setBusyId] = useState(null);
 
-  useEffect(() => {
-    fetchProviders();
-  }, []);
-
-  const fetchProviders = async () => {
-    try {
-      const res = await fetch("/api/admin/bg-image-providers");
-      if (!res.ok) throw new Error("Failed to fetch providers");
-      const data = await res.json();
-      setProviders(data.providers || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const reload = async () => {
     try {
       const res = await fetch("/api/admin/bg-image-providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        cache: "no-store",
+        credentials: "same-origin",
       });
-      if (!res.ok) throw new Error("Failed to create provider");
-      await fetchProviders();
-      setShowForm(false);
-      setFormData({
-        name: "",
-        type: "unsplash",
-        api_key: "",
-        api_endpoint: "",
-        config: {},
-      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Providers load failed (${res.status})`);
+      setProviders(data.providers || []);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Failed to load providers");
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this provider?")) return;
-    try {
-      const res = await fetch(`/api/admin/bg-image-providers/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete provider");
-      await fetchProviders();
-    } catch (err) {
-      setError(err.message);
-    }
+  useEffect(() => {
+    if (user?.id) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const onCreate = async (form) => {
+    await adminFetch("/api/admin/bg-image-providers", {
+      method: "POST",
+      body: JSON.stringify(form),
+    });
+    invalidateTags(["bg-image-providers"]);
+    await reload();
   };
 
-  const handleToggle = async (id, enabled) => {
+  const onUpdate = async (form) => {
+    if (!modal.provider?.id) return;
+    const patch = { ...form };
+    if (!patch.api_key) delete patch.api_key;
+    await adminFetch(`/api/admin/bg-image-providers/${modal.provider.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    invalidateTags(["bg-image-providers"]);
+    await reload();
+  };
+
+  const onToggle = async (provider) => {
+    setBusyId(provider.id);
     try {
-      const res = await fetch(`/api/admin/bg-image-providers/${id}`, {
+      await adminFetch(`/api/admin/bg-image-providers/${provider.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !enabled }),
+        body: JSON.stringify({ enabled: !provider.enabled }),
       });
-      if (!res.ok) throw new Error("Failed to update provider");
-      await fetchProviders();
-    } catch (err) {
-      setError(err.message);
+      invalidateTags(["bg-image-providers"]);
+      await reload();
+    } finally {
+      setBusyId(null);
     }
   };
+
+  const onDelete = async (provider) => {
+    if (!confirm(`Delete ${provider.name}? This cannot be undone.`)) return;
+    setBusyId(provider.id);
+    try {
+      await adminFetch(`/api/admin/bg-image-providers/${provider.id}`, { method: "DELETE" });
+      invalidateTags(["bg-image-providers"]);
+      await reload();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const enabledCount = useMemo(() => (providers || []).filter((provider) => provider.enabled).length, [providers]);
+  const keyCount = useMemo(() => (providers || []).filter((provider) => provider.hasApiKey).length, [providers]);
 
   return (
     <>
-      <TopBar title="Background Image Providers" action={null} />
-      <div className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8 md:py-10">
-        <header className="mb-8">
-          <Eyebrow tone="primary">Admin</Eyebrow>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
-            Background Image <span className="text-primary-gradient">Providers</span>
-          </h1>
-          <p className="mt-2 text-sm text-muted">
-            Configure external APIs (Unsplash, Pexels, etc.) for automatic background image fetching during banner generation.
-          </p>
+      <TopBar
+        title="BG Providers"
+        action={<Button leftIcon={<Plus className="h-3.5 w-3.5" strokeWidth={2.5} />} onClick={() => setModal({ open: true, provider: null })}>Add provider</Button>}
+      />
+
+      <div className="mx-auto w-full max-w-7xl space-y-6 px-5 py-8 md:px-8 md:py-10">
+        <header className="relative overflow-hidden rounded-3xl border border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.96),rgba(9,9,16,0.98))] p-6 shadow-[0_24px_90px_-48px_rgba(0,0,0,0.75)] md:p-8">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-size-[24px_24px] opacity-30" />
+          <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-fuchsia-400/10 blur-3xl" />
+
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl space-y-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-white/75 backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5" /> Admin registry for background-image providers
+              </div>
+              <div>
+                <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                  Provider registry, reworked for fast scanning and sharper decisions.
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65 md:text-[15px]">
+                  Add, edit, enable, or disable image providers from a single place. These providers power automatic background selection in generation and diagnostics.
+                </p>
+              </div>
+              {error && (
+                <div className="inline-flex items-center gap-2 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 backdrop-blur">
+                  <TriangleAlert className="h-4 w-4" /> {error}
+                </div>
+              )}
+            </div>
+
+            <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-105 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Providers</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{providers?.length ?? "—"}</div>
+                <div className="mt-1 text-xs text-white/55">Registered image sources</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Enabled</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{providers ? enabledCount : "—"}</div>
+                <div className="mt-1 text-xs text-white/55">Active in generation</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/45">Keys set</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{providers ? keyCount : "—"}</div>
+                <div className="mt-1 text-xs text-white/55">Ready for API calls</div>
+              </div>
+            </div>
+          </div>
         </header>
 
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-            {error}
-          </div>
-        )}
-
-        <div className="mb-6">
-          {!showForm ? (
-            <button
-              onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium"
-            >
-              + Add Provider
-            </button>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4 border border-border rounded-lg p-6 bg-surface">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Provider Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface-2 text-foreground"
-                  placeholder="e.g., Unsplash API"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Provider Type</label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface-2 text-foreground"
-                  required
-                >
-                  <option value="unsplash">Unsplash</option>
-                  <option value="pexels">Pexels</option>
-                  <option value="pixabay">Pixabay</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">API Key</label>
-                <input
-                  type="password"
-                  value={formData.api_key}
-                  onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface-2 text-foreground"
-                  placeholder="Your API key"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">API Endpoint</label>
-                <input
-                  type="url"
-                  value={formData.api_endpoint}
-                  onChange={(e) => setFormData({ ...formData, api_endpoint: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg bg-surface-2 text-foreground"
-                  placeholder="https://api.example.com/..."
-                  required
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium"
-                >
-                  Save Provider
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="px-4 py-2 bg-surface-2 text-foreground rounded-lg hover:bg-surface-3 font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="text-center py-12">
-            <p className="text-muted">Loading providers...</p>
+        {!providers ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-56" />)}
           </div>
         ) : providers.length === 0 ? (
-          <div className="text-center py-12 border border-dashed border-border rounded-lg">
-            <p className="text-muted">No providers configured yet. Add one to get started!</p>
-          </div>
+          <EmptyData
+            icon={<Sparkles className="h-5 w-5" />}
+            title="No background-image providers yet"
+            body="Add one to let the generator fetch relevant imagery automatically."
+            action={<Button leftIcon={<Plus className="h-3.5 w-3.5" />} onClick={() => setModal({ open: true, provider: null })}>Add provider</Button>}
+          />
         ) : (
-          <div className="space-y-3">
+          <section className="grid gap-4 xl:grid-cols-2">
             {providers.map((provider) => (
-              <div key={provider.id} className="border border-border rounded-lg p-4 bg-surface-2 flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-semibold text-foreground">{provider.name}</h3>
-                  <p className="text-xs text-muted mt-1">
-                    Type: <span className="font-mono text-muted-strong">{provider.type}</span>
-                    {provider.api_endpoint && (
-                      <> • Endpoint: <span className="font-mono text-muted-strong truncate">{provider.api_endpoint}</span></>
-                    )}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => handleToggle(provider.id, provider.enabled)}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
-                      provider.enabled
-                        ? "bg-green-500/20 text-green-600"
-                        : "bg-gray-500/20 text-gray-600"
-                    }`}
-                  >
-                    {provider.enabled ? "Enabled" : "Disabled"}
-                  </button>
-                  <button
-                    onClick={() => handleDelete(provider.id)}
-                    className="px-3 py-1 rounded text-sm font-medium bg-red-500/20 text-red-600 hover:bg-red-500/30"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+              <ProviderCard
+                key={provider.id}
+                provider={provider}
+                busy={busyId === provider.id}
+                onEdit={(next) => setModal({ open: true, provider: next })}
+                onToggle={onToggle}
+                onDelete={onDelete}
+              />
             ))}
-          </div>
+          </section>
         )}
       </div>
+
+      <BgProviderFormModal
+        open={modal.open}
+        provider={modal.provider}
+        onClose={() => setModal({ open: false, provider: null })}
+        onSubmit={modal.provider ? onUpdate : onCreate}
+      />
     </>
   );
 }

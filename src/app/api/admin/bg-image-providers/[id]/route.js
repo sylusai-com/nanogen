@@ -5,6 +5,15 @@ import { NextResponse } from "next/server";
 import { validateAdminRole, validateString } from "@/lib/server/security";
 import { updateBgImageProvider, deleteBgImageProvider } from "@/lib/db/bgImageProviders";
 
+function sanitizeProvider(provider) {
+  if (!provider) return provider;
+  return {
+    ...provider,
+    hasApiKey: !!provider.api_key,
+    api_key: undefined,
+  };
+}
+
 export async function PATCH(req, { params }) {
   try {
     const { supabase } = await validateAdminRole();
@@ -22,7 +31,7 @@ export async function PATCH(req, { params }) {
     updates.updated_at = new Date().toISOString();
 
     const provider = await updateBgImageProvider(supabase, id, updates);
-    return NextResponse.json({ provider });
+    return NextResponse.json({ provider: sanitizeProvider(provider) });
   } catch (error) {
     const status = error.status || 400;
     return NextResponse.json({ error: error.message }, { status });

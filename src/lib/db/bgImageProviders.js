@@ -13,6 +13,17 @@ export async function listBgImageProviders(supabase) {
   return data || [];
 }
 
+export async function listAllBgImageProviders(supabase) {
+  const { data, error } = await supabase
+    .from("bg_image_providers")
+    .select("*")
+    .order("enabled", { ascending: false })
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(`Failed to fetch bg image providers: ${error.message}`);
+  return data || [];
+}
+
 export async function getBgImageProvider(supabase, id) {
   const { data, error } = await supabase
     .from("bg_image_providers")

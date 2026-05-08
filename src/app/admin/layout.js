@@ -1,7 +1,7 @@
 // src/app/admin/layout.js
 "use client";
 
-import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, LayoutTemplate, MessageSquareCode, Palette, Users } from "lucide-react";
+import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, LayoutTemplate, MessageSquareCode, Palette, Plug, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/layout/AuthProvider";
 import RouteGuard from "@/components/dashboard/RouteGuard";
@@ -35,6 +35,11 @@ export default function AdminLayout({ children }) {
           icon: <Cpu className={iconCls} />,
         },
         {
+          href: "/admin/bg-image-providers",
+          label: "BG Providers",
+          icon: <Sparkles className={iconCls} />,
+        },
+        {
           href: "/admin/prompt",
           label: "Prompt",
           icon: <MessageSquareCode className={iconCls} />,
@@ -47,7 +52,7 @@ export default function AdminLayout({ children }) {
         {
           href: "/admin/connections",
           label: "Connections",
-          icon: <LayoutDashboard className={iconCls} />,
+          icon: <Plug className={iconCls} />,
         },
       ],
     },

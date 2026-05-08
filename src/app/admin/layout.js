@@ -44,6 +44,11 @@ export default function AdminLayout({ children }) {
           label: "Outputs",
           icon: <ImageIcon className={iconCls} />,
         },
+        {
+          href: "/admin/connections",
+          label: "Connections",
+          icon: <LayoutDashboard className={iconCls} />,
+        },
       ],
     },
     {

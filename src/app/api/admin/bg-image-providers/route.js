@@ -1,7 +1,7 @@
 // src/app/api/admin/bg-image-providers/route.js
 // Admin endpoints for managing background image providers
 
-import { createClient } from "@/lib/supabase/server";
+import { NextResponse } from "next/server";
 import { validateAdminRole, validateString } from "@/lib/server/security";
 import {
   listBgImageProviders,
@@ -12,21 +12,19 @@ import {
 
 export async function GET(req) {
   try {
-    const supabase = createClient();
-    await validateAdminRole(supabase);
+    const { supabase } = await validateAdminRole();
 
     const providers = await listBgImageProviders(supabase);
-    return Response.json({ providers });
+    return NextResponse.json({ providers });
   } catch (error) {
-    const status = error.message.includes("not authorized") ? 403 : 500;
-    return Response.json({ error: error.message }, { status });
+    const status = error.status || 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }
 
 export async function POST(req) {
   try {
-    const supabase = createClient();
-    await validateAdminRole(supabase);
+    const { supabase } = await validateAdminRole();
 
     const body = await req.json();
     const name = validateString(body.name, { name: "name", min: 1, max: 255 });
@@ -38,7 +36,6 @@ export async function POST(req) {
       return Response.json({ error: "Invalid provider type" }, { status: 400 });
     }
 
-    const { user } = await supabase.auth.getUser();
     const provider = await createBgImageProvider(supabase, {
       name,
       type,
@@ -48,9 +45,9 @@ export async function POST(req) {
       created_by: user.id,
     });
 
-    return Response.json({ provider }, { status: 201 });
+    return NextResponse.json({ provider }, { status: 201 });
   } catch (error) {
-    const status = error.message.includes("not authorized") ? 403 : 400;
-    return Response.json({ error: error.message }, { status });
+    const status = error.status || 400;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }

@@ -98,6 +98,25 @@ export async function listEnabledTextModels(supabase) {
   return publicShapeMany(data);
 }
 
+// Generic enabled-model helper for server code that wants to list all
+// enabled models of a given kind, or every enabled model when kind is null.
+export async function listEnabledModels(supabase, { kind = null } = {}) {
+  let query = supabase
+    .from("models")
+    .select(PUBLIC_COLUMNS)
+    .eq("enabled", true)
+    .order("is_default", { ascending: false })
+    .order("sort_order", { ascending: true });
+
+  if (kind) {
+    query = query.eq("kind", kind);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return publicShapeMany(data);
+}
+
 // Public lookup — used by browser code (PromptForm, editor) to show
 // which model is currently default. The browser does NOT need the API
 // key — server routes resolve it via getDefaultTextModelWithSecrets.

@@ -1,7 +1,7 @@
 // src/app/dashboard/banners/page.js
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Sparkles,
@@ -29,6 +29,7 @@ export default function BannersList() {
   const [query, setQuery] = useState("");
   const [view, setView]   = useState("all");
   const [page, setPage]   = useState(1);
+  const [activeJobs, setActiveJobs] = useState([]);
 
   // Banner list is hot — cache for 30s with stale-while-revalidate so
   // navigating between detail/edit and back is instant. The cache
@@ -41,6 +42,31 @@ export default function BannersList() {
   );
 
   const all = pageResult?.rows ?? null;
+
+  useEffect(() => {
+    if (!userId) return;
+
+    let cancelled = false;
+    const loadActiveJobs = async () => {
+      try {
+        const response = await fetch("/api/generation-status", { cache: "no-store" });
+        const data = await response.json();
+        if (!cancelled && response.ok) {
+          setActiveJobs(Array.isArray(data.jobs) ? data.jobs : []);
+        }
+      } catch {
+        if (!cancelled) setActiveJobs([]);
+      }
+    };
+
+    loadActiveJobs();
+    const interval = setInterval(loadActiveJobs, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [userId]);
 
   const grouped = useMemo(() => {
     if (!all) return [];
@@ -179,6 +205,50 @@ export default function BannersList() {
             total={totals}
           />
         </section>
+
+        {activeJobs.length > 0 && (
+          <section className="space-y-3 rounded-3xl border border-cyan-500/20 bg-cyan-500/8 p-4 shadow-[0_18px_50px_-45px_rgba(34,211,238,0.35)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-cyan-300/80">Live generation</div>
+                <h2 className="mt-1 text-lg font-semibold text-foreground">Banners currently generating</h2>
+              </div>
+              <div className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-xs font-medium text-cyan-200">
+                {activeJobs.length} active
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {activeJobs.map((job) => (
+                <div key={job.jobId} className="rounded-2xl border border-border bg-surface p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs uppercase tracking-[0.16em] text-muted">Job {job.jobId.slice(-6)}</div>
+                      <div className="mt-1 truncate text-sm font-medium text-foreground">
+                        {job.currentStep?.label || "Generating banner"}
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                      {job.progress ?? 0}%
+                    </div>
+                  </div>
+
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                      style={{ width: `${job.progress ?? 0}%` }}
+                    />
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between text-[11px] text-muted">
+                    <span>{job.currentStep?.name?.replace(/_/g, " ") || "processing"}</span>
+                    <span>{Math.round((job.elapsedMs || 0) / 1000)}s</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {all === null ? (
           <div className="space-y-6">

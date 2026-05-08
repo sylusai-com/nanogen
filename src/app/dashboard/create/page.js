@@ -33,7 +33,7 @@ export default function DashboardCreate() {
 
         if (data.status === "completed") {
           setGenerationDone(true);
-          return data.banner;
+          return data;
         }
 
         if (data.status === "failed") {
@@ -62,7 +62,7 @@ export default function DashboardCreate() {
     setError(null);
     setGenerationError(null);
     setModelErrors([]);
-    setCurrentStep(GenerationSteps.ANALYZE_REFERENCE);
+    setCurrentStep(GenerationSteps.UPLOAD_IMAGES);
 
     try {
       const res = await fetch("/api/banners", {
@@ -79,23 +79,25 @@ export default function DashboardCreate() {
       // If we got a job ID, poll for status
       if (data.jobId) {
         try {
-          const banner = await pollGenerationStatus(data.jobId);
+          const generation = await pollGenerationStatus(data.jobId);
+          const banner = generation?.banner;
           setGenerationDone(true);
           invalidateTags(["banners", "generation_results"]);
 
-          if (isAdmin && Array.isArray(data.modelErrors) && data.modelErrors.length) {
-            setModelErrors(data.modelErrors);
+          const jobModelErrors = generation?.results?.modelErrors || [];
+          if (isAdmin && Array.isArray(jobModelErrors) && jobModelErrors.length) {
+            setModelErrors(jobModelErrors);
           }
 
-          const hasMultipleSaved = Array.isArray(data.banners) && data.banners.length > 1;
+          const hasMultipleSaved = Array.isArray(generation?.banners) && generation.banners.length > 1;
           const destination = hasMultipleSaved
             ? "/dashboard/banners"
             : `/dashboard/banners/${banner.id}/edit`;
 
-          if (data.reason) {
+          if (generation?.results?.passedThreshold === false) {
             setError(
               isAdmin
-                ? `Banner saved using the fallback template. Reason: ${data.reason}`
+                ? "Banner saved using a fallback template because no generated variant cleared the score threshold."
                 : "We couldn't reach the AI model just now, so we saved a default banner you can edit.",
             );
             setTimeout(() => {
@@ -114,8 +116,9 @@ export default function DashboardCreate() {
         setGenerationDone(true);
         invalidateTags(["banners", "generation_results"]);
 
-        if (isAdmin && Array.isArray(data.modelErrors) && data.modelErrors.length) {
-          setModelErrors(data.modelErrors);
+          const jobModelErrors = data?.results?.modelErrors || [];
+          if (isAdmin && Array.isArray(jobModelErrors) && jobModelErrors.length) {
+            setModelErrors(jobModelErrors);
         }
 
         const hasMultipleSaved = Array.isArray(data.banners) && data.banners.length > 1;

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { getModelShare } from "@/lib/db/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { validateAdminRole } from "@/lib/server/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req) {
   try {
+    await validateAdminRole();
+
     const admin = createAdminClient();
     
     // Get aggregated model stats from generation_results
@@ -25,6 +28,7 @@ export async function GET(req) {
     
     return NextResponse.json({ stats: statsMap });
   } catch (e) {
-    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
+    const status = e.status || 500;
+    return NextResponse.json({ error: e.message || String(e) }, { status });
   }
 }

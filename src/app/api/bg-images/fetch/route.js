@@ -1,14 +1,21 @@
 // src/app/api/bg-images/fetch/route.js
 // Fetch background images from configured providers
 
-import { createClient } from "@/lib/supabase/server";
-import { validateString } from "@/lib/server/security";
+import { NextResponse } from "next/server";
+import { originAllowed, requireAuthenticatedUser } from "@/lib/server/security";
 import { listBgImageProviders, fetchBgImageFromProvider } from "@/lib/db/bgImageProviders";
 import { urlToBase64 } from "@/lib/imageGen";
 
 export async function POST(req) {
   try {
-    const supabase = createClient();
+    if (!originAllowed(req)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const gate = await requireAuthenticatedUser();
+    if (gate.error) return gate.error;
+
+    const { supabase } = gate;
     const { category, query, provider_type } = await req.json();
 
     if (!category && !query) {

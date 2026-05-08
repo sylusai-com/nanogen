@@ -32,6 +32,7 @@ function aspectClass(a) {
 //   on done  → 100%
 const STEP_MS = 8000;
 const STEP_PCTS = [0, 20, 40, 60, 80, 90];
+const STEP_LIST = Object.values(GenerationSteps);
 
 function useSteppedProgress({ done = false } = {}) {
   const [pct, setPct] = useState(STEP_PCTS[0]);
@@ -168,7 +169,7 @@ export default function GenerationProgress({ aspect = "16:9", done = false, curr
           {/* Sequential steps tracker */}
           {currentStep && (
             <div className="grid grid-cols-3 gap-2 max-w-sm">
-              {Object.values(GenerationSteps).map((step) => {
+              {STEP_LIST.map((step) => {
                 const isActive = step.id === currentStep.id;
                 const isComplete = (currentStep.id || 0) >= step.id;
 
@@ -188,7 +189,7 @@ export default function GenerationProgress({ aspect = "16:9", done = false, curr
                     <span className={`text-[10px] text-center leading-tight ${
                       isActive ? "font-semibold text-foreground" : "text-muted"
                     }`}>
-                      {step.name.replace("_", " ")}
+                      {step.label}
                     </span>
                   </div>
                 );

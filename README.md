@@ -14,6 +14,7 @@ Nanogen automates the banner workflow: describe your banner → AI generates HTM
 
 ### Admin Features
 - **Model Management** — Register and manage AI providers (OpenRouter, OpenAI-compatible endpoints, etc.)
+- **Connection Diagnostics** — Test database, model, and provider connectivity from one admin screen
 - **Aspect Ratio Catalog** — Define reusable banner dimensions (16:9, 4:3, 1:1, custom)
 - **Style Templates** — Manage predefined banner styles and visual guidelines
 - **User & Output Management** — View user activity, monitor all generated banners, track scores and performance
@@ -23,6 +24,7 @@ Nanogen automates the banner workflow: describe your banner → AI generates HTM
 - **Multi-model fan-out** — Run multiple text or image models in parallel with automatic scoring
 - **Quality threshold** — Auto-threshold at score ≥ 80, fallback to top candidate if needed
 - **Reference + Subject images** — Inspiration images + hero images, both analyzed by vision models for context injection
+- **Sequential generation flow** — Validate images, analyze context, find background images, fan out models in parallel, then score and save
 - **Version control** — Track banner history and regenerate from previous versions
 - **Role-based access** — Admin dashboard restricted to administrators; public generation for all users
 
@@ -171,14 +173,16 @@ nanogen/
 
 ### 1. Banner Generation (`/dashboard/create` or `/generate`)
 1. User enters banner brief, selects style/aspect ratio and optionally uploads reference + subject images
-2. Frontend sends `POST /api/banners` with prompt, images, model selection
-3. Server:
-   - Analyzes reference image (if provided) via vision model → design context
-   - Analyzes subject image (if provided) via vision model → placement/treatment guidance
-   - Generates 1-3 banner templates using admin-configured text models
-   - Scores each template via vision model (≥ 80 threshold)
-   - Stores winner with `html`, `css`, `fields`, `subject_image_url`, `reference_image_url`
-4. User lands in editor or banner detail view
+2. Frontend sends `POST /api/banners` with prompt, images, and optional model selection; the endpoint returns a `jobId` immediately
+3. Background job runs in this order:
+   - Validate and store image metadata
+   - Analyze reference and subject images in parallel
+   - Find a background image from configured providers using the prompt and analysis context
+   - Fan out across all enabled text models in parallel
+   - Score every model result and pick the best one
+   - Persist the banner, run record, and model variants
+4. `/api/generation-status/[jobId]` is polled from `/dashboard/create` and `/dashboard/banners` so the user can see step-by-step progress
+5. User lands in editor or banner detail view
 
 ### 2. Banner Editing (`/dashboard/banners/[id]/edit`)
 1. User edits text fields, colors, alignment, image placement
@@ -228,6 +232,8 @@ See [supabase/README.md](supabase/README.md) for full schema + RLS policies.
 - `POST /api/admin/models` — Register AI provider
 - `PATCH /api/admin/models/[id]` — Update model settings
 - `DELETE /api/admin/models/[id]` — Disable model
+- `GET /api/admin/connections` — Read connection health summary
+- `POST /api/admin/connections` — Run diagnostics against a model, background provider, or the full flow
 - `POST /api/admin/styles` — Add style template
 - `PATCH /api/admin/aspects` — Update aspect ratios
 
@@ -235,6 +241,8 @@ See [supabase/README.md](supabase/README.md) for full schema + RLS policies.
 - `POST /api/generate` — Fan-out generate + score (image models)
 - `POST /api/score` — Score a single banner or image
 - `POST /api/banners/html` — Pure template generation (no scoring)
+
+See [docs/banner-generation-flow.md](docs/banner-generation-flow.md) for the complete sequential workflow, progress states, and admin diagnostics coverage.
 
 ## Development Notes
 

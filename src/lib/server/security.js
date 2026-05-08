@@ -24,6 +24,7 @@
 // production hardening across multiple instances, swap in Redis.
 
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 export class ValidationError extends Error {
   constructor(message, status = 400) {
@@ -188,4 +189,38 @@ export function errorResponse(e) {
     { error: e?.message || "Internal error" },
     { status: 500 },
   );
+}
+
+// Server-side auth helper for routes that must be signed in.
+export async function requireAuthenticatedUser() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+  return { supabase, user };
+}
+
+// Server-side admin helper for route handlers.
+export async function validateAdminRole(supabase = null) {
+  const client = supabase || (await createClient());
+  const { data: { user } } = await client.auth.getUser();
+  if (!user) {
+    throw new ValidationError("Unauthorized", 401);
+  }
+
+  const { data: profile, error } = await client
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new ValidationError(`Failed to verify admin role: ${error.message}`, 500);
+  }
+  if (profile?.role !== "admin") {
+    throw new ValidationError("Forbidden", 403);
+  }
+
+  return { user, supabase: client };
 }

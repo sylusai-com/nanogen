@@ -62,7 +62,8 @@ function normalizeRenderFields(fields = [], subjectImageUrl = null) {
     bgField.value = wrapped;
     return next;
   }
-
+  // If no explicit bg_image field exists, add one so CSS var overrides
+  // and template background-image usage pick up the provided subject/bg.
   next.push({
     id: "bg_image",
     type: "image",
@@ -71,6 +72,22 @@ function normalizeRenderFields(fields = [], subjectImageUrl = null) {
     label: "Background image",
     value: wrapped,
   });
+
+  // Also wire subject image into any field that appears to represent the
+  // subject (field id contains 'subject' or cssVar contains 'subject'),
+  // so templates that reference a subject image via a CSS variable or
+  // dedicated field will render the embedded data URI correctly.
+  for (const f of next) {
+    const id = String(f.id || "").toLowerCase();
+    const cssVar = String(f.cssVar || "").toLowerCase();
+    // Inject subject image into any field that appears to represent the
+    // subject (id or css var contains 'subject'), regardless of the
+    // declared field type. Some templates may reference the subject via
+    // a CSS var or non-image field, so set the value to the wrapped URL.
+    if (id.includes("subject") || cssVar.includes("subject")) {
+      f.value = wrapped;
+    }
+  }
   return next;
 }
 
@@ -141,6 +158,22 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
         `$1>${escapeText(f.value ?? "")}`,
       );
     }
+    if (f.type === "image" && f.slot) {
+      // Inject an <img> tag into the slot so data URIs render correctly
+      try {
+        let raw = getFieldTextValue(f) || "";
+        if (raw.startsWith("url(")) {
+          raw = raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
+        }
+        const imgHtml = `<img alt="${escapeAttr(f.label || "Subject featured in banner")}" src="${escapeAttr(raw)}" class="h-auto w-full object-cover">`;
+        htmlOut = htmlOut.replace(
+          new RegExp(`(<[^>]*data-slot="${escapeRegex(f.slot)}"[^>]*>)([\\s\\S]*?)(<\\/[^>]*>)`, "g"),
+          `$1${imgHtml}$3`,
+        );
+      } catch (e) {
+        // best-effort: don't break rendering if replacement fails
+      }
+    }
     if (f.type === "toggle" && f.selector && f.value === false) {
       // Inline display:none on toggled-off elements so the static export
       // matches what the iframe was showing.
@@ -151,6 +184,31 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     }
   }
   htmlOut = htmlOut.replace(/data-align="[^"]*"/, `data-align="${alignment}"`);
+
+  // If a bg_image field or cssVar was provided, also ensure the root
+  // `.banner` element has an inline `background-image` style so that
+  // data URIs or non-CORS images render in sandboxed iframes without
+  // relying on external inlining steps.
+  try {
+    const bgField = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+    if (bgField) {
+      let raw = getFieldTextValue(bgField) || "";
+      if (raw.startsWith("url(")) {
+        raw = raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
+      }
+      const wrapped = wrapImageUrl(raw) || "";
+      if (wrapped) {
+        // Inject inline style on the banner root to force the image to render.
+        htmlOut = htmlOut.replace(/<div class="banner"/i, `<div class="banner" style="${escapeAttr(`background-image: ${wrapped};`)}"`);
+        // Also append a CSS fallback to ensure pseudo-elements and overlays
+        // that use the CSS variable render the data URI. This uses !important
+        // to take precedence over template defaults.
+        cssOut += `\n.banner, .banner::before, .banner::after { background-image: ${wrapped} !important; background-size: var(--bg-zoom,110%) !important; background-position: var(--bg-position,center center) !important; }`;
+      }
+    }
+  } catch (e) {
+    // best-effort: don't block rendering on errors
+  }
 
   return `<!doctype html>
 <html lang="en">
@@ -226,9 +284,25 @@ export function buildTemplateFromCanvas({ elements = [], background = "#0c0c10",
     .filter((f) => getFieldCssVar(f))
     .map((f) => `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`)
     .join("\n");
-  const bgColor = getFieldTextValue(fields.find((f) => f.id === "bg")) || background;
-  const hasBgImage = fields.some((f) => f.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
-  const css = `${rootOverrides ? `:root {\n${rootOverrides}\n}\n` : ""}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;isolation:isolate;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${bgColor}}.banner-inner{position:absolute;inset:0}${hasBgImage ? `\n.banner::before{content:"";position:absolute;inset:0;z-index:-2;background-image:var(--bg-image);background-size:var(--bg-zoom,110%);background-position:var(--bg-position,center center);background-repeat:no-repeat;filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px));transform:scale(1.03)}.banner::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,calc(var(--bg-overlay,0.45)*0.9)),rgba(0,0,0,var(--bg-overlay,0.45)))}` : ""}`;
+  const bgFieldValue = getFieldTextValue(fields.find((f) => f.id === "bg"));
+  const bgColor = bgFieldValue || ((typeof background === "string" && /^(?:data:image\/|https?:\/\/)/i.test(background.trim())) ? "#0c0c10" : background);
+
+  // If a background string looks like an image URL or data URI, expose it
+  // as the CSS `--bg-image` variable so the template's background image
+  // layer renders. Otherwise, detect bg_image fields as before.
+  let bgImageUrl = null;
+  if (typeof background === "string") {
+    const b = background.trim();
+    if (b.startsWith("data:image/") || /^https?:\/\//i.test(b)) {
+      bgImageUrl = wrapImageUrl(b);
+    }
+  }
+
+  const hasBgImage = Boolean(bgImageUrl) || fields.some((f) => f.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+  // If we have an explicit bg image URL from the canvas/background param,
+  // ensure it's added to the root overrides so CSS var is present.
+  const explicitBgOverride = bgImageUrl ? `  --bg-image: ${bgImageUrl};\n` : "";
+  const css = `${rootOverrides || explicitBgOverride ? `:root {\n${explicitBgOverride}${rootOverrides ? rootOverrides + "\n" : ""}}\n` : ""}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;isolation:isolate;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${bgColor}}.banner-inner{position:absolute;inset:0}${hasBgImage ? `\n.banner::before{content:"";position:absolute;inset:0;z-index:-2;background-image:var(--bg-image);background-size:var(--bg-zoom,110%);background-position:var(--bg-position,center center);background-repeat:no-repeat;filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px));transform:scale(1.03)}.banner::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,calc(var(--bg-overlay,0.45)*0.9)),rgba(0,0,0,var(--bg-overlay,0.45)))}` : ""}`;
 
   const innerHtml = renderCanvasElementsMarkup(elements);
 

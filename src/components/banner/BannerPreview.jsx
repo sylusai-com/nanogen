@@ -1,7 +1,7 @@
 // src/components/banner/BannerPreview.jsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { cn } from "@/lib/cn";
 import {
   buildCompositeStandaloneHtml,
@@ -27,16 +27,54 @@ export default function BannerPreview({
 }) {
   const aspect = banner?.aspect || "16:9";
   const { width: designW, height: designH } = exportRenderSize(aspect);
+  const fields = useMemo(() => (Array.isArray(banner?.fields) ? banner.fields : []), [banner]);
+  const subjectImageUrl = banner?.subjectImageUrl || banner?.subject_image_url || null;
+  const resolvedFields = useMemo(() => {
+    const next = (fields || []).map((field) => ({ ...field }));
+    const raw = String(subjectImageUrl || "").trim();
+    if (!raw) return next;
+
+    const wrapped = raw.startsWith("url(") ? raw : `url("${raw}")`;
+    let hasBgImageField = false;
+
+    for (const field of next) {
+      const id = String(field?.id || "").toLowerCase();
+      const cssVar = String(field?.cssVar || "").toLowerCase();
+      if (id === "bg_image" || cssVar === "--bg-image") {
+        field.value = wrapped;
+        field.type = "image";
+        hasBgImageField = true;
+      }
+      if (id.includes("subject") || cssVar.includes("subject")) {
+        field.value = wrapped;
+      }
+    }
+
+    if (!hasBgImageField) {
+      next.push({
+        id: "bg_image",
+        type: "image",
+        label: "Background Image",
+        cssVar: "--bg-image",
+        value: wrapped,
+      });
+    }
+
+    return next;
+  }, [fields, subjectImageUrl]);
+  const previewBackground = typeof background === "string" && /^(?:data:image\/|https?:\/\/)/i.test(background.trim())
+    ? banner?.gradient || "#0c0c10"
+    : (background ?? banner?.gradient ?? "#0c0c10");
 
   const srcDoc = !banner?.html || !banner?.css
     ? null
     : buildCompositeStandaloneHtml({
         html: banner.html,
         css: banner.css,
-        fields: banner.fields || [],
+      fields: resolvedFields,
         alignment: banner.alignment || "left",
         title: banner.title || "banner",
-        subjectImageUrl: banner.subjectImageUrl || null,
+        subjectImageUrl,
         elements: banner.canvas?.elements || [],
         background: banner.canvas?.background || "#0c0c10",
         aspect,
@@ -62,13 +100,35 @@ export default function BannerPreview({
     return () => ro.disconnect();
   }, [designW]);
 
+  useEffect(() => {
+    try {
+      console.log("BannerPreview debug:", {
+        id: banner?.id,
+        title: banner?.title,
+        subjectImageUrl,
+        subjectImageLength: subjectImageUrl ? subjectImageUrl.length : 0,
+        fields,
+        resolvedFields,
+        resolvedBgImageLength:
+          resolvedFields.find((f) => String(f?.id || "").toLowerCase() === "bg_image")?.value?.length || 0,
+        srcDocExists: !!srcDoc,
+        srcDocLength: srcDoc ? srcDoc.length : 0,
+        previewBackground,
+        canvasBackground: banner?.canvas?.background,
+      });
+    } catch (e) {
+      // best-effort logging
+      console.log("BannerPreview debug error:", e);
+    }
+  }, [banner?.id, banner?.title, subjectImageUrl, fields, resolvedFields, srcDoc, previewBackground, banner?.canvas?.background]);
+
   return (
     <div
       ref={wrapperRef}
       className={cn("relative w-full overflow-hidden", className)}
       style={{
         aspectRatio: aspect.replace(":", " / "),
-        background: background ?? banner?.gradient ?? "#0c0c10",
+        background: previewBackground,
       }}
     >
       {srcDoc && (

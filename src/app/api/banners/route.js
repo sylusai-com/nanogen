@@ -25,6 +25,7 @@ import {
   formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
 import { generateBannerBackground } from "@/lib/imageGen";
+import { storeBannerImageAsset } from "@/lib/server/bannerImageStorage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
   clientKey,
@@ -184,16 +185,39 @@ async function performBannerGeneration(job, userId, payload) {
     job.setStep(GenerationJobSteps.UPLOAD_IMAGES);
     // (Image URLs are already validated in POST handler)
 
+    // If the client provided data URLs for reference/subject, store them
+    // server-side and replace with the public URL before analysis. This
+    // keeps the base64 data for model analysis ephemeral while the
+    // banner saves reference to a stable stored URL.
+    let refImageUrl = referenceImage;
+    let subjImageUrl = subjectImage;
+    if (refImageUrl && typeof refImageUrl === "string" && refImageUrl.startsWith("data:image/")) {
+      try {
+        const stored = await storeBannerImageAsset({ dataUrl: refImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient });
+        if (stored) refImageUrl = stored;
+      } catch (e) {
+        console.warn("Failed to store reference image; continuing with data URL", e?.message || e);
+      }
+    }
+    if (subjImageUrl && typeof subjImageUrl === "string" && subjImageUrl.startsWith("data:image/")) {
+      try {
+        const stored = await storeBannerImageAsset({ dataUrl: subjImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient });
+        if (stored) subjImageUrl = stored;
+      } catch (e) {
+        console.warn("Failed to store subject image; continuing with data URL", e?.message || e);
+      }
+    }
+
     // Step 2-3: Extract context from reference and subject images (parallel)
     job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
     job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
 
     const [referenceContext, subjectContext] = await Promise.all([
-      referenceImage
-        ? extractReferenceImageContext({ adminClient, imageUrl: referenceImage })
+      refImageUrl
+        ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl })
         : Promise.resolve(null),
-      subjectImage
-        ? extractSubjectImageContext({ adminClient, imageUrl: subjectImage })
+      subjImageUrl
+        ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl })
         : Promise.resolve(null),
     ]);
     const referenceContextText = formatReferenceContextForPrompt(referenceContext);
@@ -202,6 +226,7 @@ async function performBannerGeneration(job, userId, payload) {
     // Step 4: Fetch background image
     job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
     let aiBackgroundImage = null;
+    let storedBackgroundImage = null;
     let aiBackgroundError = null;
     let aiBackgroundModel = null;
 
@@ -219,6 +244,14 @@ async function performBannerGeneration(job, userId, payload) {
         });
         if (result?.dataUrl) {
           aiBackgroundImage = result.dataUrl;
+          storedBackgroundImage = await storeBannerImageAsset({
+            dataUrl: result.dataUrl,
+            userId,
+            jobId: job.jobId,
+          }).catch(() => null);
+          if (storedBackgroundImage) {
+            aiBackgroundImage = storedBackgroundImage;
+          }
           aiBackgroundModel = {
             modelId: result.modelId,
             modelLabel: result.modelLabel,
@@ -358,9 +391,9 @@ async function performBannerGeneration(job, userId, payload) {
         aspect,
         style,
         models: modelsForRun.length ? modelsForRun : ["fallback"],
-        reference_image_url: referenceImage || null,
+        reference_image_url: refImageUrl || null,
         reference_context: referenceContext || null,
-        subject_image_url: subjectImage || null,
+        subject_image_url: subjImageUrl || null,
         subject_context: subjectContext || null,
       })
       .select("id")
@@ -455,6 +488,7 @@ async function performBannerGeneration(job, userId, payload) {
       subjectContext,
       backgroundImage: aiBackgroundImage,
       backgroundModel: aiBackgroundModel,
+      backgroundImageUrl: storedBackgroundImage,
       modelErrors,
       passedThreshold: winner.score >= SCORE_THRESHOLD,
       score: winner.score,

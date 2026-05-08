@@ -1,35 +1,19 @@
 // src/components/generate/GenerationProgress.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
+import { CheckCircle2, Circle, LoaderCircle, Sparkles } from "lucide-react";
 import Card from "@/components/ui/Card";
 import { GenerationSteps } from "@/lib/bannerGeneration";
 
-// Lightweight loading screen for the banner studio. The internal pipeline
-// (multi-model fan-out, scoring, persistence, etc.) is intentionally
-// hidden from the user — they see a clean "we're working on it" view
-// and a chunky stepped progress bar paired with a skeleton banner.
-
 function aspectClass(a) {
-  if (a === "1:1")  return "aspect-square";
-  if (a === "4:5")  return "aspect-[4/5]";
+  if (a === "1:1") return "aspect-square";
+  if (a === "4:5") return "aspect-[4/5]";
   if (a === "9:16") return "aspect-[9/16]";
   return "aspect-[16/9]";
 }
 
-// Discrete +20% jumps every 8s, totalling 40s to reach 90%. We never
-// interpolate between steps — the user sees the bar pop forward in
-// confident chunks instead of crawling. When `done` flips true (the API
-// has returned), we sprint the remaining 10% to 100.
-//
-//   t = 0s   → 0%
-//   t = 8s   → 20%
-//   t = 16s  → 40%
-//   t = 24s  → 60%
-//   t = 32s  → 80%
-//   t = 40s  → 90%   (hold)
-//   on done  → 100%
 const STEP_MS = 8000;
 const STEP_PCTS = [0, 20, 40, 60, 80, 90];
 const STEP_LIST = Object.values(GenerationSteps);
@@ -39,8 +23,6 @@ function useSteppedProgress({ done = false } = {}) {
 
   useEffect(() => {
     if (done) {
-      // Sprint to 100. ~30ms × 5 = 150ms is fast enough that the user
-      // perceives the redirect as instant but still sees the fill.
       const id = setInterval(() => {
         setPct((p) => {
           if (p >= 100) {
@@ -56,10 +38,7 @@ function useSteppedProgress({ done = false } = {}) {
     const start = Date.now();
     const id = setInterval(() => {
       const elapsed = Date.now() - start;
-      const stepIdx = Math.min(
-        STEP_PCTS.length - 1,
-        Math.floor(elapsed / STEP_MS),
-      );
+      const stepIdx = Math.min(STEP_PCTS.length - 1, Math.floor(elapsed / STEP_MS));
       const target = STEP_PCTS[stepIdx];
       setPct((p) => (p < target ? target : p));
     }, 200);
@@ -69,20 +48,37 @@ function useSteppedProgress({ done = false } = {}) {
   return pct;
 }
 
-export default function GenerationProgress({ aspect = "16:9", done = false, currentStep = null, error = null, onCancel = null }) {
+export default function GenerationProgress({
+  aspect = "16:9",
+  done = false,
+  currentStep = null,
+  stepsCompleted = [],
+  error = null,
+  onCancel = null,
+}) {
   const [elapsed, setElapsed] = useState(0);
   const pct = useSteppedProgress({ done });
 
   useEffect(() => {
     const start = Date.now();
-    const tick  = setInterval(
-      () => setElapsed(Math.round((Date.now() - start) / 1000)),
-      250,
-    );
+    const tick = setInterval(() => {
+      setElapsed(Math.round((Date.now() - start) / 1000));
+    }, 250);
     return () => clearInterval(tick);
   }, []);
 
   const display = Math.min(100, Math.max(0, Math.round(pct)));
+  const completedSet = useMemo(
+    () => new Set((stepsCompleted || []).map((step) => step?.step || step?.name || step?.id)),
+    [stepsCompleted],
+  );
+
+  const completedCount = done
+    ? STEP_LIST.length
+    : STEP_LIST.filter((step) => completedSet.has(step.name) && currentStep?.name !== step.name).length;
+
+  const activeLabel = done ? "Banner ready" : currentStep?.label || "Preparing your banner";
+  const statusPercent = done ? 100 : currentStep?.progress || display;
 
   return (
     <Card elevated className="overflow-hidden p-0">
@@ -111,23 +107,26 @@ export default function GenerationProgress({ aspect = "16:9", done = false, curr
           </div>
         </div>
 
-        {/* Error state */}
         {error && (
           <div className="border-t border-red-200 bg-red-50 px-4 py-3">
             <div className="flex items-start gap-3">
-              <div className="text-red-600 mt-0.5">
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              <div className="mt-0.5 text-red-600">
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-red-800">Generation failed</p>
-                <p className="text-sm text-red-700 mt-1">{error}</p>
+                <p className="mt-1 text-sm text-red-700">{error}</p>
               </div>
               {onCancel && (
                 <button
                   onClick={onCancel}
-                  className="text-red-600 hover:text-red-700 font-medium text-sm shrink-0"
+                  className="shrink-0 text-sm font-medium text-red-600 hover:text-red-700"
                 >
                   Dismiss
                 </button>
@@ -136,66 +135,84 @@ export default function GenerationProgress({ aspect = "16:9", done = false, curr
           </div>
         )}
 
-        {/* Status strip — "Generating your banner…" with the live
-            percentage + progress bar stacked directly underneath, so the
-            user can read both states from a single visual region instead
-            of glancing between cards. */}
-        <div className="flex flex-col gap-4 border-t border-border bg-surface-2 px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="inline-flex items-center gap-2 text-xs text-muted">
-                <span className="relative inline-flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                </span>
-                {done ? "Complete!" : currentStep?.label || "Generating your banner…"}
+        <div className="border-t border-border bg-surface-2 px-4 py-4 md:px-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="inline-flex items-center gap-2 text-xs text-muted">
+                  <span className="relative inline-flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                  </span>
+                  {done ? "Complete!" : activeLabel}
+                </div>
+                <div className="font-mono text-sm font-semibold tracking-tight text-foreground">
+                  {statusPercent}%
+                </div>
+                <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-foreground/8">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
+                    style={{ width: `${statusPercent}%` }}
+                  />
+                </div>
               </div>
-              <div className="font-mono text-sm font-semibold tracking-tight text-foreground">
-                {currentStep?.progress || display}%
-              </div>
-              <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-foreground/8">
-                {/* duration-700 makes the +20 jump readable without feeling sluggish */}
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
-                  style={{ width: `${currentStep?.progress || display}%` }}
-                />
-              </div>
+              <span className="shrink-0 font-mono text-[10px] text-muted-strong">
+                {elapsed}s
+              </span>
             </div>
-            <span className="shrink-0 font-mono text-[10px] text-muted-strong">
-              {elapsed}s
-            </span>
-          </div>
 
-          {/* Sequential steps tracker */}
-          {currentStep && (
-            <div className="grid grid-cols-3 gap-2 max-w-sm">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {STEP_LIST.map((step) => {
-                const isActive = step.id === currentStep.id;
-                const isComplete = (currentStep.id || 0) >= step.id;
+                const isActive = !done && currentStep?.name === step.name;
+                const isComplete = done || (completedSet.has(step.name) && !isActive);
 
                 return (
-                  <div key={step.id} className="flex flex-col items-center gap-1">
+                  <div
+                    key={step.name}
+                    className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition-colors ${
+                      isComplete
+                        ? "border-emerald-500/20 bg-emerald-500/8"
+                        : isActive
+                        ? "border-primary/25 bg-primary/8"
+                        : "border-border bg-background/40"
+                    }`}
+                  >
                     <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
                         isComplete
-                          ? "bg-green-500 text-white"
+                          ? "border-emerald-500/25 bg-emerald-500 text-white"
                           : isActive
-                          ? "bg-primary text-white animate-pulse"
-                          : "bg-foreground/10 text-foreground/50"
+                          ? "border-primary/25 bg-primary text-white"
+                          : "border-border bg-surface-2 text-muted"
                       }`}
                     >
-                      {isComplete && step.id !== currentStep.id ? "✓" : step.id}
+                      {isComplete ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : isActive ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Circle className="h-4 w-4" />
+                      )}
                     </div>
-                    <span className={`text-[10px] text-center leading-tight ${
-                      isActive ? "font-semibold text-foreground" : "text-muted"
-                    }`}>
-                      {step.label}
-                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-strong">
+                          Step {step.id}
+                        </span>
+                        <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[10px] text-muted">
+                          {isComplete ? "Done" : isActive ? "Now" : "Next"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium leading-5 text-foreground">
+                        {step.label}
+                      </p>
+                    </div>
                   </div>
                 );
               })}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </Card>

@@ -21,6 +21,7 @@ export default function DashboardCreate() {
   const [error, setError] = useState(null);
   const [modelErrors, setModelErrors] = useState([]);
   const [currentStep, setCurrentStep] = useState(null);
+  const [stepsCompleted, setStepsCompleted] = useState([]);
   const [generationError, setGenerationError] = useState(null);
 
   const pollGenerationStatus = useCallback(async (jobId, maxAttempts = 120) => {
@@ -37,6 +38,7 @@ export default function DashboardCreate() {
 
         if (data.status === "completed") {
           setGenerationDone(true);
+          setStepsCompleted(Array.isArray(data.stepsCompleted) ? data.stepsCompleted : []);
           return data;
         }
 
@@ -67,6 +69,7 @@ export default function DashboardCreate() {
     setGenerationError(null);
     setModelErrors([]);
     setCurrentStep(GenerationSteps.UPLOAD_IMAGES);
+    setStepsCompleted([]);
 
     try {
       const res = await fetch("/api/banners", {
@@ -86,6 +89,7 @@ export default function DashboardCreate() {
           const generation = await pollGenerationStatus(data.jobId);
           const banner = generation?.banner;
           setGenerationDone(true);
+          setStepsCompleted(Array.isArray(generation?.stepsCompleted) ? generation.stepsCompleted : []);
           invalidateTags(["banners", "generation_results"]);
 
           const jobModelErrors = generation?.results?.modelErrors || [];
@@ -118,6 +122,7 @@ export default function DashboardCreate() {
       } else {
         // Fallback: immediate completion
         setGenerationDone(true);
+        setStepsCompleted(Array.isArray(data?.stepsCompleted) ? data.stepsCompleted : []);
         invalidateTags(["banners", "generation_results"]);
 
           const jobModelErrors = data?.results?.modelErrors || [];
@@ -154,6 +159,7 @@ export default function DashboardCreate() {
     setSubmitting(false);
     setGenerationDone(false);
     setCurrentStep(null);
+    setStepsCompleted([]);
     setGenerationError(null);
   };
 
@@ -216,6 +222,7 @@ export default function DashboardCreate() {
             aspect={submittedAspect} 
             done={generationDone} 
             currentStep={currentStep}
+            stepsCompleted={stepsCompleted}
             error={generationError}
             onCancel={handleCancel}
           />

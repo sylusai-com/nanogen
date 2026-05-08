@@ -1,9 +1,8 @@
-// src/components/generate/GenerationProgress.jsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { CheckCircle2, Circle, LoaderCircle, Sparkles } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import Card from "@/components/ui/Card";
 import { GenerationSteps } from "@/lib/bannerGeneration";
 
@@ -25,10 +24,7 @@ function useSteppedProgress({ done = false } = {}) {
     if (done) {
       const id = setInterval(() => {
         setPct((p) => {
-          if (p >= 100) {
-            clearInterval(id);
-            return 100;
-          }
+          if (p >= 100) { clearInterval(id); return 100; }
           return Math.min(100, p + 5);
         });
       }, 30);
@@ -61,27 +57,23 @@ export default function GenerationProgress({
 
   useEffect(() => {
     const start = Date.now();
-    const tick = setInterval(() => {
-      setElapsed(Math.round((Date.now() - start) / 1000));
-    }, 250);
+    const tick = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 250);
     return () => clearInterval(tick);
   }, []);
 
   const display = Math.min(100, Math.max(0, Math.round(pct)));
+
   const completedSet = useMemo(
-    () => new Set((stepsCompleted || []).map((step) => step?.step || step?.name || step?.id)),
+    () => new Set((stepsCompleted || []).map((s) => s?.step || s?.name || s?.id)),
     [stepsCompleted],
   );
 
-  const completedCount = done
-    ? STEP_LIST.length
-    : STEP_LIST.filter((step) => completedSet.has(step.name) && currentStep?.name !== step.name).length;
-
-  const activeLabel = done ? "Banner ready" : currentStep?.label || "Preparing your banner";
   const statusPercent = done ? 100 : currentStep?.progress || display;
+  const activeLabel = done ? "Banner ready" : currentStep?.label || "Preparing your banner…";
 
   return (
     <Card elevated className="overflow-hidden p-0">
+      {/* Skeleton preview */}
       <div className="relative">
         <div className={`${aspectClass(aspect)} skeleton relative w-full overflow-hidden bg-surface-2`}>
           <motion.div
@@ -90,8 +82,7 @@ export default function GenerationProgress({
             animate={{ x: "100%" }}
             transition={{ duration: 1.6, ease: "linear", repeat: Infinity }}
             style={{
-              background:
-                "linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 10%, transparent), transparent)",
+              background: "linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 10%, transparent), transparent)",
             }}
           />
           <div className="absolute inset-0 flex flex-col items-start justify-end gap-3 p-6 md:p-10">
@@ -106,115 +97,115 @@ export default function GenerationProgress({
             </div>
           </div>
         </div>
+      </div>
 
-        {error && (
-          <div className="border-t border-red-200 bg-red-50 px-4 py-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 text-red-600">
-                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fillRule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-red-800">Generation failed</p>
-                <p className="mt-1 text-sm text-red-700">{error}</p>
-              </div>
-              {onCancel && (
-                <button
-                  onClick={onCancel}
-                  className="shrink-0 text-sm font-medium text-red-600 hover:text-red-700"
-                >
-                  Dismiss
-                </button>
+      {/* Progress panel */}
+      <div className="border-t border-border bg-surface px-5 py-5 md:px-6">
+        {/* Header row */}
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              {!done && (
+                <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+                </span>
               )}
+              <span className="text-sm font-medium text-foreground truncate">{activeLabel}</span>
             </div>
+            {/* Progress bar */}
+            <div className="h-1 w-full max-w-xs overflow-hidden rounded-full bg-foreground/8">
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
+                style={{ width: `${statusPercent}%` }}
+              />
+            </div>
+          </div>
+          <span className="shrink-0 tabular-nums text-xs text-muted">{elapsed}s</span>
+        </div>
+
+        {/* Error state */}
+        {error && (
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-3">
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-[var(--foreground)]">Generation failed</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">{error}</p>
+            </div>
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="shrink-0 text-xs font-medium text-muted hover:text-foreground transition-colors"
+              >
+                Dismiss
+              </button>
+            )}
           </div>
         )}
 
-        <div className="border-t border-border bg-surface-2 px-4 py-4 md:px-6">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="inline-flex items-center gap-2 text-xs text-muted">
-                  <span className="relative inline-flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
-                  </span>
-                  {done ? "Complete!" : activeLabel}
-                </div>
-                <div className="font-mono text-sm font-semibold tracking-tight text-foreground">
-                  {statusPercent}%
-                </div>
-                <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-foreground/8">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
-                    style={{ width: `${statusPercent}%` }}
-                  />
-                </div>
-              </div>
-              <span className="shrink-0 font-mono text-[10px] text-muted-strong">
-                {elapsed}s
-              </span>
-            </div>
+        {/* Steps — clean vertical list */}
+        <ol className="space-y-0">
+          {STEP_LIST.map((step, idx) => {
+            const isComplete = done || (completedSet.has(step.name) && currentStep?.name !== step.name);
+            const isActive = !done && currentStep?.name === step.name;
+            const isPending = !isComplete && !isActive;
+            const isLast = idx === STEP_LIST.length - 1;
 
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {STEP_LIST.map((step) => {
-                const isActive = !done && currentStep?.name === step.name;
-                const isComplete = done || (completedSet.has(step.name) && !isActive);
-
-                return (
+            return (
+              <li key={step.name} className="flex items-stretch gap-3">
+                {/* Track column */}
+                <div className="flex flex-col items-center">
+                  {/* Dot */}
                   <div
-                    key={step.name}
-                    className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition-colors ${
+                    className={cn(
+                      "relative z-10 mt-3 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ring-4",
                       isComplete
-                        ? "border-emerald-500/20 bg-emerald-500/8"
+                        ? "bg-primary ring-[color-mix(in_oklab,var(--primary)_15%,transparent)]"
                         : isActive
-                        ? "border-primary/25 bg-primary/8"
-                        : "border-border bg-background/40"
-                    }`}
+                        ? "bg-background ring-[color-mix(in_oklab,var(--primary)_20%,transparent)] border-2 border-primary"
+                        : "bg-surface-2 ring-transparent border border-border",
+                    )}
                   >
-                    <div
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
-                        isComplete
-                          ? "border-emerald-500/25 bg-emerald-500 text-white"
-                          : isActive
-                          ? "border-primary/25 bg-primary text-white"
-                          : "border-border bg-surface-2 text-muted"
-                      }`}
-                    >
-                      {isComplete ? (
-                        <CheckCircle2 className="h-4 w-4" />
-                      ) : isActive ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Circle className="h-4 w-4" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-strong">
-                          Step {step.id}
-                        </span>
-                        <span className="rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[10px] text-muted">
-                          {isComplete ? "Done" : isActive ? "Now" : "Next"}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm font-medium leading-5 text-foreground">
-                        {step.label}
-                      </p>
-                    </div>
+                    {isComplete && <CheckCircle2 className="h-2.5 w-2.5 text-primary-fg" />}
+                    {isActive && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+                  {/* Connector line */}
+                  {!isLast && (
+                    <div
+                      className={cn(
+                        "mt-1 w-px flex-1 mb-1 rounded-full transition-colors duration-500",
+                        isComplete ? "bg-primary/30" : "bg-border",
+                      )}
+                    />
+                  )}
+                </div>
+
+                {/* Label */}
+                <div className={cn("pb-4 pt-2.5 min-w-0", isLast && "pb-0")}>
+                  <p
+                    className={cn(
+                      "text-sm transition-colors duration-300",
+                      isComplete
+                        ? "text-muted line-through decoration-muted/40"
+                        : isActive
+                        ? "font-medium text-foreground"
+                        : "text-muted/60",
+                    )}
+                  >
+                    {step.label}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       </div>
     </Card>
   );
+}
+
+function cn(...classes) {
+  return classes.filter(Boolean).join(" ");
 }

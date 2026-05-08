@@ -126,11 +126,11 @@ export default function GenerationProgress({
 
         {/* Error state */}
         {error && (
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-3">
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-border-strong bg-surface-2 px-4 py-3">
             <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-[var(--foreground)]">Generation failed</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">{error}</p>
+              <p className="text-sm font-medium text-foreground">Generation failed</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted">{error}</p>
             </div>
             {onCancel && (
               <button

@@ -19,6 +19,7 @@ import TopBar from "@/components/dashboard/TopBar";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
@@ -42,6 +43,7 @@ export default function BannerDetail({ params }) {
   const router = useRouter();
   const userId = user?.id;
   const [busy, setBusy] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   // Cached + stale-while-revalidate. Tagged on `banner:{id}` so updates
@@ -83,7 +85,6 @@ export default function BannerDetail({ params }) {
 
   const onDelete = async () => {
     if (!banner) return;
-    if (!confirm("Delete this banner? This cannot be undone.")) return;
     setBusy(true);
     try {
       await deleteBanner(supabase, banner.id);
@@ -91,6 +92,8 @@ export default function BannerDetail({ params }) {
     } catch (e) {
       alert(e.message || "Failed to delete");
       setBusy(false);
+    } finally {
+      setDeleteOpen(false);
     }
   };
 
@@ -251,7 +254,7 @@ export default function BannerDetail({ params }) {
 
               <button
                 type="button"
-                onClick={onDelete}
+                onClick={() => setDeleteOpen(true)}
                 disabled={busy}
                 className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
               >
@@ -281,6 +284,16 @@ export default function BannerDetail({ params }) {
         banner={banner}
         open={regenerateOpen}
         onClose={() => setRegenerateOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete this banner?"
+        description="This will permanently remove the banner from your dashboard and cannot be undone."
+        confirmLabel="Delete banner"
+        loading={busy}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={onDelete}
       />
     </>
   );

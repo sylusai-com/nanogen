@@ -12,6 +12,7 @@ import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import BgProviderFormModal from "@/components/admin/BgProviderFormModal";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { invalidateTags } from "@/lib/cache";
 
 async function adminFetch(url, init = {}) {
@@ -88,6 +89,7 @@ export default function AdminBgImageProviders() {
   const [error, setError] = useState(null);
   const [modal, setModal] = useState({ open: false, provider: null });
   const [busyId, setBusyId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const reload = async () => {
     try {
@@ -143,15 +145,16 @@ export default function AdminBgImageProviders() {
     }
   };
 
-  const onDelete = async (provider) => {
-    if (!confirm(`Delete ${provider.name}? This cannot be undone.`)) return;
-    setBusyId(provider.id);
+  const onDelete = async () => {
+    if (!deleteTarget?.id) return;
+    setBusyId(deleteTarget.id);
     try {
-      await adminFetch(`/api/admin/bg-image-providers/${provider.id}`, { method: "DELETE" });
+      await adminFetch(`/api/admin/bg-image-providers/${deleteTarget.id}`, { method: "DELETE" });
       invalidateTags(["bg-image-providers"]);
       await reload();
     } finally {
       setBusyId(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -231,7 +234,7 @@ export default function AdminBgImageProviders() {
                 busy={busyId === provider.id}
                 onEdit={(next) => setModal({ open: true, provider: next })}
                 onToggle={onToggle}
-                onDelete={onDelete}
+                onDelete={() => setDeleteTarget(provider)}
               />
             ))}
           </section>
@@ -243,6 +246,16 @@ export default function AdminBgImageProviders() {
         provider={modal.provider}
         onClose={() => setModal({ open: false, provider: null })}
         onSubmit={modal.provider ? onUpdate : onCreate}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete ${deleteTarget.name}?` : "Delete provider?"}
+        description={deleteTarget ? `This will permanently remove ${deleteTarget.name} from the background-image provider registry.` : "This will permanently remove the selected provider from the registry."}
+        confirmLabel="Delete provider"
+        loading={busyId === deleteTarget?.id}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={onDelete}
       />
     </>
   );

@@ -19,6 +19,7 @@ import Button from "@/components/ui/Button";
 import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ModelFormModal from "@/components/admin/ModelFormModal";
 import { invalidateTags } from "@/lib/cache";
 import { useApiCache } from "@/lib/useApiCache";
@@ -65,6 +66,7 @@ export default function AdminModels() {
   const [error, setError]   = useState(null);
   const [modal, setModal]   = useState({ open: false, model: null });
   const [busyId, setBusyId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
@@ -164,15 +166,16 @@ export default function AdminModels() {
     }
   };
 
-  const onDelete = async (m) => {
-    if (!confirm(`Delete ${m.label}? This cannot be undone.`)) return;
-    setBusyId(m.id);
+  const onDelete = async () => {
+    if (!deleteTarget?.id) return;
+    setBusyId(deleteTarget.id);
     try {
-      await adminFetch(`/api/admin/models/${m.id}`, { method: "DELETE" });
+      await adminFetch(`/api/admin/models/${deleteTarget.id}`, { method: "DELETE" });
       invalidateTags(["models"]);
       await reload();
     } finally {
       setBusyId(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -250,6 +253,16 @@ export default function AdminModels() {
         model={modal.model}
         onClose={() => setModal({ open: false, model: null })}
         onSubmit={modal.model ? onUpdate : onCreate}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete ${deleteTarget.label}?` : "Delete model?"}
+        description={deleteTarget ? `This will permanently remove ${deleteTarget.label} from the model registry.` : "This will permanently remove the selected model from the registry."}
+        confirmLabel="Delete model"
+        loading={busyId === deleteTarget?.id}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={onDelete}
       />
     </>
   );
@@ -403,7 +416,7 @@ function ModelGroup({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onDelete(m)}
+                      onClick={() => setDeleteTarget(m)}
                       disabled={busyId === m.id}
                       className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors"
                     >

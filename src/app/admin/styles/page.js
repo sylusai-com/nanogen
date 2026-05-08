@@ -10,6 +10,7 @@ import Button from "@/components/ui/Button";
 import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import StyleFormModal from "@/components/admin/StyleFormModal";
 import Pagination from "@/components/ui/Pagination";
 import {
@@ -43,6 +44,7 @@ export default function AdminStyles() {
   const [error, setError]     = useState(null);
   const [modal, setModal]     = useState({ open: false, item: null });
   const [busyId, setBusyId]   = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const reload = async () => {
     try {
@@ -86,13 +88,15 @@ export default function AdminStyles() {
   };
 
   const onDelete = async (item) => {
-    if (!confirm(`Delete style "${item.label}"? This cannot be undone.`)) return;
-    setBusyId(item.id);
+  const onDelete = async () => {
+    if (!deleteTarget?.id) return;
+    setBusyId(deleteTarget.id);
     try {
-      await deleteBannerStyle(supabase, item.id);
+      await deleteBannerStyle(supabase, deleteTarget.id);
       await reload();
     } finally {
       setBusyId(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -189,7 +193,7 @@ export default function AdminStyles() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => onDelete(item)}
+                        onClick={() => setDeleteTarget(item)}
                         disabled={busyId === item.id}
                         className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors"
                       >
@@ -213,6 +217,16 @@ export default function AdminStyles() {
         item={modal.item}
         onClose={() => setModal({ open: false, item: null })}
         onSubmit={modal.item ? onUpdate : onCreate}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete style “${deleteTarget.label}”?` : "Delete style?"}
+        description={deleteTarget ? `This will permanently remove ${deleteTarget.label} from the style catalog.` : "This will permanently remove the selected style from the catalog."}
+        confirmLabel="Delete style"
+        loading={busyId === deleteTarget?.id}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={onDelete}
       />
     </>
   );

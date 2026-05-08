@@ -18,6 +18,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Skeleton from "@/components/ui/Skeleton";
 import Badge from "@/components/ui/Badge";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 async function adminFetch(url, init = {}) {
   const res = await fetch(url, {
@@ -43,6 +44,7 @@ export default function AdminPromptPage() {
   const [busyKey, setBusyKey] = useState(null); // saving one prompt at a time
   const [error,   setError]   = useState(null);
   const [okMsg,   setOk]      = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -98,10 +100,10 @@ export default function AdminPromptPage() {
     setDrafts((prev) => ({ ...prev, [key]: cloneValue(prompts[key].defaultValue) }));
   };
 
-  const onDeleteOverride = async (key) => {
+  const onDeleteOverride = async () => {
+    const key = deleteTarget;
     const meta = prompts[key];
     if (!meta) return;
-    if (!confirm(`Delete the saved override for “${meta.label}” and revert to the built-in default?`)) return;
     setBusyKey(key);
     setError(null);
     setOk(null);
@@ -120,6 +122,7 @@ export default function AdminPromptPage() {
       setError(e.message || `Failed to revert ${meta.label}`);
     } finally {
       setBusyKey(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -181,13 +184,23 @@ export default function AdminPromptPage() {
                   onSave={() => onSave(meta.key)}
                   onDiscard={() => onDiscard(meta.key)}
                   onLoadDefault={() => onLoadDefault(meta.key)}
-                  onDeleteOverride={() => onDeleteOverride(meta.key)}
+                  onDeleteOverride={() => setDeleteTarget(meta.key)}
                 />
               ))}
             </section>
           ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Revert “${prompts[deleteTarget]?.label || "prompt"}”?` : "Revert prompt override?"}
+        description={deleteTarget ? `This will remove the saved override and restore the built-in default for ${prompts[deleteTarget]?.label || "this prompt"}.` : "This will remove the saved override and restore the built-in default."}
+        confirmLabel="Revert"
+        loading={busyKey === deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={onDeleteOverride}
+      />
     </>
   );
 }

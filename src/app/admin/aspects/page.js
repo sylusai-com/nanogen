@@ -10,6 +10,7 @@ import Button from "@/components/ui/Button";
 import Switch from "@/components/ui/Switch";
 import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import AspectFormModal from "@/components/admin/AspectFormModal";
 import Pagination from "@/components/ui/Pagination";
 import {
@@ -47,6 +48,7 @@ export default function AdminAspects() {
   const [error, setError]   = useState(null);
   const [modal, setModal]   = useState({ open: false, item: null });
   const [busyId, setBusyId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const reload = async () => {
     try {
@@ -89,14 +91,15 @@ export default function AdminAspects() {
     }
   };
 
-  const onDelete = async (item) => {
-    if (!confirm(`Delete aspect ratio "${item.label}"? This cannot be undone.`)) return;
-    setBusyId(item.id);
+  const onDelete = async () => {
+    if (!deleteTarget?.id) return;
+    setBusyId(deleteTarget.id);
     try {
-      await deleteAspectRatio(supabase, item.id);
+      await deleteAspectRatio(supabase, deleteTarget.id);
       await reload();
     } finally {
       setBusyId(null);
+      setDeleteTarget(null);
     }
   };
 
@@ -195,7 +198,7 @@ export default function AdminAspects() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDelete(item)}
+                    onClick={() => setDeleteTarget(item)}
                     disabled={busyId === item.id}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors"
                   >
@@ -217,6 +220,16 @@ export default function AdminAspects() {
         item={modal.item}
         onClose={() => setModal({ open: false, item: null })}
         onSubmit={modal.item ? onUpdate : onCreate}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={deleteTarget ? `Delete aspect ratio “${deleteTarget.label}”?` : "Delete aspect ratio?"}
+        description={deleteTarget ? `This will permanently remove ${deleteTarget.label} from the generation form.` : "This will permanently remove the selected aspect ratio from the generation form."}
+        confirmLabel="Delete ratio"
+        loading={busyId === deleteTarget?.id}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={onDelete}
       />
     </>
   );

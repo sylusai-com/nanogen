@@ -29,6 +29,7 @@ import {
   listBgImageProviders,
   fetchBgImageFromProvider,
 } from "@/lib/db/bgImageProviders";
+import { removeSubjectBackground } from "@/lib/bgRemoval";
 import { storeBannerImageAsset } from "@/lib/server/bannerImageStorage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
@@ -211,6 +212,47 @@ async function performBannerGeneration(job, userId, payload) {
         console.warn("Failed to store subject image; continuing with data URL", e?.message || e);
       }
     }
+
+    // Step 1b: Strip the subject's background. When REMOVE_BG_API_KEY is
+    // configured, this swaps the user-uploaded photo for a transparent
+    // PNG so the bg-image layer composes cleanly over whatever bg the
+    // model / provider / image-gen produces. Failures (no key, API down,
+    // unsupported format) silently fall through — the original image is
+    // still used and the banner still renders.
+    let cleanedSubjectDataUrl = null;
+    if (subjImageUrl) {
+      try {
+        const cutout = await removeSubjectBackground(subjImageUrl);
+        if (cutout?.dataUrl) {
+          cleanedSubjectDataUrl = cutout.dataUrl;
+          // Persist the cutout to storage so the banner row references
+          // a stable URL, not a 1MB+ data URI in the DB column.
+          try {
+            const stored = await storeBannerImageAsset({
+              dataUrl: cutout.dataUrl,
+              userId,
+              jobId: job.jobId,
+              adminClient,
+            });
+            if (stored) {
+              subjImageUrl = stored;
+              cleanedSubjectDataUrl = stored;
+            } else {
+              subjImageUrl = cutout.dataUrl;
+            }
+          } catch (e) {
+            console.warn("Failed to store cutout; using data URL", e?.message || e);
+            subjImageUrl = cutout.dataUrl;
+          }
+        }
+      } catch (e) {
+        console.warn("Background removal failed; using original subject image", e?.message || e);
+      }
+    }
+    // Pass the cutout (or original, if removal didn't run) into every
+    // downstream consumer so analysis and rendering both see the same
+    // image bytes.
+    const subjectImageForGeneration = cleanedSubjectDataUrl || subjImageUrl || subjectImage;
 
     // Step 2-3: Extract context from reference and subject images (parallel)
     job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);

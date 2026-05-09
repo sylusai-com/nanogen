@@ -137,8 +137,20 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
       return `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`;
     })
     .join("\n");
+  // When a subject image is present, force `contain` sizing so the whole
+  // subject (head, hair, full body, etc.) renders inside whatever layer
+  // the model created. Models frequently set --bg-zoom to 100% or 110%
+  // which crops portrait subjects — overriding the variable here means
+  // every `background-size: var(--bg-zoom, …)` consumer gets `contain`
+  // automatically. We also normalize --bg-position to "center" because
+  // "center bottom" / "bottom" on a contain-sized image leaves an empty
+  // band at the top instead of fitting the subject.
+  const subjectLayoutOverrides = forcedSubjectBg
+    ? `  --bg-zoom: contain;\n  --bg-position: center;`
+    : "";
   const mergedOverrides = [
     forcedSubjectBg ? `  --bg-image: ${forcedSubjectBg};` : "",
+    subjectLayoutOverrides,
     overrides,
   ].filter(Boolean).join("\n");
   if (mergedOverrides) {
@@ -150,6 +162,25 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     // last guarantees the override sticks regardless of where the model
     // declared the variable.
     cssOut = `${cssOut}\n:root {\n${mergedOverrides}\n}\n`;
+  }
+
+  // Catch-all for templates that hard-code background-size (ignoring
+  // --bg-zoom) on the subject layer. Forces the full subject to show
+  // and prevents the "head/hair cut off" symptom when models pick
+  // overly aggressive cover sizing.
+  if (forcedSubjectBg) {
+    cssOut += `
+.banner [class*="subject"],
+.banner [class*="bg-image"],
+.banner__subject,
+.banner__bg-image {
+  background-size: contain !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+`;
   }
 
   // Single-layer fallback for templates that don't wire a dedicated

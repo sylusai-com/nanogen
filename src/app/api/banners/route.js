@@ -31,6 +31,7 @@ import {
   fetchBgImageFromProvider,
 } from "@/lib/db/bgImageProviders";
 import { removeSubjectBackground } from "@/lib/bgRemoval";
+import { buildBackgroundQuery } from "@/lib/bgQuery";
 import { storeBannerImageAsset } from "@/lib/server/bannerImageStorage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
@@ -203,80 +204,80 @@ async function performBannerGeneration(job, userId, payload) {
     // server-side and replace with the public URL before analysis. This
     // keeps the base64 data for model analysis ephemeral while the
     // banner saves reference to a stable stored URL.
+    // Storage uploads for the reference + subject images run in parallel:
+    // both hit the same bucket independently and there's no ordering
+    // requirement. The "store" step swaps a giant data URI for a
+    // permanent HTTPS URL we can hand to vision models cheaply.
     let refImageUrl = referenceImage;
     let subjImageUrl = subjectImage;
+    const storageJobs = [];
     if (refImageUrl && typeof refImageUrl === "string" && refImageUrl.startsWith("data:image/")) {
-      try {
-        const stored = await storeBannerImageAsset({ dataUrl: refImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient });
-        if (stored) refImageUrl = stored;
-      } catch (e) {
-        console.warn("Failed to store reference image; continuing with data URL", e?.message || e);
-      }
+      storageJobs.push(
+        storeBannerImageAsset({ dataUrl: refImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient })
+          .then((stored) => { if (stored) refImageUrl = stored; })
+          .catch((e) => console.warn("Failed to store reference image; continuing with data URL", e?.message || e)),
+      );
     }
     if (subjImageUrl && typeof subjImageUrl === "string" && subjImageUrl.startsWith("data:image/")) {
-      try {
-        const stored = await storeBannerImageAsset({ dataUrl: subjImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient });
-        if (stored) subjImageUrl = stored;
-      } catch (e) {
-        console.warn("Failed to store subject image; continuing with data URL", e?.message || e);
-      }
+      storageJobs.push(
+        storeBannerImageAsset({ dataUrl: subjImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient })
+          .then((stored) => { if (stored) subjImageUrl = stored; })
+          .catch((e) => console.warn("Failed to store subject image; continuing with data URL", e?.message || e)),
+      );
     }
+    if (storageJobs.length) await Promise.all(storageJobs);
 
-    // Step 1b: Strip the subject's background. When REMOVE_BG_API_KEY is
-    // configured, this swaps the user-uploaded photo for a transparent
-    // PNG so the bg-image layer composes cleanly over whatever bg the
-    // model / provider / image-gen produces. Failures (no key, API down,
-    // unsupported format) silently fall through — the original image is
-    // still used and the banner still renders.
-    let cleanedSubjectDataUrl = null;
-    if (subjImageUrl) {
-      try {
-        const cutout = await removeSubjectBackground(subjImageUrl);
-        if (cutout?.dataUrl) {
-          cleanedSubjectDataUrl = cutout.dataUrl;
-          // Persist the cutout to storage so the banner row references
-          // a stable URL, not a 1MB+ data URI in the DB column.
-          try {
-            const stored = await storeBannerImageAsset({
-              dataUrl: cutout.dataUrl,
-              userId,
-              jobId: job.jobId,
-              adminClient,
-            });
-            if (stored) {
-              subjImageUrl = stored;
-              cleanedSubjectDataUrl = stored;
-            } else {
-              subjImageUrl = cutout.dataUrl;
-            }
-          } catch (e) {
-            console.warn("Failed to store cutout; using data URL", e?.message || e);
-            subjImageUrl = cutout.dataUrl;
-          }
-        }
-      } catch (e) {
-        console.warn("Background removal failed; using original subject image", e?.message || e);
-      }
-    }
-    // Pass the cutout (or original, if removal didn't run) into every
-    // downstream consumer so analysis and rendering both see the same
-    // image bytes.
-    const subjectImageForGeneration = cleanedSubjectDataUrl || subjImageUrl || subjectImage;
-
-    // Step 2-3: Extract context from reference and subject images (parallel)
+    // Steps 1b / 2 / 3 all run in parallel — they read the now-stored
+    // image URLs but don't depend on each other:
+    //   • Reference vision analysis (palette / mood / motifs)
+    //   • Subject vision analysis (subject type / framing / placement)
+    //   • Subject background removal (provider chain → local fallback)
+    // Running them concurrently shaves the longest-pole request off
+    // the wall-clock time, which matters because each call is ~2-4s.
     job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
     job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
 
-    const [referenceContext, subjectContext] = await Promise.all([
+    const [referenceContext, subjectContext, cutoutResult] = await Promise.all([
       refImageUrl
         ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl })
         : Promise.resolve(null),
       subjImageUrl
         ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl })
         : Promise.resolve(null),
+      subjImageUrl
+        ? removeSubjectBackground(subjImageUrl, { adminClient }).catch((e) => {
+            console.warn("Background removal failed; using original subject image", e?.message || e);
+            return null;
+          })
+        : Promise.resolve(null),
     ]);
     const referenceContextText = formatReferenceContextForPrompt(referenceContext);
     const subjectContextText = formatSubjectContextForPrompt(subjectContext);
+
+    // Persist the cutout (when one was produced) and swap the subject
+    // URL we'll send downstream to point at it.
+    let cleanedSubjectDataUrl = null;
+    if (cutoutResult?.dataUrl) {
+      cleanedSubjectDataUrl = cutoutResult.dataUrl;
+      try {
+        const stored = await storeBannerImageAsset({
+          dataUrl: cutoutResult.dataUrl,
+          userId,
+          jobId: job.jobId,
+          adminClient,
+        });
+        if (stored) {
+          subjImageUrl = stored;
+          cleanedSubjectDataUrl = stored;
+        } else {
+          subjImageUrl = cutoutResult.dataUrl;
+        }
+      } catch (e) {
+        console.warn("Failed to store cutout; using data URL", e?.message || e);
+        subjImageUrl = cutoutResult.dataUrl;
+      }
+    }
+    const subjectImageForGeneration = cleanedSubjectDataUrl || subjImageUrl || subjectImage;
 
     // Step 4: Fetch background image. The pipeline tries cheap photo
     // providers (Unsplash / Pexels / Pixabay) first when one is configured
@@ -296,11 +297,21 @@ async function performBannerGeneration(job, userId, payload) {
     const subjectIsCutout = !!cleanedSubjectDataUrl;
     const shouldFetchBg = !subjectImage || subjectIsCutout;
     if (shouldFetchBg) {
+      // Run three independent setup tasks in parallel:
+      //   1. LLM-driven search query (concrete nouns, vendor-friendly)
+      //   2. List of enabled stock-photo providers
+      //   3. Image-model resolution (for the AI fallback)
+      // Each costs an API/DB round-trip; doing them concurrently shaves
+      // ~1-2s off the bg step.
+      const [bgQuery, providersList, imageModelList] = await Promise.all([
+        buildBackgroundQuery({ adminClient, brief: prompt, referenceContext, subjectContext }),
+        listBgImageProviders(adminClient).catch(() => []),
+        listImageModelsWithSecrets(adminClient).catch(() => []),
+      ]);
       const providerResult = await tryProviderBackground({
-        adminClient,
-        prompt,
-        referenceContext,
-        subjectContext,
+        providers: providersList,
+        category: bgQuery.category,
+        query: bgQuery.query,
       });
       if (providerResult?.dataUrl) {
         aiBackgroundImage = providerResult.dataUrl;
@@ -315,8 +326,7 @@ async function performBannerGeneration(job, userId, payload) {
       }
 
       if (!aiBackgroundImage) {
-        const imageModels = await listImageModelsWithSecrets(adminClient).catch(() => []);
-        const imageModel = imageModels.find((m) => pickApiKey(m)) || null;
+        const imageModel = imageModelList.find((m) => pickApiKey(m)) || null;
         if (imageModel) {
           const result = await generateBannerBackground({
             imageModel,
@@ -612,72 +622,15 @@ async function performBannerGeneration(job, userId, payload) {
   }
 }
 
-// Resolve a search category from the subject vision context, the
-// reference vision context, or — failing both — heuristics over the
-// raw prompt. Used to query stock-photo providers with a relevant term.
-function resolveBackgroundQuery({ prompt, referenceContext, subjectContext }) {
-  const subjectsToFeature = referenceContext?.subjectsToFeature || [];
-  const subjectDesc = subjectContext?.shortDescription || "";
-  const refSubject = referenceContext?.subject || "";
-  const category =
-    subjectContext?.subjectType ||
-    referenceContext?.category ||
-    extractCategoryFromPrompt(prompt) ||
-    "abstract";
-  const queryParts = [
-    refSubject,
-    subjectDesc,
-    subjectsToFeature.slice(0, 2).join(" "),
-    String(prompt || "").slice(0, 80),
-  ]
-    .map((s) => String(s || "").trim())
-    .filter(Boolean);
-  const query = queryParts.join(" ").slice(0, 200) || category;
-  return { category, query };
-}
-
-function extractCategoryFromPrompt(prompt) {
-  const buckets = {
-    tech: /\b(tech|software|app|ai|digital|saas|cloud|data|cyber)\b/i,
-    food: /\b(food|restaurant|cafe|menu|recipe|cuisine|drink)\b/i,
-    travel: /\b(travel|tour|destination|vacation|holiday|trip)\b/i,
-    fashion: /\b(fashion|clothing|apparel|style|outfit|wear)\b/i,
-    fitness: /\b(fitness|gym|workout|yoga|running|sport)\b/i,
-    business: /\b(business|corporate|finance|office|enterprise|startup)\b/i,
-    nature: /\b(nature|forest|mountain|ocean|landscape|wildlife)\b/i,
-    art: /\b(art|gallery|exhibit|design|creative|illustration)\b/i,
-    product: /\b(product|launch|release|announcement|preview)\b/i,
-  };
-  for (const [cat, re] of Object.entries(buckets)) {
-    if (re.test(String(prompt || ""))) return cat;
-  }
-  return "abstract";
-}
-
-// Best-effort provider fetch. Walks every enabled provider in the order
-// returned by the DB (admins control priority via `enabled` + insertion
-// order) and inlines the first successful result as a data URI. Any
-// provider that errors is skipped — the next one tries. Returns null
-// when no providers are configured.
-async function tryProviderBackground({
-  adminClient,
-  prompt,
-  referenceContext,
-  subjectContext,
-}) {
-  let providers;
-  try {
-    providers = await listBgImageProviders(adminClient);
-  } catch (e) {
-    return { dataUrl: null, error: `Failed to list providers: ${e.message}` };
-  }
+// Walks every enabled provider in the order returned by the DB (admins
+// control priority via `enabled` + insertion order) and inlines the
+// first successful result as a data URI. Any provider that errors is
+// skipped — the next one tries. Returns null when no providers are
+// passed in. The provider list and the search query/category are
+// produced upstream in parallel; this function does only the actual
+// vendor calls.
+async function tryProviderBackground({ providers, category, query }) {
   if (!providers || providers.length === 0) return null;
-
-  const { category, query } = resolveBackgroundQuery({
-    prompt,
-    referenceContext,
-    subjectContext,
-  });
 
   let lastError = null;
   for (const provider of providers) {

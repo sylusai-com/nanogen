@@ -17,6 +17,55 @@ import {
 // gives it. This keeps viewport-relative units (vw, %, clamp) resolving
 // to the same values regardless of how big the preview is rendered, so
 // nothing shifts between a 250px thumbnail and an 1100px detail view.
+
+// data: URIs for subject / bg images can be hundreds of KB. Inlining them
+// inside the iframe srcDoc string blows past the practical attribute-size
+// budget some browsers enforce and corrupts attribute parsing because of
+// the embedded quotes. Convert each data URI to a blob: URL that lives
+// in the parent document — the iframe inherits the same origin (sandbox
+// allow-same-origin) so blob: URLs resolve there too.
+//
+// Note: we deliberately DON'T revoke these URLs on unmount. React's
+// StrictMode in dev mounts → unmounts → mounts every component, so any
+// cleanup-time revoke runs while the iframe is still in the DOM and
+// pointing at the URL — the next image fetch then 404s. The browser
+// frees blob URLs automatically when the document unloads, so leaking
+// one decoded image per BannerPreview is the right tradeoff.
+const dataUrlBlobCache = new Map();
+function dataUrlToBlobUrl(dataUrl) {
+  if (typeof window === "undefined") return dataUrl;
+  const cached = dataUrlBlobCache.get(dataUrl);
+  if (cached) return cached;
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!match) return dataUrl;
+  const mime = match[1] || "application/octet-stream";
+  const isBase64 = !!match[2];
+  const payload = match[3] || "";
+  try {
+    let bytes;
+    if (isBase64) {
+      const binary = atob(payload);
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(payload));
+    }
+    const blob = new Blob([bytes], { type: mime });
+    const url = URL.createObjectURL(blob);
+    dataUrlBlobCache.set(dataUrl, url);
+    return url;
+  } catch {
+    return dataUrl;
+  }
+}
+
+function unwrapUrlValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const m = raw.match(/^url\(\s*["']?(.*?)["']?\s*\)$/i);
+  return m ? m[1].trim() : raw;
+}
+
 export default function BannerPreview({
   banner,
   className,
@@ -28,9 +77,39 @@ export default function BannerPreview({
   const aspect = banner?.aspect || "16:9";
   const { width: designW, height: designH } = exportRenderSize(aspect);
   const fields = useMemo(() => (Array.isArray(banner?.fields) ? banner.fields : []), [banner]);
-  const subjectImageUrl = banner?.subjectImageUrl || banner?.subject_image_url || null;
+  const rawSubjectImageUrl = banner?.subjectImageUrl || banner?.subject_image_url || null;
+
+  // Off-load every data: URI we are about to render (subject + any image
+  // fields) to a blob URL. The cache keyed on data URI ensures the same
+  // blob URL is reused across renders / StrictMode double-mounts so the
+  // iframe never references a revoked URL.
+  const { subjectImageUrl, imageFieldUrlMap } = useMemo(() => {
+    const swap = (src) => {
+      const inner = unwrapUrlValue(src);
+      if (!inner || !inner.startsWith("data:")) return src;
+      return dataUrlToBlobUrl(inner);
+    };
+
+    const subject = rawSubjectImageUrl ? swap(rawSubjectImageUrl) : null;
+    const fieldMap = new Map();
+    for (const field of fields) {
+      if (field?.type !== "image") continue;
+      const next = swap(field.value);
+      if (next !== field.value) fieldMap.set(field.id, next);
+    }
+    return { subjectImageUrl: subject, imageFieldUrlMap: fieldMap };
+  }, [fields, rawSubjectImageUrl]);
+
   const resolvedFields = useMemo(() => {
-    const next = (fields || []).map((field) => ({ ...field }));
+    const next = (fields || []).map((field) => {
+      if (field?.type === "image" && imageFieldUrlMap.has(field.id)) {
+        const swapped = imageFieldUrlMap.get(field.id);
+        const wrapped = swapped.startsWith("url(") ? swapped : `url("${swapped}")`;
+        return { ...field, value: wrapped };
+      }
+      return { ...field };
+    });
+
     const raw = String(subjectImageUrl || "").trim();
     if (!raw) return next;
 
@@ -42,11 +121,7 @@ export default function BannerPreview({
       const cssVar = String(field?.cssVar || "").toLowerCase();
       if (id === "bg_image" || cssVar === "--bg-image") {
         field.value = wrapped;
-        field.type = "image";
         hasBgImageField = true;
-      }
-      if (id.includes("subject") || cssVar.includes("subject")) {
-        field.value = wrapped;
       }
     }
 
@@ -61,7 +136,8 @@ export default function BannerPreview({
     }
 
     return next;
-  }, [fields, subjectImageUrl]);
+  }, [fields, subjectImageUrl, imageFieldUrlMap]);
+
   const previewBackground = typeof background === "string" && /^(?:data:image\/|https?:\/\/)/i.test(background.trim())
     ? banner?.gradient || "#0c0c10"
     : (background ?? banner?.gradient ?? "#0c0c10");
@@ -71,7 +147,7 @@ export default function BannerPreview({
     : buildCompositeStandaloneHtml({
         html: banner.html,
         css: banner.css,
-      fields: resolvedFields,
+        fields: resolvedFields,
         alignment: banner.alignment || "left",
         title: banner.title || "banner",
         subjectImageUrl,
@@ -99,28 +175,6 @@ export default function BannerPreview({
     ro.observe(node);
     return () => ro.disconnect();
   }, [designW]);
-
-  useEffect(() => {
-    try {
-      console.log("BannerPreview debug:", {
-        id: banner?.id,
-        title: banner?.title,
-        subjectImageUrl,
-        subjectImageLength: subjectImageUrl ? subjectImageUrl.length : 0,
-        fields,
-        resolvedFields,
-        resolvedBgImageLength:
-          resolvedFields.find((f) => String(f?.id || "").toLowerCase() === "bg_image")?.value?.length || 0,
-        srcDocExists: !!srcDoc,
-        srcDocLength: srcDoc ? srcDoc.length : 0,
-        previewBackground,
-        canvasBackground: banner?.canvas?.background,
-      });
-    } catch (e) {
-      // best-effort logging
-      console.log("BannerPreview debug error:", e);
-    }
-  }, [banner?.id, banner?.title, subjectImageUrl, fields, resolvedFields, srcDoc, previewBackground, banner?.canvas?.background]);
 
   return (
     <div

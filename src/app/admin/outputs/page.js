@@ -61,20 +61,6 @@ function buildSrcDoc(html, css, fields, alignment) {
         `$1>${f.value ?? ""}`,
       );
     }
-    if (f.type === "image" && f.slot) {
-      try {
-        let raw = String((f.value || "") ).trim();
-        if (!raw) continue;
-        if (raw.startsWith("url(")) raw = raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
-        const imgHtml = `<img alt="${f.label || "Subject featured in banner"}" src="${raw}" class="h-auto w-full object-cover">`;
-        htmlWithText = htmlWithText.replace(
-          new RegExp(`(<[^>]*data-slot="${f.slot}"[^>]*>)([\\s\\S]*?)(<\\/[^>]*>)`, "g"),
-          `$1${imgHtml}$3`,
-        );
-      } catch (e) {
-        // best-effort
-      }
-    }
   }
   const aligned = htmlWithText.replace(
     /data-align="[^"]*"/,

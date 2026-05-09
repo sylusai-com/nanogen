@@ -60,34 +60,21 @@ function normalizeRenderFields(fields = [], subjectImageUrl = null) {
   const bgField = next.find((field) => field?.id === "bg_image");
   if (bgField) {
     bgField.value = wrapped;
-    return next;
+  } else {
+    // If no explicit bg_image field exists, add one so CSS var overrides
+    // and template background-image usage pick up the provided subject/bg.
+    next.push({
+      id: "bg_image",
+      type: "image",
+      cssVar: "--bg-image",
+      slot: "bg_image",
+      label: "Background image",
+      value: wrapped,
+    });
   }
-  // If no explicit bg_image field exists, add one so CSS var overrides
-  // and template background-image usage pick up the provided subject/bg.
-  next.push({
-    id: "bg_image",
-    type: "image",
-    cssVar: "--bg-image",
-    slot: "bg_image",
-    label: "Background image",
-    value: wrapped,
-  });
 
-  // Also wire subject image into any field that appears to represent the
-  // subject (field id contains 'subject' or cssVar contains 'subject'),
-  // so templates that reference a subject image via a CSS variable or
-  // dedicated field will render the embedded data URI correctly.
-  for (const f of next) {
-    const id = String(f.id || "").toLowerCase();
-    const cssVar = String(f.cssVar || "").toLowerCase();
-    // Inject subject image into any field that appears to represent the
-    // subject (id or css var contains 'subject'), regardless of the
-    // declared field type. Some templates may reference the subject via
-    // a CSS var or non-image field, so set the value to the wrapped URL.
-    if (id.includes("subject") || cssVar.includes("subject")) {
-      f.value = wrapped;
-    }
-  }
+  // Keep subject rendering deterministic: only bg_image/--bg-image is
+  // populated from the subject data URI. Do not fan out to other fields.
   return next;
 }
 
@@ -134,16 +121,48 @@ function extractStyleBlock(docHtml) {
 export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, subjectImageUrl = null }) {
   let cssOut = css || "";
   const renderFields = normalizeRenderFields(fields, subjectImageUrl);
+  const forcedSubjectBg = wrapImageUrl(subjectImageUrl);
+  // The "effective" bg image is whatever should be rendered: prefer the
+  // explicit subjectImageUrl (user upload) and fall back to whatever value
+  // a bg_image field already carries (AI-generated or provider-fetched
+  // photo lands here through applySubjectImage()).
+  const bgField = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+  const bgFieldCssValue = bgField ? getFieldCssValue(bgField) : "";
+  const effectiveBg = forcedSubjectBg
+    || (bgFieldCssValue && bgFieldCssValue !== "none" ? bgFieldCssValue : "");
+
   const overrides = renderFields
     .filter((f) => getFieldCssVar(f))
     .map((f) => {
       return `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`;
     })
     .join("\n");
-  if (overrides) {
-    cssOut = cssOut.includes(":root")
-      ? cssOut.replace(/:root\s*{/, `:root {\n${overrides}`)
-      : `:root {\n${overrides}\n}\n` + cssOut;
+  const mergedOverrides = [
+    forcedSubjectBg ? `  --bg-image: ${forcedSubjectBg};` : "",
+    overrides,
+  ].filter(Boolean).join("\n");
+  if (mergedOverrides) {
+    // Append a *second* :root block AFTER the template's CSS so our
+    // values win the cascade. Models often hard-code defaults like
+    // `--bg-image: none` further down inside their own :root, and
+    // prepending overrides at the top means the later declaration wins
+    // — which silently blanks out the subject image. Putting our block
+    // last guarantees the override sticks regardless of where the model
+    // declared the variable.
+    cssOut = `${cssOut}\n:root {\n${mergedOverrides}\n}\n`;
+  }
+
+  // Single-layer fallback for templates that don't wire a dedicated
+  // bg-image layer themselves. We render `.banner::before` only when the
+  // template's HTML doesn't already contain a `.banner__bg-image` element
+  // and its CSS doesn't already consume `var(--bg-image)` — otherwise the
+  // fallback would stack a second copy of the photo on top of the first.
+  const templateHasBgLayer =
+    /class="[^"]*banner__bg-image[^"]*"/i.test(html || "") ||
+    /background-image\s*:\s*var\(\s*--bg-image\s*\)/i.test(cssOut);
+  if (effectiveBg && !templateHasBgLayer) {
+    cssOut += `\n.banner::before { content:""; position:absolute; inset:0; z-index:-2; background-image:${effectiveBg} !important; background-size:var(--bg-zoom,110%); background-position:var(--bg-position,center center); background-repeat:no-repeat; filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px)); transform:scale(1.03); }`;
+    cssOut += `\n.banner::after  { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay,0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay,0.45))); pointer-events:none; }`;
   }
 
   if (hideSlots) {
@@ -158,22 +177,6 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
         `$1>${escapeText(f.value ?? "")}`,
       );
     }
-    if (f.type === "image" && f.slot) {
-      // Inject an <img> tag into the slot so data URIs render correctly
-      try {
-        let raw = getFieldTextValue(f) || "";
-        if (raw.startsWith("url(")) {
-          raw = raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
-        }
-        const imgHtml = `<img alt="${escapeAttr(f.label || "Subject featured in banner")}" src="${escapeAttr(raw)}" class="h-auto w-full object-cover">`;
-        htmlOut = htmlOut.replace(
-          new RegExp(`(<[^>]*data-slot="${escapeRegex(f.slot)}"[^>]*>)([\\s\\S]*?)(<\\/[^>]*>)`, "g"),
-          `$1${imgHtml}$3`,
-        );
-      } catch (e) {
-        // best-effort: don't break rendering if replacement fails
-      }
-    }
     if (f.type === "toggle" && f.selector && f.value === false) {
       // Inline display:none on toggled-off elements so the static export
       // matches what the iframe was showing.
@@ -184,31 +187,6 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     }
   }
   htmlOut = htmlOut.replace(/data-align="[^"]*"/, `data-align="${alignment}"`);
-
-  // If a bg_image field or cssVar was provided, also ensure the root
-  // `.banner` element has an inline `background-image` style so that
-  // data URIs or non-CORS images render in sandboxed iframes without
-  // relying on external inlining steps.
-  try {
-    const bgField = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
-    if (bgField) {
-      let raw = getFieldTextValue(bgField) || "";
-      if (raw.startsWith("url(")) {
-        raw = raw.replace(/^url\(["']?/, "").replace(/["']?\)$/, "");
-      }
-      const wrapped = wrapImageUrl(raw) || "";
-      if (wrapped) {
-        // Inject inline style on the banner root to force the image to render.
-        htmlOut = htmlOut.replace(/<div class="banner"/i, `<div class="banner" style="${escapeAttr(`background-image: ${wrapped};`)}"`);
-        // Also append a CSS fallback to ensure pseudo-elements and overlays
-        // that use the CSS variable render the data URI. This uses !important
-        // to take precedence over template defaults.
-        cssOut += `\n.banner, .banner::before, .banner::after { background-image: ${wrapped} !important; background-size: var(--bg-zoom,110%) !important; background-position: var(--bg-position,center center) !important; }`;
-      }
-    }
-  } catch (e) {
-    // best-effort: don't block rendering on errors
-  }
 
   return `<!doctype html>
 <html lang="en">

@@ -303,6 +303,7 @@ export function formatSubjectContextForPrompt(ctx) {
   lines.push(`- Preserve native aspect: ${ctx.preserveAspect ? "yes — do NOT distort the photo" : "no — cropping is OK"}.`);
   lines.push("HOW TO RENDER THE SUBJECT IN HTML/CSS:");
   lines.push('- The bg_image field value is already set to url("data:…") for you. Do NOT replace it. Reference it via var(--bg-image) on a dedicated layer.');
+  lines.push("- Render the subject only via that background layer; do NOT insert an <img> tag for the subject and do NOT map it to data-slot text placeholders.");
   lines.push("- Wrap that layer with the chosen treatment so the subject reads cleanly against the banner background. Examples: a portrait subject with a busy background → use feather-mask or circular-crop; a product with a white background → use blend-multiply on a light banner OR blend-screen on a dark banner.");
   lines.push("- Adjust object-position / background-position (via --bg-position) so the subject's focal area (face, label) lands in the banner's positive space, not under the headline.");
   lines.push("- The subject is the HERO. Headline + CTAs must complement it, not cover it. Use the 'placement' hint to decide which side gets the copy.");

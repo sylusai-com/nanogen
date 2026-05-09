@@ -24,7 +24,11 @@ import {
   formatReferenceContextForPrompt,
   formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
-import { generateBannerBackground } from "@/lib/imageGen";
+import { generateBannerBackground, urlToBase64 } from "@/lib/imageGen";
+import {
+  listBgImageProviders,
+  fetchBgImageFromProvider,
+} from "@/lib/db/bgImageProviders";
 import { storeBannerImageAsset } from "@/lib/server/bannerImageStorage";
 import { SCORE_THRESHOLD } from "@/lib/models";
 import {
@@ -223,7 +227,11 @@ async function performBannerGeneration(job, userId, payload) {
     const referenceContextText = formatReferenceContextForPrompt(referenceContext);
     const subjectContextText = formatSubjectContextForPrompt(subjectContext);
 
-    // Step 4: Fetch background image
+    // Step 4: Fetch background image. The pipeline tries cheap photo
+    // providers (Unsplash / Pexels / Pixabay) first when one is configured
+    // and only falls back to AI image generation if no provider is
+    // available or every provider fails. The user-uploaded subject image,
+    // when present, always wins — we never overwrite it with a stock photo.
     job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
     let aiBackgroundImage = null;
     let storedBackgroundImage = null;
@@ -231,34 +239,61 @@ async function performBannerGeneration(job, userId, payload) {
     let aiBackgroundModel = null;
 
     if (!subjectImage) {
-      const imageModels = await listImageModelsWithSecrets(adminClient).catch(() => []);
-      const imageModel = imageModels.find((m) => pickApiKey(m)) || null;
-      if (imageModel) {
-        const result = await generateBannerBackground({
-          imageModel,
-          brief: prompt,
-          style,
-          aspect,
-          referenceContext,
-          subjectContext,
-        });
-        if (result?.dataUrl) {
-          aiBackgroundImage = result.dataUrl;
-          storedBackgroundImage = await storeBannerImageAsset({
-            dataUrl: result.dataUrl,
-            userId,
-            jobId: job.jobId,
-          }).catch(() => null);
-          if (storedBackgroundImage) {
-            aiBackgroundImage = storedBackgroundImage;
+      const providerResult = await tryProviderBackground({
+        adminClient,
+        prompt,
+        referenceContext,
+        subjectContext,
+      });
+      if (providerResult?.dataUrl) {
+        aiBackgroundImage = providerResult.dataUrl;
+        aiBackgroundModel = {
+          modelId: providerResult.providerName,
+          modelLabel: providerResult.providerName,
+          provider: providerResult.source,
+          credit: providerResult.credit,
+        };
+      } else if (providerResult?.error) {
+        aiBackgroundError = providerResult.error;
+      }
+
+      if (!aiBackgroundImage) {
+        const imageModels = await listImageModelsWithSecrets(adminClient).catch(() => []);
+        const imageModel = imageModels.find((m) => pickApiKey(m)) || null;
+        if (imageModel) {
+          const result = await generateBannerBackground({
+            imageModel,
+            brief: prompt,
+            style,
+            aspect,
+            referenceContext,
+            subjectContext,
+          });
+          if (result?.dataUrl) {
+            aiBackgroundImage = result.dataUrl;
+            aiBackgroundModel = {
+              modelId: result.modelId,
+              modelLabel: result.modelLabel,
+              provider: result.provider,
+            };
+            // Once we have an AI image, the provider error (if any) is
+            // no longer relevant — clear it so the UI doesn't show a
+            // confusing "stock photo failed" warning beside a working bg.
+            aiBackgroundError = null;
+          } else if (result?.error) {
+            aiBackgroundError = result.error;
           }
-          aiBackgroundModel = {
-            modelId: result.modelId,
-            modelLabel: result.modelLabel,
-            provider: result.provider,
-          };
-        } else if (result?.error) {
-          aiBackgroundError = result.error;
+        }
+      }
+
+      if (aiBackgroundImage && aiBackgroundImage.startsWith("data:")) {
+        storedBackgroundImage = await storeBannerImageAsset({
+          dataUrl: aiBackgroundImage,
+          userId,
+          jobId: job.jobId,
+        }).catch(() => null);
+        if (storedBackgroundImage) {
+          aiBackgroundImage = storedBackgroundImage;
         }
       }
     }
@@ -505,4 +540,93 @@ async function performBannerGeneration(job, userId, payload) {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
     job.setError(error.message, error.stack);
   }
+}
+
+// Resolve a search category from the subject vision context, the
+// reference vision context, or — failing both — heuristics over the
+// raw prompt. Used to query stock-photo providers with a relevant term.
+function resolveBackgroundQuery({ prompt, referenceContext, subjectContext }) {
+  const subjectsToFeature = referenceContext?.subjectsToFeature || [];
+  const subjectDesc = subjectContext?.shortDescription || "";
+  const refSubject = referenceContext?.subject || "";
+  const category =
+    subjectContext?.subjectType ||
+    referenceContext?.category ||
+    extractCategoryFromPrompt(prompt) ||
+    "abstract";
+  const queryParts = [
+    refSubject,
+    subjectDesc,
+    subjectsToFeature.slice(0, 2).join(" "),
+    String(prompt || "").slice(0, 80),
+  ]
+    .map((s) => String(s || "").trim())
+    .filter(Boolean);
+  const query = queryParts.join(" ").slice(0, 200) || category;
+  return { category, query };
+}
+
+function extractCategoryFromPrompt(prompt) {
+  const buckets = {
+    tech: /\b(tech|software|app|ai|digital|saas|cloud|data|cyber)\b/i,
+    food: /\b(food|restaurant|cafe|menu|recipe|cuisine|drink)\b/i,
+    travel: /\b(travel|tour|destination|vacation|holiday|trip)\b/i,
+    fashion: /\b(fashion|clothing|apparel|style|outfit|wear)\b/i,
+    fitness: /\b(fitness|gym|workout|yoga|running|sport)\b/i,
+    business: /\b(business|corporate|finance|office|enterprise|startup)\b/i,
+    nature: /\b(nature|forest|mountain|ocean|landscape|wildlife)\b/i,
+    art: /\b(art|gallery|exhibit|design|creative|illustration)\b/i,
+    product: /\b(product|launch|release|announcement|preview)\b/i,
+  };
+  for (const [cat, re] of Object.entries(buckets)) {
+    if (re.test(String(prompt || ""))) return cat;
+  }
+  return "abstract";
+}
+
+// Best-effort provider fetch. Walks every enabled provider in the order
+// returned by the DB (admins control priority via `enabled` + insertion
+// order) and inlines the first successful result as a data URI. Any
+// provider that errors is skipped — the next one tries. Returns null
+// when no providers are configured.
+async function tryProviderBackground({
+  adminClient,
+  prompt,
+  referenceContext,
+  subjectContext,
+}) {
+  let providers;
+  try {
+    providers = await listBgImageProviders(adminClient);
+  } catch (e) {
+    return { dataUrl: null, error: `Failed to list providers: ${e.message}` };
+  }
+  if (!providers || providers.length === 0) return null;
+
+  const { category, query } = resolveBackgroundQuery({
+    prompt,
+    referenceContext,
+    subjectContext,
+  });
+
+  let lastError = null;
+  for (const provider of providers) {
+    try {
+      const imageData = await fetchBgImageFromProvider(provider, category, query);
+      if (!imageData?.url) continue;
+      const dataUrl = imageData.url.startsWith("http")
+        ? await urlToBase64(imageData.url)
+        : imageData.url;
+      return {
+        dataUrl,
+        providerName: provider.name,
+        source: imageData.source || provider.type,
+        credit: imageData.credit || null,
+      };
+    } catch (e) {
+      lastError = e?.message || String(e);
+      continue;
+    }
+  }
+  return { dataUrl: null, error: lastError || "All providers failed" };
 }

@@ -73,6 +73,7 @@ BACKGROUND IMAGE LAYER (lightweight requirement — the application owns the bg_
 - The application guarantees a field with id "bg_image", cssVar "--bg-image" exists on every banner. You do NOT need to emit it. If you don't, the application appends it. If you do, keep its value as the empty string "" — never invent inline-SVG data URIs unless you are confident they parse.
 - Your only job for backgrounds is to make the LAYOUT ready for an optional photographic background. Include a layer in the HTML that consumes var(--bg-image), e.g. <div class="banner__bg-image"></div>, and style it in CSS as: background-image: var(--bg-image); background-size: var(--bg-zoom, 110%); background-position: var(--bg-position, center center); background-repeat: no-repeat. Declare --bg-image in :root with a sane default (use "none" when none provided).
 - That layer MUST render gracefully when var(--bg-image) is "none" — the CSS-only background (gradients, mesh, orbs) carries the banner.
+- Do NOT render the subject photo as an <img> element, and do NOT bind bg_image to [data-slot]. Subject rendering must happen only through the background-image layer that reads var(--bg-image).
 - Do NOT include any other "image" type field. Do NOT include any url("https://…") references. Do NOT load external fonts.
 
 REFERENCE IMAGE vs SUBJECT IMAGE — these are TWO DIFFERENT inputs and must be handled differently:
@@ -119,6 +120,7 @@ Use the brief as the source of truth for the banner subject, copy, visual direct
 IMAGE INPUTS — IMPORTANT DISTINCTION:
 - A "reference image" (when present) is INSPIRATION ONLY. Use its mood / palette / motifs to guide the design. Never embed it. Never set its data into bg_image.
 - A "subject image" (when present) IS the asset to feature IN the banner — it has already been written into the bg_image field's value as a url("data:…") data URI by the application. Do NOT overwrite that value. Build the layout around it: render var(--bg-image) on a dedicated layer with the suggested CSS treatment so the subject reads cleanly, place headline/CTAs so they don't cover the subject's focal area, and harmonize the palette with the subject's dominant colors.
+- Subject image placement must be controlled via CSS background-position / background-size on the bg-image layer (and optional --bg-position / --bg-zoom fields), not via centered hero <img> tags.
 - If neither image is present, design a CSS-only banner that looks great without any photographic background.
 The banner is HTML + CSS only — NO external image URLs. Build any background decoration using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.
 There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.

@@ -564,6 +564,42 @@ function applySubjectImage(template, subjectImage) {
   return next;
 }
 
+// Apply BOTH a photographic background (Unsplash / AI / provider) AND a
+// cleaned subject cutout to the template. The subject lives on its own
+// CSS variable (--subject-image / field id `subject_image`) so it can be
+// composited on top of the bg without overwriting it. When only one of
+// the two is provided, the other is left as `none` and the existing
+// rendering logic still works.
+function applyLayeredImages(template, { backgroundImage, subjectImage }) {
+  if (!template?.fields) return template;
+  const next = { ...template, fields: template.fields.map((f) => ({ ...f })) };
+
+  const wrap = (raw) => {
+    if (!raw || typeof raw !== "string") return null;
+    const t = raw.trim();
+    if (!t.startsWith("data:image/") && !/^https?:\/\//i.test(t)) return null;
+    return `url("${t}")`;
+  };
+
+  const wrappedBg = wrap(backgroundImage);
+  const wrappedSubject = wrap(subjectImage);
+
+  const upsert = (id, cssVar, label, value) => {
+    if (!value) return;
+    const existing = next.fields.find((f) => f.id === id);
+    if (existing) {
+      existing.value = value;
+    } else {
+      next.fields.push({ id, type: "image", cssVar, slot: id, label, value });
+    }
+  };
+
+  upsert("bg_image", "--bg-image", "Background image", wrappedBg);
+  upsert("subject_image", "--subject-image", "Subject image", wrappedSubject);
+
+  return next;
+}
+
 // Walks the fields[] for the bg / fg / accent triplet, swaps or coerces
 // values so contrast is readable and saves the user from invisible text.
 function enforceContrast(template) {
@@ -677,19 +713,28 @@ export async function generateBannerTemplate({
   // because the user explicitly chose what should appear IN the banner.
   backgroundImage = null,
 }) {
-  // Resolve which image actually lands in the bg_image field. The
-  // subject upload is the authoritative source whenever the user gave
-  // us one; otherwise we use whatever an image model produced.
-  const effectiveBgImage = subjectImage || backgroundImage || null;
+  // Layered images: the subject (transparent cutout when bg-removal ran)
+  // sits on its own --subject-image variable so the photographic bg
+  // (Unsplash / AI image) can render behind it via --bg-image. When only
+  // a subject is provided and no bg, we fall back to the legacy single-
+  // layer behavior — the subject lands on --bg-image so existing
+  // templates without a dedicated subject layer still display it.
+  const layered = subjectImage && backgroundImage
+    ? { backgroundImage, subjectImage }
+    : subjectImage
+      ? { backgroundImage: null, subjectImage }
+      : { backgroundImage: backgroundImage || null, subjectImage: null };
 
   const styleRow = await getStyleByName(supabase, style);
-  const styled   = enforceStaticBanner(
-    applySubjectImage(
-      ensureBgImageField(
-        applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
-      ),
-      effectiveBgImage,
-    ),
+  const baseStyled = ensureBgImageField(
+    applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
+  );
+  // Single-layer fallback path: subject only → bg_image (legacy)
+  // Dual-layer path: bg → bg_image, subject → subject_image
+  const styled = enforceStaticBanner(
+    layered.subjectImage && layered.backgroundImage
+      ? applyLayeredImages(baseStyled, layered)
+      : applySubjectImage(baseStyled, layered.subjectImage || layered.backgroundImage || null),
   );
 
   const adminClient = createAdminClient();
@@ -811,8 +856,10 @@ export async function generateBannerTemplate({
     const colorSafe  = enforceContrast(validated);
     const aspected   = applyAspectToTemplate(colorSafe, aspect);
     const withBgField = ensureBgImageField(aspected);
-    const subjectApplied = applySubjectImage(withBgField, effectiveBgImage);
-    const staticSafe = enforceStaticBanner(subjectApplied);
+    const imagesApplied = layered.subjectImage && layered.backgroundImage
+      ? applyLayeredImages(withBgField, layered)
+      : applySubjectImage(withBgField, layered.subjectImage || layered.backgroundImage || null);
+    const staticSafe = enforceStaticBanner(imagesApplied);
 
     return {
       ...staticSafe,

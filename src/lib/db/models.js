@@ -204,6 +204,59 @@ export async function getEnabledTextModelByRefWithSecrets(adminClient, ref) {
   return data || null;
 }
 
+// Pick the single best-scoring enabled text model based on past
+// generation_results. Returns the model row (with secrets) or null when
+// no historical data exists. The caller can fall back to the multi-
+// model fan-out when this returns null.
+//
+// Scoring rule: average score across the most recent 100 results per
+// model, weighted lightly toward recency by limiting to the latest
+// rows. We require at least 3 winners or 5 total results before we
+// trust a model — otherwise a single-shot fluke would dominate.
+export async function pickBestTextModelWithSecrets(adminClient, { minSamples = 3 } = {}) {
+  const { data: rows, error } = await adminClient
+    .from("generation_results")
+    .select("model_id, model_label, score, is_winner")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) return null;
+  if (!rows || rows.length === 0) return null;
+
+  const stats = new Map();
+  for (const r of rows) {
+    if (!r.model_id || r.model_id === "fallback") continue;
+    const key = r.model_id;
+    const cur = stats.get(key) || { sum: 0, n: 0, wins: 0 };
+    cur.sum += Number(r.score) || 0;
+    cur.n += 1;
+    if (r.is_winner) cur.wins += 1;
+    stats.set(key, cur);
+  }
+  if (stats.size === 0) return null;
+
+  let bestKey = null;
+  let bestAvg = -Infinity;
+  for (const [key, s] of stats.entries()) {
+    if (s.n < minSamples) continue;
+    const avg = s.sum / s.n + s.wins * 0.5; // small win-rate bonus
+    if (avg > bestAvg) {
+      bestAvg = avg;
+      bestKey = key;
+    }
+  }
+  if (!bestKey) return null;
+
+  const { data: model, error: modelErr } = await adminClient
+    .from("models")
+    .select(ADMIN_COLUMNS)
+    .eq("kind", "text")
+    .eq("enabled", true)
+    .eq("model_id", bestKey)
+    .maybeSingle();
+  if (modelErr) return null;
+  return model || null;
+}
+
 export async function listImageModelsWithSecrets(adminClient, slugs) {
   let q = adminClient
     .from("models")

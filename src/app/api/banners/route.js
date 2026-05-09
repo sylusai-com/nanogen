@@ -17,6 +17,7 @@ import {
   getEnabledTextModelByRefWithSecrets,
   listEnabledTextModelsWithSecrets,
   listImageModelsWithSecrets,
+  pickBestTextModelWithSecrets,
 } from "@/lib/db/models";
 import {
   extractReferenceImageContext,
@@ -114,7 +115,10 @@ export async function POST(req) {
       }
     }
 
-    // Regenerate flow: load prior banner context
+    // Regenerate flow: load prior banner context. The user's `prompt` in
+    // this mode describes the *changes* they want, not the original
+    // brief. We fold both into a combined brief so the model has full
+    // context: "Original brief: <prior>. Apply these changes: <new>."
     regenerateFromId = validateString(body.regenerateFromId, { name: "regenerateFromId", max: 80 }) || null;
     if (regenerateFromId) {
       const { data: prior } = await supabase
@@ -132,6 +136,11 @@ export async function POST(req) {
         }
         if (!subjectImage && prior.subject_image_url) {
           subjectImage = prior.subject_image_url;
+        }
+        const changeRequest = prompt;
+        const originalBrief = String(prior.prompt || "").trim();
+        if (originalBrief) {
+          prompt = `ORIGINAL BRIEF: ${originalBrief}\n\nREGENERATION INSTRUCTIONS (apply these changes while keeping the original brief's intent): ${changeRequest}`.slice(0, 4000);
         }
       }
     }
@@ -272,15 +281,21 @@ async function performBannerGeneration(job, userId, payload) {
     // Step 4: Fetch background image. The pipeline tries cheap photo
     // providers (Unsplash / Pexels / Pixabay) first when one is configured
     // and only falls back to AI image generation if no provider is
-    // available or every provider fails. The user-uploaded subject image,
-    // when present, always wins — we never overwrite it with a stock photo.
+    // available or every provider fails. We skip bg fetching only when a
+    // subject is provided AND its background was *not* removed — in that
+    // case the original subject already carries its own bg, so a stock
+    // photo behind it would clash. When the subject is a transparent
+    // cutout, fetching a bg is encouraged so the cutout has something
+    // photographic to sit on.
     job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
     let aiBackgroundImage = null;
     let storedBackgroundImage = null;
     let aiBackgroundError = null;
     let aiBackgroundModel = null;
 
-    if (!subjectImage) {
+    const subjectIsCutout = !!cleanedSubjectDataUrl;
+    const shouldFetchBg = !subjectImage || subjectIsCutout;
+    if (shouldFetchBg) {
       const providerResult = await tryProviderBackground({
         adminClient,
         prompt,
@@ -343,7 +358,10 @@ async function performBannerGeneration(job, userId, payload) {
     // Step 5: Generate from all enabled models in parallel
     job.setStep(GenerationJobSteps.PARALLEL_MODELS);
 
-    // Resolve which models to use
+    // Resolve which models to use. "auto" no longer fans out across every
+    // enabled model — instead we pick the single best-scoring model
+    // based on historical generation_results, and only fall back to the
+    // full fan-out when there is no usable history yet.
     let usable;
     if (modelRef && modelRef !== "auto") {
       const picked = await getEnabledTextModelByRefWithSecrets(adminClient, modelRef);
@@ -355,8 +373,13 @@ async function performBannerGeneration(job, userId, payload) {
       }
       usable = [picked];
     } else {
-      const allModels = await listEnabledTextModelsWithSecrets(adminClient);
-      usable = allModels.filter((m) => pickApiKey(m));
+      const best = await pickBestTextModelWithSecrets(adminClient).catch(() => null);
+      if (best && pickApiKey(best)) {
+        usable = [best];
+      } else {
+        const allModels = await listEnabledTextModelsWithSecrets(adminClient);
+        usable = allModels.filter((m) => pickApiKey(m));
+      }
     }
 
     // Build work plan
@@ -372,7 +395,9 @@ async function performBannerGeneration(job, userId, payload) {
       plan = usable.map((m, i) => ({ model: m, variantSeed: i }));
     }
 
-    // Generate all variants in parallel
+    // Generate all variants in parallel. Pass the cleaned cutout (when
+    // bg-removal succeeded) so analysis and rendering use the same
+    // bytes; fall back to the stored subject URL otherwise.
     const settled = await Promise.allSettled(
       plan.map(({ model, variantSeed }) =>
         generateBannerTemplate({
@@ -384,7 +409,7 @@ async function performBannerGeneration(job, userId, payload) {
           textModel: model,
           referenceContextText,
           subjectContextText,
-          subjectImage,
+          subjectImage: subjectImageForGeneration,
           backgroundImage: aiBackgroundImage,
         }),
       ),
@@ -541,9 +566,12 @@ async function performBannerGeneration(job, userId, payload) {
         fields: t.fields,
         alignment: t.alignment,
         canvas: { background: bg, elements: [] },
-        reference_image_url: referenceImage || null,
+        reference_image_url: refImageUrl || referenceImage || null,
         reference_context: referenceContext || null,
-        subject_image_url: subjectImage || null,
+        // Persist the cleaned subject (transparent cutout) when bg
+        // removal ran — that is the canonical render. Falls back to
+        // the stored URL, then the original input.
+        subject_image_url: subjImageUrl || subjectImage || null,
         subject_context: subjectContext || null,
       };
     });

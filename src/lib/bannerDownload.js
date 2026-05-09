@@ -128,6 +128,13 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   // photo lands here through applySubjectImage()).
   const bgField = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
   const bgFieldCssValue = bgField ? getFieldCssValue(bgField) : "";
+  // Subject layer (--subject-image): set when the route layered both a
+  // photographic bg AND a separate cleaned subject cutout. The subject
+  // gets its own var so it stacks ABOVE the bg image, instead of
+  // replacing it like in the legacy single-layer path.
+  const subjectField = renderFields.find((f) => f?.id === "subject_image" || getFieldCssVar(f) === "--subject-image");
+  const subjectFieldCssValue = subjectField ? getFieldCssValue(subjectField) : "";
+  const effectiveSubject = subjectFieldCssValue && subjectFieldCssValue !== "none" ? subjectFieldCssValue : "";
   const effectiveBg = forcedSubjectBg
     || (bgFieldCssValue && bgFieldCssValue !== "none" ? bgFieldCssValue : "");
 
@@ -196,6 +203,27 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     cssOut += `\n.banner::after  { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay,0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay,0.45))); pointer-events:none; }`;
   }
 
+  // Subject overlay. When the layered path produced a separate cutout
+  // we always inject our own subject layer (templates don't yet emit
+  // .banner__subject-image of their own). The layer sits above the bg
+  // image and decoration, with `contain` sizing so the entire subject
+  // is visible. We render this whether or not the model template
+  // happens to declare one — it wins the cascade with `!important`.
+  if (effectiveSubject) {
+    cssOut += `
+.banner__subject-image-injected {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 6 !important;
+  background-image: ${effectiveSubject} !important;
+  background-size: contain !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  pointer-events: none !important;
+}
+`;
+  }
+
   if (hideSlots) {
     cssOut += `\n\n[data-slot] { visibility: hidden !important; pointer-events: none !important; }\n[data-slot] * { visibility: hidden !important; }\n`;
   }
@@ -218,6 +246,16 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     }
   }
   htmlOut = htmlOut.replace(/data-align="[^"]*"/, `data-align="${alignment}"`);
+
+  // Inject the cleaned-subject overlay div near the end of `.banner` so
+  // it stacks above the model's bg layers without disturbing the rest
+  // of the markup. Only added when --subject-image is actually set.
+  if (effectiveSubject) {
+    htmlOut = htmlOut.replace(
+      /<\/div>\s*$/,
+      `<div class="banner__subject-image-injected"></div></div>`,
+    );
+  }
 
   return `<!doctype html>
 <html lang="en">

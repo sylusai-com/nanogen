@@ -2,16 +2,10 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import ElementRenderer from "./ElementRenderer";
-import { buildStandaloneHtml } from "@/lib/bannerDownload";
-
-function aspectRatio(aspect) {
-  const map = { "16:9": 9 / 16, "1:1": 1, "4:5": 5 / 4, "9:16": 16 / 9 };
-  return map[aspect] || 9 / 16;
-}
+import { buildStandaloneHtml, exportRenderSize } from "@/lib/bannerDownload";
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-const CANVAS_W = 1200;
 
 function Canvas(
   {
@@ -42,10 +36,16 @@ function Canvas(
   const iframeRef = useRef(null);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0, ox: 0, oy: 0 });
+  const isSpaceDown = useRef(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [initialized, setInitialized] = useState(false);
+  const [spaceCursor, setSpaceCursor] = useState(false);
 
-  const CANVAS_H = CANVAS_W * aspectRatio(aspect);
+  // Single source of truth for design dimensions — this is the same
+  // logical canvas size used by BannerPreview, the export rasterizer,
+  // and the SVG embed. Keeping them aligned guarantees pixel-identical
+  // rendering across builder ⇆ preview ⇆ download.
+  const { width: CANVAS_W, height: CANVAS_H } = exportRenderSize(aspect);
 
   useImperativeHandle(ref, () => ({
     getIframe: () => iframeRef.current,
@@ -69,20 +69,19 @@ function Canvas(
     });
     onZoomChange?.(next);
     setInitialized(true);
-  }, [CANVAS_H, onZoomChange]);
+  }, [CANVAS_W, CANVAS_H, onZoomChange]);
 
-  // Initial fit + on aspect change
   useEffect(() => {
     fitToContainer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aspect]);
 
-  // External "fit to screen" sentinel value (parent sets zoom = 0.001)
   useEffect(() => {
     if (zoom === 0.001) fitToContainer();
   }, [zoom, fitToContainer]);
 
-  // Re-center if container resizes
+  // Keep the canvas centered when the container resizes, only when the
+  // canvas comfortably fits inside.
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !initialized) return;
@@ -99,42 +98,87 @@ function Canvas(
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [initialized, zoom, CANVAS_H]);
+  }, [initialized, zoom, CANVAS_W, CANVAS_H]);
 
-  // Wheel zoom (Ctrl/Cmd + wheel)
+  // Wheel: ⌘/Ctrl+wheel zooms (cursor-anchored), bare wheel pans.
+  // Trackpad two-finger scroll naturally produces wheel events with
+  // both deltaX and deltaY, so this gives Figma/Canva-style panning
+  // for free. We always preventDefault so horizontal swipe-to-navigate
+  // (Chrome's two-finger gesture for back/forward) is suppressed
+  // whenever the cursor is over the canvas.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e) => {
-      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * delta));
-      const scale = newZoom / zoom;
-      setOffset((prev) => ({
-        x: mx - (mx - prev.x) * scale,
-        y: my - (my - prev.y) * scale,
-      }));
-      onZoomChange?.(newZoom);
+      if (e.ctrlKey || e.metaKey) {
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * delta));
+        const scale = newZoom / zoom;
+        setOffset((prev) => ({
+          x: mx - (mx - prev.x) * scale,
+          y: my - (my - prev.y) * scale,
+        }));
+        onZoomChange?.(newZoom);
+      } else {
+        // Pan. Hold Shift to lock to horizontal scroll-only mice.
+        const dx = e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX;
+        const dy = e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY;
+        setOffset((prev) => ({ x: prev.x - dx, y: prev.y - dy }));
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoom, onZoomChange]);
 
-  // Middle-mouse / Alt+drag panning
+  // Space-to-pan: holding spacebar + dragging anywhere pans the canvas
+  // (Figma convention). We track the keydown globally on the window so
+  // the user doesn't need to focus the canvas first.
+  useEffect(() => {
+    const isTextField = (target) => {
+      const tag = target?.tagName?.toLowerCase();
+      return tag === "input" || tag === "textarea" || target?.isContentEditable;
+    };
+    const onKeyDown = (e) => {
+      if (e.code === "Space" && !isTextField(e.target)) {
+        if (!isSpaceDown.current) {
+          isSpaceDown.current = true;
+          setSpaceCursor(true);
+        }
+        e.preventDefault();
+      }
+    };
+    const onKeyUp = (e) => {
+      if (e.code === "Space") {
+        isSpaceDown.current = false;
+        setSpaceCursor(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  // Mouse-driven panning: middle button, Alt+drag, or Space+drag.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const onMouseDown = (e) => {
-      if (e.button === 1 || (e.button === 0 && e.altKey)) {
-        e.preventDefault();
-        isPanning.current = true;
-        panStart.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
-        el.style.cursor = "grabbing";
-      }
+      const wantsPan =
+        e.button === 1 ||
+        (e.button === 0 && (e.altKey || isSpaceDown.current));
+      if (!wantsPan) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isPanning.current = true;
+      panStart.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+      el.style.cursor = "grabbing";
     };
     const onMouseMove = (e) => {
       if (!isPanning.current) return;
@@ -159,17 +203,6 @@ function Canvas(
     };
   }, [offset]);
 
-  // Click on empty canvas area → deselect.
-  // The iframe has pointer-events: none so clicks pass through to the
-  // overlay div sibling. We attach the deselect handler to BOTH the
-  // surface div and the elements overlay so any background click works.
-  const onSurfaceMouseDown = useCallback((e) => {
-    if (isPanning.current) return;
-    // Element renderers stopPropagation on their own mousedowns, so any
-    // event reaching here is a background click.
-    onDeselectAll?.();
-  }, [onDeselectAll]);
-
   const srcDoc = html && css
     ? buildStandaloneHtml({
         html,
@@ -182,8 +215,6 @@ function Canvas(
       })
     : null;
 
-  // Screen-space size of the visible canvas (for the outer wrapper that
-  // takes layout space; the inner uses transform scaling).
   const screenW = CANVAS_W * zoom;
   const screenH = CANVAS_H * zoom;
 
@@ -191,9 +222,16 @@ function Canvas(
     <div
       ref={containerRef}
       className="relative flex-1 overflow-hidden"
-      style={{ background: "var(--canvas-bg, #0d0d10)" }}
+      style={{
+        background: "var(--canvas-bg, #0d0d10)",
+        // Stop browsers from interpreting horizontal trackpad swipes
+        // as back/forward navigation while the cursor is over the
+        // canvas — that gesture is reserved for panning here.
+        overscrollBehavior: "contain",
+        touchAction: "none",
+        cursor: spaceCursor ? "grab" : undefined,
+      }}
     >
-      {/* Dot grid background */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -206,8 +244,6 @@ function Canvas(
 
       {initialized && (
         <>
-          {/* Outer wrapper — actual layout box at scaled size, gives
-              the canvas a real footprint on screen for shadow/border. */}
           <div
             style={{
               position: "absolute",
@@ -222,14 +258,9 @@ function Canvas(
               overflow: "hidden",
             }}
             onMouseDown={(e) => {
-              // Only deselect when the click was directly on this wrapper —
-              // otherwise inner elements handle selection themselves.
               if (e.target === e.currentTarget) onDeselectAll?.();
             }}
           >
-            {/* Inner — fixed logical size, scaled with CSS transform.
-                The iframe always sees CANVAS_W × CANVAS_H so clamp/vw
-                resolve to the same value at every zoom level. */}
             <div
               ref={surfaceRef}
               style={{
@@ -305,7 +336,6 @@ function Canvas(
             </div>
           </div>
 
-          {/* Canvas size label */}
           <div
             className="pointer-events-none absolute select-none font-mono text-[10px]"
             style={{
@@ -316,6 +346,15 @@ function Canvas(
           >
             {Math.round(CANVAS_W)} × {Math.round(CANVAS_H)} px · {Math.round(zoom * 100)}%
           </div>
+
+          {/* Pan-mode hint */}
+          {spaceCursor && (
+            <div
+              className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 select-none rounded-full bg-black/70 px-3 py-1 text-[10px] font-medium text-white shadow-lg"
+            >
+              Hold space + drag to pan
+            </div>
+          )}
         </>
       )}
     </div>

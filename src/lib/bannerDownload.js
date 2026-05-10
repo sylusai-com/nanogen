@@ -82,21 +82,98 @@ function getFieldById(fields, id) {
   return (fields || []).find((field) => field?.id === id) || null;
 }
 
+// IMPORTANT: keep this in sync with src/components/builder/ElementRenderer.jsx
+// — the markup the builder renders on screen and the markup baked into
+// previews/downloads MUST be visually identical. Any property added to
+// the editor element styles needs an emit here, otherwise the same
+// banner will look different in the editor vs. the saved preview.
 function renderCanvasElementMarkup(el) {
   if (!el) return "";
   const style = el.style || {};
-  const posStyle = `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;${el.h ? `height:${el.h}%;` : ""}`;
+
+  // Position. Text auto-grows in height, so we deliberately omit height
+  // for text — matches the builder where `h` is not applied to text.
+  const sizeStyle =
+    el.type === "text"
+      ? `width:${el.w}%;`
+      : `width:${el.w}%;${el.h != null ? `height:${el.h}%;` : ""}`;
+  const baseStyle = `position:absolute;left:${el.x}%;top:${el.y}%;${sizeStyle}`;
+  const rotationStyle = el.rotation
+    ? `transform:rotate(${el.rotation}deg);transform-origin:center center;`
+    : "";
+
+  const css = (...parts) => parts.filter(Boolean).join("");
+
   switch (el.type) {
-    case "text":
-      return `<div class="banner__el banner__text" data-id="${el.id}" style="${posStyle}font-size:${style.fontSize||"16px"};font-weight:${style.fontWeight||"400"};color:${style.color||"#fff"};text-align:${style.textAlign||"left"};line-height:${style.lineHeight||1.4}">${escapeHtml(el.content||"")}</div>`;
-    case "rect":
-      return `<div class="banner__el banner__rect" data-id="${el.id}" style="${posStyle}background:${style.background||"#a78bfa"};border-radius:${style.borderRadius||"8px"};opacity:${style.opacity??1}"></div>`;
-    case "button":
-      return `<div class="banner__el banner__button" data-id="${el.id}" style="${posStyle}display:inline-flex;align-items:center;justify-content:center;background:${style.background||"#a78bfa"};color:${style.color||"#fff"};border-radius:${style.borderRadius||"999px"};font-size:${style.fontSize||"14px"};font-weight:${style.fontWeight||"600"}">${escapeHtml(el.content||"Button")}</div>`;
-    case "image":
-      return `<div class="banner__el banner__image" data-id="${el.id}" style="${posStyle}overflow:hidden;border-radius:${style.borderRadius||"8px"}"><img src="${escapeAttr(el.content||"")}" alt="" style="width:100%;height:100%;object-fit:cover"></div>`;
-    case "divider":
-      return `<div class="banner__el banner__divider" data-id="${el.id}" style="${posStyle}height:${style.thickness||"2px"};background:${style.color||"rgba(255,255,255,0.2)"};border-radius:999px"></div>`;
+    case "text": {
+      const textStyle = css(
+        baseStyle,
+        rotationStyle,
+        style.fontFamily ? `font-family:${style.fontFamily};` : "",
+        `font-size:${style.fontSize || "16px"};`,
+        `font-weight:${style.fontWeight || "400"};`,
+        `color:${style.color || "#ffffff"};`,
+        `text-align:${style.textAlign || "left"};`,
+        `line-height:${style.lineHeight || "1.4"};`,
+        style.letterSpacing ? `letter-spacing:${style.letterSpacing};` : "",
+        // Match the editor's inline rendering (auto-wrap, preserve breaks).
+        "white-space:pre-wrap;word-break:break-word;",
+      );
+      return `<div class="banner__el banner__text" data-id="${el.id}" style="${textStyle}">${escapeHtml(el.content || "")}</div>`;
+    }
+    case "rect": {
+      const rectStyle = css(
+        baseStyle,
+        rotationStyle,
+        `background:${style.background || "#a78bfa"};`,
+        `border-radius:${style.borderRadius || "8px"};`,
+        `opacity:${style.opacity ?? 1};`,
+        style.border ? `border:${style.border};` : "",
+        style.boxShadow ? `box-shadow:${style.boxShadow};` : "",
+        style.filter ? `filter:${style.filter};` : "",
+      );
+      return `<div class="banner__el banner__rect" data-id="${el.id}" style="${rectStyle}"></div>`;
+    }
+    case "button": {
+      const btnStyle = css(
+        baseStyle,
+        rotationStyle,
+        "display:flex;align-items:center;justify-content:center;",
+        "padding:0 12px;",
+        style.fontFamily ? `font-family:${style.fontFamily};` : "",
+        `background:${style.background || "#a78bfa"};`,
+        `color:${style.color || "#ffffff"};`,
+        `border-radius:${style.borderRadius || "999px"};`,
+        `font-size:${style.fontSize || "14px"};`,
+        `font-weight:${style.fontWeight || "600"};`,
+        style.letterSpacing ? `letter-spacing:${style.letterSpacing};` : "",
+        style.border ? `border:${style.border};` : "",
+        style.boxShadow ? `box-shadow:${style.boxShadow};` : "",
+        "white-space:nowrap;",
+      );
+      return `<div class="banner__el banner__button" data-id="${el.id}" style="${btnStyle}">${escapeHtml(el.content || "Button")}</div>`;
+    }
+    case "image": {
+      const wrapStyle = css(
+        baseStyle,
+        rotationStyle,
+        "overflow:hidden;",
+        `border-radius:${style.borderRadius || "8px"};`,
+        style.boxShadow ? `box-shadow:${style.boxShadow};` : "",
+        style.filter ? `filter:${style.filter};` : "",
+      );
+      return `<div class="banner__el banner__image" data-id="${el.id}" style="${wrapStyle}"><img src="${escapeAttr(el.content || "")}" alt="" style="width:100%;height:100%;object-fit:cover"></div>`;
+    }
+    case "divider": {
+      const dividerStyle = css(
+        `position:absolute;left:${el.x}%;top:${el.y}%;width:${el.w}%;`,
+        rotationStyle,
+        `height:${style.thickness || "2px"};`,
+        `background:${style.color || "rgba(255,255,255,0.2)"};`,
+        "border-radius:999px;",
+      );
+      return `<div class="banner__el banner__divider" data-id="${el.id}" style="${dividerStyle}"></div>`;
+    }
     default:
       return "";
   }

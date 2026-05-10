@@ -24,7 +24,6 @@ function Canvas(
     fields,
     alignment,
     hiddenSlots,
-    hideAllSlots = false,
     onSelectElement,
     onUpdateElement,
     onDeselectAll,
@@ -178,8 +177,7 @@ function Canvas(
         fields: fields || [],
         alignment: alignment || "left",
         title: "preview",
-        hideSlots: !!hideAllSlots,
-        hiddenSlots: hideAllSlots ? null : hiddenSlots,
+        hiddenSlots,
         subjectImageUrl: subjectImageUrl || null,
       })
     : null;

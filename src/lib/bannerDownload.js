@@ -372,19 +372,23 @@ export function buildCompositeStandaloneHtml({
   background = "#0c0c10",
 }) {
   const hasOverlay = elements.length > 0;
-  // Slots are intentionally NOT hidden when an overlay exists — keeping
-  // every AI-generated decoration visible (orbs, eyebrow chips, version
-  // tags, feature pills, trust avatars) is what makes the rendering
-  // identical in the list view, the detail view, the builder, and
-  // every download format. Canvas elements layer on top as additions.
+  // Hydrated template elements carry a `slot` reference back to the
+  // [data-slot] node they were extracted from. We hide those specific
+  // slots in the iframe template so the canvas overlay doesn't paint
+  // the same headline twice. Decorative chrome (eyebrow chips, orbs,
+  // ribbons) stays visible.
+  const hiddenSlots = elements
+    .map((el) => el?.slot || (String(el?.id || "").startsWith("template:") ? String(el.id).slice("template:".length) : null))
+    .filter(Boolean);
   const baseDoc = html && css
-    ? buildStandaloneHtml({ html, css, fields, alignment, title, subjectImageUrl })
+    ? buildStandaloneHtml({ html, css, fields, alignment, title, subjectImageUrl, hiddenSlots })
     : buildStandaloneHtml({
         ...buildTemplateFromCanvas({ elements: [], background, aspect, fields }),
         fields,
         alignment,
         title,
         subjectImageUrl,
+        hiddenSlots,
       });
 
   const shellStyle = `position:relative;width:100%;height:100%;overflow:hidden;`;

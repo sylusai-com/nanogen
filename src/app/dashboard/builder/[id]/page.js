@@ -6,7 +6,7 @@ import {
 import Link from "next/link";
 import {
   ArrowLeft, Check, ChevronDown, Download,
-  Loader2, Save, Maximize2, ZoomIn,
+  Loader2, Save,
 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
@@ -69,6 +69,12 @@ export default function BuilderPage({ params }) {
   const [selectedId,  setSelectedId]  = useState(null);
   const [editingId,   setEditingId]   = useState(null);   // inline text edit
   const [zoom,        setZoom]        = useState(0.6);
+  // Slot hydration: when the AI template ships with [data-slot] text spans,
+  // we convert them into real canvas elements on first iframe load. After
+  // hydration the iframe hides only those slots that became canvas
+  // elements — decorative chrome (orbs, eyebrow chips, ribbons) stays
+  // visible. Tracked per-banner via ref to survive iframe srcdoc updates.
+  const hydratedForRef = useRef(null);
 
   // ── Template / fields state ───────────────────────────────────────────────
   const [template,   setTemplate]   = useState(null);
@@ -237,6 +243,10 @@ export default function BuilderPage({ params }) {
         const hasEls  = Array.isArray(stored?.elements) && stored.elements.length > 0;
         const fieldBg = (b?.fields || []).find((f) => f.id === "bg")?.value;
         const initBg  = stored?.background || fieldBg || "#0c0c10";
+        // Re-hydrate template slots only when the saved canvas is empty.
+        // If the user has already worked on this banner (any saved elements,
+        // template or custom) we leave them alone.
+        hydratedForRef.current = hasEls ? (b?.id || id) : null;
         startTransition(() => {
           setBackground(initBg);
           setElements(hasEls ? stored.elements : []);
@@ -343,14 +353,45 @@ export default function BuilderPage({ params }) {
     setAlignment(a);
   }, [recordHistory]);
 
+  // ── Slot hydration on iframe load ────────────────────────────────────────
+  // Walks the rendered template's [data-slot] spans, pulls their position
+  // and computed styles, and converts each one into a canvas element. After
+  // hydration the iframe hides every data-slot so the canvas elements are
+  // the single source of truth for editable text/buttons.
+  const handleIframeLoad = useCallback((iframe) => {
+    if (!iframe || !banner) return;
+    if (hydratedForRef.current === banner.id) return;
+    if (!template?.html || !template?.css) return;
+
+    const doc = iframe.contentDocument;
+    if (!doc) return;
+
+    let extracted = [];
+    try {
+      extracted = extractEditableComponentsFromDocument(doc, { fields }) || [];
+    } catch {
+      extracted = [];
+    }
+
+    hydratedForRef.current = banner.id;
+    if (extracted.length === 0) return;
+
+    // Replace empty canvas with the hydrated template elements so each
+    // editable text/button shows up in the Layers panel as a normal
+    // canvas element. The iframe will start hiding these slots on its
+    // next render (computed from element.slot in the parent).
+    setElements(extracted);
+  }, [banner, template?.html, template?.css, fields]);
+
+  // List of slot ids the iframe should hide (because they're now real
+  // canvas elements). Recomputed every render from the current elements.
+  const hiddenSlots = elements
+    .map((el) => el?.slot || (String(el?.id || "").startsWith("template:") ? String(el.id).slice("template:".length) : null))
+    .filter(Boolean);
+
   // ── Zoom helpers ──────────────────────────────────────────────────────────
-  const fitToScreen = useCallback(() => {
-    // Trigger Canvas internal fit by resetting zoom to sentinel
-    setZoom((z) => z); // canvas re-centers on mount; trigger via key workaround
-    // We re-trigger fit by briefly setting a special value then restoring
-    setZoom(0.001);
-    setTimeout(() => setZoom(0.001), 0);
-  }, []);
+  // Canvas listens for the 0.001 sentinel and re-fits to its container.
+  const fitToScreen = useCallback(() => setZoom(0.001), []);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const onSave = async () => {
@@ -545,7 +586,7 @@ export default function BuilderPage({ params }) {
         canRedo={canRedo}
         zoom={zoom}
         onZoomChange={setZoom}
-        onFitToScreen={() => setZoom(0.001)}
+        onFitToScreen={fitToScreen}
         onZoom100={() => setZoom(1)}
       />
 
@@ -574,8 +615,10 @@ export default function BuilderPage({ params }) {
           css={template?.css}
           fields={fields}
           alignment={alignment}
+          hiddenSlots={hiddenSlots}
           zoom={zoom}
           onZoomChange={setZoom}
+          onIframeLoad={handleIframeLoad}
           onSelectElement={(eid) => { setSelectedId(eid); setEditingId(null); }}
           onUpdateElement={updateElement}
           onDeselectAll={() => { setSelectedId(null); setEditingId(null); }}

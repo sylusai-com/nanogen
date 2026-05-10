@@ -308,6 +308,7 @@ function LayersTab({ elements, selectedId, onSelect, onMoveUp, onMoveDown }) {
         const realIdx = elements.length - 1 - ri;
         const Icon = TYPE_ICON[el.type] || SquareIcon;
         const isSelected = el.id === selectedId;
+        const fromTemplate = String(el.id || "").startsWith("template:");
         return (
           <div
             key={el.id}
@@ -328,8 +329,16 @@ function LayersTab({ elements, selectedId, onSelect, onMoveUp, onMoveDown }) {
             <span className="flex-1 truncate capitalize">
               {el.content
                 ? String(el.content).slice(0, 18) + (String(el.content).length > 18 ? "…" : "")
-                : el.type}
+                : (el.slot || el.type)}
             </span>
+            {fromTemplate && (
+              <span
+                title="From template"
+                className="shrink-0 rounded bg-primary/10 px-1 py-0 text-[8px] font-semibold uppercase tracking-widest text-primary"
+              >
+                T
+              </span>
+            )}
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 type="button"

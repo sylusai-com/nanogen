@@ -592,7 +592,7 @@ export default function BuilderPage({ params }) {
 
       {/* ── Three-column layout ───────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: elements/layers/upload panel */}
+        {/* Left: elements/background/layers/upload panel */}
         <LeftPanel
           elements={elements}
           selectedId={selectedId}
@@ -602,6 +602,8 @@ export default function BuilderPage({ params }) {
           onMoveUp={(idx) => moveLayer(idx, 1)}
           onMoveDown={(idx) => moveLayer(idx, -1)}
           onBackgroundChange={changeBackground}
+          fields={fields}
+          onFieldChange={onFieldChange}
         />
 
         {/* Center: infinite canvas */}

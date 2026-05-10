@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Edit3,
   Loader2,
   PenTool,
   RefreshCcw,
@@ -193,24 +192,18 @@ export default function BannerDetail({ params }) {
             <Card elevated className="p-5">
               <h3 className="text-sm font-semibold tracking-tight">Actions</h3>
               <div className="mt-3 space-y-2">
-                {/* Primary: editor and builder. Stack on narrow phones,
-                    side-by-side on slightly wider screens. */}
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button
-                    href={`/dashboard/banners/${banner.id}/edit`}
-                    variant="primary"
-                    leftIcon={<Edit3 className="h-3.5 w-3.5" />}
-                  >
-                    Edit fields
-                  </Button>
-                  <Button
-                    href={`/dashboard/builder/${banner.id}`}
-                    variant="secondary"
-                    leftIcon={<PenTool className="h-3.5 w-3.5" />}
-                  >
-                    Open in builder
-                  </Button>
-                </div>
+                {/* Primary: open the builder. The builder hosts every
+                    field-editing surface (text, colors, media, advanced,
+                    layout) plus the canvas-style overlay editor in one
+                    place — there's no longer a separate fields-only view. */}
+                <Button
+                  href={`/dashboard/builder/${banner.id}`}
+                  variant="primary"
+                  className="w-full"
+                  leftIcon={<PenTool className="h-3.5 w-3.5" />}
+                >
+                  Open in builder
+                </Button>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <DownloadMenu

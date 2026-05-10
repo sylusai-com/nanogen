@@ -118,7 +118,7 @@ function extractStyleBlock(docHtml) {
 
 // Build the full HTML document the iframe would have shown, with the
 // patched field values applied to the markup and the chosen alignment set.
-export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, subjectImageUrl = null }) {
+export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, hiddenSlots = null, subjectImageUrl = null }) {
   let cssOut = css || "";
   const renderFields = normalizeRenderFields(fields, subjectImageUrl);
   const forcedSubjectBg = wrapImageUrl(subjectImageUrl);
@@ -226,6 +226,9 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
 
   if (hideSlots) {
     cssOut += `\n\n[data-slot] { visibility: hidden !important; pointer-events: none !important; }\n[data-slot] * { visibility: hidden !important; }\n`;
+  } else if (Array.isArray(hiddenSlots) && hiddenSlots.length > 0) {
+    const sel = hiddenSlots.map((s) => `[data-slot="${String(s).replace(/"/g, '\\"')}"]`).join(",\n");
+    cssOut += `\n\n${sel} { visibility: hidden !important; pointer-events: none !important; }\n${hiddenSlots.map((s) => `[data-slot="${String(s).replace(/"/g, '\\"')}"] *`).join(",\n")} { visibility: hidden !important; }\n`;
   }
 
   let htmlOut = html || "";
@@ -446,10 +449,12 @@ export function extractEditableComponentsFromDocument(doc, { fields = [] } = {})
       return {
         id: `template:${slot}`,
         type,
+        slot,
         x: ((rect.left - rootRect.left) / rootRect.width) * 100,
         y: ((rect.top - rootRect.top) / rootRect.height) * 100,
         w: (rect.width / rootRect.width) * 100,
         h: type === "text" ? null : (rect.height / rootRect.height) * 100,
+        rotation: 0,
         content: getFieldTextValue(field) || node.textContent?.trim() || "",
         style: {
           color: computed?.color || "#ffffff",

@@ -13,7 +13,13 @@ import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
 import EmptyData from "@/components/ui/EmptyData";
 import { getBanner, updateBanner } from "@/lib/db/banners";
-import { buildCompositeStandaloneHtml, rasterize, rasterizeToPdf, triggerDownload } from "@/lib/bannerDownload";
+import {
+  buildCompositeStandaloneHtml,
+  rasterize,
+  rasterizeToPdf,
+  triggerDownload,
+  extractEditableComponentsFromDocument,
+} from "@/lib/bannerDownload";
 
 import Canvas      from "@/components/builder/Canvas";
 import CanvaToolbar from "@/components/builder/Toolbar";

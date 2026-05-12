@@ -22,6 +22,7 @@ export default function DashboardCreate() {
   const [modelErrors, setModelErrors] = useState([]);
   const [currentStep, setCurrentStep] = useState(null);
   const [stepsCompleted, setStepsCompleted] = useState([]);
+  const [stepsSkipped, setStepsSkipped] = useState([]);
   const [generationError, setGenerationError] = useState(null);
 
   const pollGenerationStatus = useCallback(async (jobId, maxAttempts = 120) => {
@@ -36,18 +37,26 @@ export default function DashboardCreate() {
           throw new Error(data.error || `Status request failed (${res.status})`);
         }
 
+        // Refresh step state on EVERY poll tick (not just at completion)
+        // so the timeline ticks/crosses appear in real time as the backend
+        // advances rather than all-at-once at the end.
+        if (Array.isArray(data.stepsCompleted)) {
+          setStepsCompleted(data.stepsCompleted);
+        }
+        if (Array.isArray(data.stepsSkipped)) {
+          setStepsSkipped(data.stepsSkipped);
+        }
+        if (data.currentStep) {
+          setCurrentStep(data.currentStep);
+        }
+
         if (data.status === "completed") {
           setGenerationDone(true);
-          setStepsCompleted(Array.isArray(data.stepsCompleted) ? data.stepsCompleted : []);
           return data;
         }
 
         if (data.status === "failed") {
           throw new Error(data.error || "Generation failed");
-        }
-
-        if (data.currentStep) {
-          setCurrentStep(data.currentStep);
         }
 
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -70,6 +79,7 @@ export default function DashboardCreate() {
     setModelErrors([]);
     setCurrentStep(GenerationSteps.UPLOAD_IMAGES);
     setStepsCompleted([]);
+    setStepsSkipped([]);
 
     try {
       const res = await fetch("/api/banners", {
@@ -89,7 +99,12 @@ export default function DashboardCreate() {
           const generation = await pollGenerationStatus(data.jobId);
           const banner = generation?.banner;
           setGenerationDone(true);
-          setStepsCompleted(Array.isArray(generation?.stepsCompleted) ? generation.stepsCompleted : []);
+          if (Array.isArray(generation?.stepsCompleted)) {
+            setStepsCompleted(generation.stepsCompleted);
+          }
+          if (Array.isArray(generation?.stepsSkipped)) {
+            setStepsSkipped(generation.stepsSkipped);
+          }
           invalidateTags(["banners", "generation_results"]);
 
           const jobModelErrors = generation?.results?.modelErrors || [];
@@ -160,6 +175,7 @@ export default function DashboardCreate() {
     setGenerationDone(false);
     setCurrentStep(null);
     setStepsCompleted([]);
+    setStepsSkipped([]);
     setGenerationError(null);
   };
 
@@ -218,11 +234,12 @@ export default function DashboardCreate() {
         )}
 
         {submitting ? (
-          <GenerationProgress 
-            aspect={submittedAspect} 
-            done={generationDone} 
+          <GenerationProgress
+            aspect={submittedAspect}
+            done={generationDone}
             currentStep={currentStep}
             stepsCompleted={stepsCompleted}
+            stepsSkipped={stepsSkipped}
             error={generationError}
             onCancel={handleCancel}
           />

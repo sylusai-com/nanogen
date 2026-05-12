@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle, X as XIcon } from "lucide-react";
 import Card from "@/components/ui/Card";
 import { GenerationSteps } from "@/lib/bannerGeneration";
 
@@ -20,15 +20,21 @@ const STEP_PCTS = [0, 15, 30, 45, 60, 75, 85, 95];
 // here (not derived from GenerationJobSteps insertion order) because we
 // also need to skip steps the live route doesn't run (e.g. the orchestrator-
 // only GENERATE_BACKGROUND stage).
+//
+// fetch_bg_image runs LATE in the pipeline now: the model writes its CSS-
+// only design first, the classifier labels it, and only then do we try to
+// fetch a matching photographic background. If the providers + AI image
+// fallback all return nothing, the step is marked skipped and the model's
+// own design ships.
 const STEP_ORDER = [
   "upload_images",
   "analyze_reference",
   "analyze_subject",
   "enhance_prompt",
-  "fetch_bg_image",
   "parallel_models",
   "score_banners",
   "detect_category",
+  "fetch_bg_image",
   "save_banner",
 ];
 const STEP_LIST = STEP_ORDER
@@ -67,6 +73,7 @@ export default function GenerationProgress({
   done = false,
   currentStep = null,
   stepsCompleted = [],
+  stepsSkipped = [],
   error = null,
   onCancel = null,
 }) {
@@ -85,6 +92,16 @@ export default function GenerationProgress({
     () => new Set((stepsCompleted || []).map((s) => s?.step || s?.name || s?.id)),
     [stepsCompleted],
   );
+  // Skip reasons keyed by step name — so we can both render the cross icon
+  // AND show the explanation as a tooltip on hover.
+  const skippedMap = useMemo(() => {
+    const m = new Map();
+    for (const s of stepsSkipped || []) {
+      const key = s?.step || s?.name || s?.id;
+      if (key) m.set(key, s?.reason || null);
+    }
+    return m;
+  }, [stepsSkipped]);
 
   // Derive the bar from the step's position in the execution order rather
   // than its embedded progress number. The orchestrator's progress values
@@ -172,12 +189,22 @@ export default function GenerationProgress({
           </div>
         )}
 
-        {/* Steps — clean vertical list */}
+        {/* Steps — clean vertical list. Four states per row:
+            ✓  completed — backend recorded this step in stepsCompleted
+            ✗  skipped   — backend marked it via job.markStepSkipped()
+            ◌  active    — backend's currentStep matches this row
+            ·  pending   — hasn't been reached yet
+        */}
         <ol className="space-y-0">
           {STEP_LIST.map((step, idx) => {
-            const isComplete = done || (completedSet.has(step.name) && currentStep?.name !== step.name);
-            const isActive = !done && currentStep?.name === step.name;
-            const isPending = !isComplete && !isActive;
+            const skipReason = skippedMap.get(step.name);
+            const isSkipped = skipReason !== undefined;
+            const isComplete = !isSkipped && (
+              done
+                ? !isSkipped // when done, everything not skipped is complete
+                : (completedSet.has(step.name) && currentStep?.name !== step.name)
+            );
+            const isActive = !done && !isSkipped && currentStep?.name === step.name;
             const isLast = idx === STEP_LIST.length - 1;
 
             return (
@@ -187,25 +214,31 @@ export default function GenerationProgress({
                   {/* Dot */}
                   <div
                     className={cn(
-                      "relative z-10 mt-3 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ring-4",
+                      "relative z-10 mt-3 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ring-4 transition-colors duration-300",
                       isComplete
                         ? "bg-primary ring-[color-mix(in_oklab,var(--primary)_15%,transparent)]"
                         : isActive
                         ? "bg-background ring-[color-mix(in_oklab,var(--primary)_20%,transparent)] border-2 border-primary"
+                        : isSkipped
+                        ? "bg-surface-2 ring-[color-mix(in_oklab,var(--muted)_15%,transparent)] border border-muted/40"
                         : "bg-surface-2 ring-transparent border border-border",
                     )}
+                    title={isSkipped && skipReason ? skipReason : undefined}
                   >
                     {isComplete && <CheckCircle2 className="h-2.5 w-2.5 text-primary-fg" />}
                     {isActive && (
                       <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                     )}
+                    {isSkipped && <XIcon className="h-2.5 w-2.5 text-muted" strokeWidth={2.5} />}
                   </div>
-                  {/* Connector line */}
+                  {/* Connector line. Stays bright (primary) once any step
+                      past this row has run — completed OR skipped both
+                      count as "we got past it". */}
                   {!isLast && (
                     <div
                       className={cn(
                         "mt-1 w-px flex-1 mb-1 rounded-full transition-colors duration-500",
-                        isComplete ? "bg-primary/30" : "bg-border",
+                        (isComplete || isSkipped) ? "bg-primary/30" : "bg-border",
                       )}
                     />
                   )}
@@ -220,11 +253,19 @@ export default function GenerationProgress({
                         ? "text-muted line-through decoration-muted/40"
                         : isActive
                         ? "font-medium text-foreground"
+                        : isSkipped
+                        ? "text-muted/70 line-through decoration-muted/40"
                         : "text-muted/60",
                     )}
+                    title={isSkipped && skipReason ? skipReason : undefined}
                   >
                     {step.label}
                   </p>
+                  {isSkipped && skipReason && (
+                    <p className="mt-0.5 text-[10px] leading-tight text-muted/60">
+                      Skipped — {skipReason}
+                    </p>
+                  )}
                 </div>
               </li>
             );

@@ -539,7 +539,7 @@ function ensureBgImageField(template) {
 // dashboard) as the bg_image value, overriding whatever the model emitted.
 // We always wrap with url(...) so the CSS variable resolves cleanly, and
 // degrade gracefully when no subject image is provided.
-function applySubjectImage(template, subjectImage) {
+export function applySubjectImage(template, subjectImage) {
   if (!template?.fields) return template;
   if (!subjectImage || typeof subjectImage !== "string") return template;
   const trimmed = subjectImage.trim();
@@ -570,7 +570,7 @@ function applySubjectImage(template, subjectImage) {
 // composited on top of the bg without overwriting it. When only one of
 // the two is provided, the other is left as `none` and the existing
 // rendering logic still works.
-function applyLayeredImages(template, { backgroundImage, subjectImage }) {
+export function applyLayeredImages(template, { backgroundImage, subjectImage }) {
   if (!template?.fields) return template;
   const next = { ...template, fields: template.fields.map((f) => ({ ...f })) };
 

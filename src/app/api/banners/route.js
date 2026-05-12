@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  applyLayeredImages,
+  applySubjectImage,
   bgFromTemplate,
   deriveTitle,
   generateBannerTemplate,
@@ -238,8 +240,20 @@ async function performBannerGeneration(job, userId, payload) {
     //   • Subject background removal (provider chain → local fallback)
     // Running them concurrently shaves the longest-pole request off
     // the wall-clock time, which matters because each call is ~2-4s.
-    job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
-    job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
+    // Each analysis is only run when its image was actually uploaded. The
+    // unused step is marked skipped (rendered as a strike-through cross on
+    // the timeline) so the user can see the pipeline didn't stall — it
+    // just had nothing to analyse.
+    if (refImageUrl) {
+      job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
+    } else {
+      job.markStepSkipped(GenerationJobSteps.ANALYZE_REFERENCE, "no reference image uploaded");
+    }
+    if (subjImageUrl) {
+      job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
+    } else {
+      job.markStepSkipped(GenerationJobSteps.ANALYZE_SUBJECT, "no subject image uploaded");
+    }
 
     const [referenceContext, subjectContext, cutoutResult] = await Promise.all([
       refImageUrl
@@ -306,91 +320,16 @@ async function performBannerGeneration(job, userId, payload) {
     }
     const subjectImageForGeneration = cleanedSubjectDataUrl || subjImageUrl || subjectImage;
 
-    // Step 4: Fetch background image. The pipeline tries cheap photo
-    // providers (Unsplash / Pexels / Pixabay) first when one is configured
-    // and only falls back to AI image generation if no provider is
-    // available or every provider fails. We skip bg fetching only when a
-    // subject is provided AND its background was *not* removed — in that
-    // case the original subject already carries its own bg, so a stock
-    // photo behind it would clash. When the subject is a transparent
-    // cutout, fetching a bg is encouraged so the cutout has something
-    // photographic to sit on.
-    job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
+    // Photographic background fetching has MOVED to after model generation
+    // and category detection (see "Step 6c" below). The text model writes
+    // a CSS-only banner first; only once we know the detected category /
+    // style do we query admin-configured providers and (if they fail) the
+    // AI image model. If neither produces a usable image, the banner
+    // ships with the model's own CSS design intact.
     let aiBackgroundImage = null;
     let storedBackgroundImage = null;
     let aiBackgroundError = null;
     let aiBackgroundModel = null;
-
-    const subjectIsCutout = !!cleanedSubjectDataUrl;
-    const shouldFetchBg = !subjectImage || subjectIsCutout;
-    if (shouldFetchBg) {
-      // Run three independent setup tasks in parallel:
-      //   1. LLM-driven search query (concrete nouns, vendor-friendly)
-      //   2. List of enabled stock-photo providers
-      //   3. Image-model resolution (for the AI fallback)
-      // Each costs an API/DB round-trip; doing them concurrently shaves
-      // ~1-2s off the bg step.
-      const [bgQuery, providersList, imageModelList] = await Promise.all([
-        buildBackgroundQuery({ adminClient, brief: enhancedBrief, referenceContext, subjectContext: placedSubjectContext }),
-        listBgImageProviders(adminClient).catch(() => []),
-        listImageModelsWithSecrets(adminClient).catch(() => []),
-      ]);
-      const providerResult = await tryProviderBackground({
-        providers: providersList,
-        category: bgQuery.category,
-        query: bgQuery.query,
-      });
-      if (providerResult?.dataUrl) {
-        aiBackgroundImage = providerResult.dataUrl;
-        aiBackgroundModel = {
-          modelId: providerResult.providerName,
-          modelLabel: providerResult.providerName,
-          provider: providerResult.source,
-          credit: providerResult.credit,
-        };
-      } else if (providerResult?.error) {
-        aiBackgroundError = providerResult.error;
-      }
-
-      if (!aiBackgroundImage) {
-        const imageModel = imageModelList.find((m) => pickApiKey(m)) || null;
-        if (imageModel) {
-          const result = await generateBannerBackground({
-            imageModel,
-            brief: enhancedBrief,
-            style,
-            aspect,
-            referenceContext,
-            subjectContext: placedSubjectContext,
-          });
-          if (result?.dataUrl) {
-            aiBackgroundImage = result.dataUrl;
-            aiBackgroundModel = {
-              modelId: result.modelId,
-              modelLabel: result.modelLabel,
-              provider: result.provider,
-            };
-            // Once we have an AI image, the provider error (if any) is
-            // no longer relevant — clear it so the UI doesn't show a
-            // confusing "stock photo failed" warning beside a working bg.
-            aiBackgroundError = null;
-          } else if (result?.error) {
-            aiBackgroundError = result.error;
-          }
-        }
-      }
-
-      if (aiBackgroundImage && aiBackgroundImage.startsWith("data:")) {
-        storedBackgroundImage = await storeBannerImageAsset({
-          dataUrl: aiBackgroundImage,
-          userId,
-          jobId: job.jobId,
-        }).catch(() => null);
-        if (storedBackgroundImage) {
-          aiBackgroundImage = storedBackgroundImage;
-        }
-      }
-    }
 
     // Step 5: Generate from all enabled models in parallel
     job.setStep(GenerationJobSteps.PARALLEL_MODELS);
@@ -435,6 +374,10 @@ async function performBannerGeneration(job, userId, payload) {
     // Generate all variants in parallel. Pass the cleaned cutout (when
     // bg-removal succeeded) so analysis and rendering use the same
     // bytes; fall back to the stored subject URL otherwise.
+    // Generate without a photographic backgroundImage — every text model
+    // emits its own CSS-only background first. If the bg-fetch step below
+    // returns a usable image, we layer it onto the WINNER post-hoc; if it
+    // doesn't, the model's design ships unchanged.
     const settled = await Promise.allSettled(
       plan.map(({ model, variantSeed }) =>
         generateBannerTemplate({
@@ -447,19 +390,12 @@ async function performBannerGeneration(job, userId, payload) {
           referenceContextText,
           subjectContextText: placedSubjectContextText || subjectContextText,
           subjectImage: subjectImageForGeneration,
-          backgroundImage: aiBackgroundImage,
+          backgroundImage: null,
         }),
       ),
     );
 
     const modelErrors = [];
-    if (aiBackgroundError) {
-      modelErrors.push({
-        modelId: null,
-        modelLabel: "image-bg",
-        reason: aiBackgroundError,
-      });
-    }
 
     const variants = settled.map((s, i) => {
       const planned = plan[i];
@@ -531,6 +467,142 @@ async function performBannerGeneration(job, userId, payload) {
       subjectContext: placedSubjectContext,
       sampleBanner: { html: template.html, css: template.css },
     });
+
+    // Step 6c: Fetch a photographic background NOW (after the model has
+    // shown what it wants and the classifier has labelled the result).
+    // Order of attempts:
+    //   1. Admin-configured stock providers from /admin/bg-image-providers
+    //      — Unsplash, Pexels, Pixabay, etc. — queried with the LLM-built
+    //      search phrase and the detected category. Tried in DB order;
+    //      first hit wins.
+    //   2. AI image-generation fallback (image models from /admin/models)
+    //      with the enriched brief + detected style.
+    // If nothing returns a usable image, fetch_bg_image is marked SKIPPED
+    // and the winner ships with its CSS-only background untouched.
+    //
+    // We do NOT fetch a bg when the user supplied a subject image whose
+    // background was not removed — the subject already carries its own
+    // scene and a stock photo behind it would clash.
+    const subjectIsCutout = !!cleanedSubjectDataUrl;
+    const shouldFetchBg = !subjectImage || subjectIsCutout;
+
+    if (shouldFetchBg) {
+      job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
+
+      const [bgQuery, providersList, imageModelList] = await Promise.all([
+        buildBackgroundQuery({
+          adminClient,
+          brief: enhancedBrief,
+          referenceContext,
+          subjectContext: placedSubjectContext,
+        }).then((q) => ({
+          ...q,
+          // Prefer the detector's category over the bg-query LLM's guess —
+          // the detector has the rendered HTML/CSS as evidence, the query
+          // LLM only has the brief.
+          category: detection.category && detection.category !== "other"
+            ? detection.category
+            : q.category,
+        })),
+        listBgImageProviders(adminClient).catch(() => []),
+        listImageModelsWithSecrets(adminClient).catch(() => []),
+      ]);
+
+      // 1. Admin-configured stock providers.
+      const providerResult = await tryProviderBackground({
+        providers: providersList,
+        category: bgQuery.category,
+        query: bgQuery.query,
+      });
+      if (providerResult?.dataUrl) {
+        aiBackgroundImage = providerResult.dataUrl;
+        aiBackgroundModel = {
+          modelId: providerResult.providerName,
+          modelLabel: providerResult.providerName,
+          provider: providerResult.source,
+          credit: providerResult.credit,
+        };
+      } else if (providerResult?.error) {
+        aiBackgroundError = providerResult.error;
+      }
+
+      // 2. AI image-gen fallback (only if no provider returned an image).
+      if (!aiBackgroundImage) {
+        const imageModel = imageModelList.find((m) => pickApiKey(m)) || null;
+        if (imageModel) {
+          const result = await generateBannerBackground({
+            imageModel,
+            brief: enhancedBrief,
+            style: style || detection.style || null,
+            aspect,
+            referenceContext,
+            subjectContext: placedSubjectContext,
+          });
+          if (result?.dataUrl) {
+            aiBackgroundImage = result.dataUrl;
+            aiBackgroundModel = {
+              modelId: result.modelId,
+              modelLabel: result.modelLabel,
+              provider: result.provider,
+            };
+            aiBackgroundError = null;
+          } else if (result?.error) {
+            aiBackgroundError = result.error;
+          }
+        }
+      }
+
+      // Inline data URIs are heavy in DB rows and cache layers; store the
+      // image in Supabase storage and swap to the public URL.
+      if (aiBackgroundImage && aiBackgroundImage.startsWith("data:")) {
+        storedBackgroundImage = await storeBannerImageAsset({
+          dataUrl: aiBackgroundImage,
+          userId,
+          jobId: job.jobId,
+        }).catch(() => null);
+        if (storedBackgroundImage) {
+          aiBackgroundImage = storedBackgroundImage;
+        }
+      }
+
+      if (!aiBackgroundImage) {
+        job.markStepSkipped(
+          GenerationJobSteps.FETCH_BG_IMAGE,
+          aiBackgroundError || "no provider or image model produced a background",
+        );
+        if (aiBackgroundError) {
+          modelErrors.push({
+            modelId: null,
+            modelLabel: "image-bg",
+            reason: aiBackgroundError,
+          });
+        }
+      }
+    } else {
+      job.markStepSkipped(
+        GenerationJobSteps.FETCH_BG_IMAGE,
+        "subject image already provides a full background",
+      );
+    }
+
+    // If the fetch succeeded, layer the bg onto the WINNER template only
+    // (other candidates stay as-is — they're cheap variants kept for the
+    // user to inspect). When a subject is also present we route bg →
+    // bg_image and subject → subject_image via applyLayeredImages; when
+    // there is no subject we route bg → bg_image via applySubjectImage.
+    let appliedTemplate = template;
+    if (aiBackgroundImage) {
+      const hasSubject = !!subjectImageForGeneration;
+      appliedTemplate = hasSubject
+        ? applyLayeredImages(template, {
+            backgroundImage: aiBackgroundImage,
+            subjectImage: subjectImageForGeneration,
+          })
+        : applySubjectImage(template, aiBackgroundImage);
+      // Keep the winner reference in sync so all downstream writes see the
+      // mutated fields/css/html.
+      winner.template = appliedTemplate;
+    }
 
     // Step 7: Save to database
     job.setStep(GenerationJobSteps.SAVE_BANNER);

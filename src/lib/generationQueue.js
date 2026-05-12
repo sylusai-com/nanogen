@@ -36,8 +36,14 @@ export class GenerationJob {
     this.currentStep = GenerationJobSteps.UPLOAD_IMAGES;
     this.progress = 0;
     
-    // Tracking
+    // Tracking. `stepsCompleted` records every step that actually ran; the
+    // UI ticks those. `stepsSkipped` records steps the pipeline decided to
+    // skip (e.g. analyze_reference when no reference image was uploaded,
+    // fetch_bg_image when no providers returned a result). The UI renders
+    // those as a struck-through cross so the user can see WHY the timeline
+    // skipped past them rather than wondering if it stalled.
     this.stepsCompleted = [];
+    this.stepsSkipped = [];
     this.error = null;
     this.errorDetails = null;
     this.results = {};
@@ -74,6 +80,18 @@ export class GenerationJob {
     });
   }
 
+  // Record a step the pipeline chose NOT to run. The step is not marked
+  // active or complete — it just shows on the timeline with a cross so the
+  // user understands why the bar moved past it.
+  markStepSkipped(step, reason = null) {
+    this.stepsSkipped.push({
+      step: step.name,
+      label: step.label,
+      reason: reason || null,
+      skippedAt: Date.now(),
+    });
+  }
+
   setError(error, details = null) {
     this.error = error;
     this.errorDetails = details;
@@ -100,6 +118,7 @@ export class GenerationJob {
       currentStep: this.currentStep,
       progress: this.progress,
       stepsCompleted: this.stepsCompleted,
+      stepsSkipped: this.stepsSkipped,
       error: this.error,
       errorDetails: this.errorDetails,
       results: this.results,

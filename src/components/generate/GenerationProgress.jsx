@@ -14,8 +14,26 @@ function aspectClass(a) {
 }
 
 const STEP_MS = 8000;
-const STEP_PCTS = [0, 20, 40, 60, 80, 90];
-const STEP_LIST = Object.values(GenerationSteps);
+const STEP_PCTS = [0, 15, 30, 45, 60, 75, 85, 95];
+
+// Step order matches the live /api/banners execution order. Authoritative
+// here (not derived from GenerationJobSteps insertion order) because we
+// also need to skip steps the live route doesn't run (e.g. the orchestrator-
+// only GENERATE_BACKGROUND stage).
+const STEP_ORDER = [
+  "upload_images",
+  "analyze_reference",
+  "analyze_subject",
+  "enhance_prompt",
+  "fetch_bg_image",
+  "parallel_models",
+  "score_banners",
+  "detect_category",
+  "save_banner",
+];
+const STEP_LIST = STEP_ORDER
+  .map((name) => Object.values(GenerationSteps).find((s) => s.name === name))
+  .filter(Boolean);
 
 function useSteppedProgress({ done = false } = {}) {
   const [pct, setPct] = useState(STEP_PCTS[0]);
@@ -68,7 +86,18 @@ export default function GenerationProgress({
     [stepsCompleted],
   );
 
-  const statusPercent = done ? 100 : currentStep?.progress || display;
+  // Derive the bar from the step's position in the execution order rather
+  // than its embedded progress number. The orchestrator's progress values
+  // are non-monotonic across the live pipeline (DETECT_CATEGORY=80 fires
+  // *after* SCORE_BANNERS=90), so using positional progress keeps the bar
+  // moving forward visibly regardless of the underlying values.
+  const stepIdx = currentStep
+    ? STEP_LIST.findIndex((s) => s.name === currentStep.name)
+    : -1;
+  const positional = stepIdx >= 0
+    ? Math.round(((stepIdx + 1) / STEP_LIST.length) * 100)
+    : display;
+  const statusPercent = done ? 100 : positional;
   const activeLabel = done ? "Banner ready" : currentStep?.label || "Preparing your banner…";
 
   return (

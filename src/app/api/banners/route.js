@@ -45,6 +45,10 @@ import {
 } from "@/lib/server/security";
 
 import { createJob, GenerationJobSteps } from "@/lib/generationQueue";
+import {
+  enhancePrompt,
+  detectCategoryAndStyle,
+} from "@/lib/bannerGeneration";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -254,6 +258,29 @@ async function performBannerGeneration(job, userId, payload) {
     const referenceContextText = formatReferenceContextForPrompt(referenceContext);
     const subjectContextText = formatSubjectContextForPrompt(subjectContext);
 
+    // Step 2b: Enhance the brief using both contexts. One LLM call rewrites
+    // the user's prompt with the reference image's mood/palette/motifs and
+    // the subject image's framing/placement, AND returns the placement
+    // decision (where the subject sits, whether to reserve clean space).
+    // Best-effort — falls back to the original prompt if the model is
+    // unavailable. The enriched brief flows into both the bg-prompt and
+    // the per-model generation calls below so every stage sees the same
+    // composition guidance.
+    job.setStep(GenerationJobSteps.ENHANCE_PROMPT);
+    const enhancement = await enhancePrompt({
+      adminClient,
+      userPrompt: prompt,
+      aspectRatio: aspect,
+      style,
+      referenceContext,
+      subjectContext,
+    });
+    const enhancedBrief = enhancement.brief || prompt;
+    const placedSubjectContext = subjectContext
+      ? { ...subjectContext, placement: enhancement.placement || subjectContext.placement }
+      : null;
+    const placedSubjectContextText = formatSubjectContextForPrompt(placedSubjectContext);
+
     // Persist the cutout (when one was produced) and swap the subject
     // URL we'll send downstream to point at it.
     let cleanedSubjectDataUrl = null;
@@ -304,7 +331,7 @@ async function performBannerGeneration(job, userId, payload) {
       // Each costs an API/DB round-trip; doing them concurrently shaves
       // ~1-2s off the bg step.
       const [bgQuery, providersList, imageModelList] = await Promise.all([
-        buildBackgroundQuery({ adminClient, brief: prompt, referenceContext, subjectContext }),
+        buildBackgroundQuery({ adminClient, brief: enhancedBrief, referenceContext, subjectContext: placedSubjectContext }),
         listBgImageProviders(adminClient).catch(() => []),
         listImageModelsWithSecrets(adminClient).catch(() => []),
       ]);
@@ -330,11 +357,11 @@ async function performBannerGeneration(job, userId, payload) {
         if (imageModel) {
           const result = await generateBannerBackground({
             imageModel,
-            brief: prompt,
+            brief: enhancedBrief,
             style,
             aspect,
             referenceContext,
-            subjectContext,
+            subjectContext: placedSubjectContext,
           });
           if (result?.dataUrl) {
             aiBackgroundImage = result.dataUrl;
@@ -412,13 +439,13 @@ async function performBannerGeneration(job, userId, payload) {
       plan.map(({ model, variantSeed }) =>
         generateBannerTemplate({
           supabase,
-          prompt,
+          prompt: enhancedBrief,
           style,
           aspect,
           variantSeed,
           textModel: model,
           referenceContextText,
-          subjectContextText,
+          subjectContextText: placedSubjectContextText || subjectContextText,
           subjectImage: subjectImageForGeneration,
           backgroundImage: aiBackgroundImage,
         }),
@@ -490,6 +517,20 @@ async function performBannerGeneration(job, userId, payload) {
     }
 
     const template = winner.template;
+
+    // Step 6b: Classify the winning banner. Runs on the highest-scoring
+    // candidate's HTML/CSS so the metadata reflects what the user will
+    // actually see. Persisted alongside the banner row so dashboards and
+    // future regenerations can filter / theme by category/style/mood.
+    // Best-effort — empty defaults when the model is unavailable.
+    job.setStep(GenerationJobSteps.DETECT_CATEGORY);
+    const detection = await detectCategoryAndStyle({
+      adminClient,
+      brief: enhancedBrief,
+      referenceContext,
+      subjectContext: placedSubjectContext,
+      sampleBanner: { html: template.html, css: template.css },
+    });
 
     // Step 7: Save to database
     job.setStep(GenerationJobSteps.SAVE_BANNER);
@@ -607,6 +648,13 @@ async function performBannerGeneration(job, userId, payload) {
       modelErrors,
       passedThreshold: winner.score >= SCORE_THRESHOLD,
       score: winner.score,
+      enhancement: {
+        brief: enhancedBrief,
+        reserveSpace: enhancement.reserveSpace,
+        placement: enhancement.placement,
+        reasoning: enhancement.reasoning,
+      },
+      detection,
     };
 
     // Complete job with results

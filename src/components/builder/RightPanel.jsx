@@ -22,7 +22,7 @@ export default function RightPanel({
   const [tab, setTab] = useState("properties");
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-l border-border bg-surface/70 backdrop-blur">
+    <aside className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-surface/70 backdrop-blur">
       {/* Tab bar */}
       <div className="flex shrink-0 items-center border-b border-border px-2 pt-2">
         {TABS.map((t) => (
@@ -43,19 +43,19 @@ export default function RightPanel({
         ))}
       </div>
 
-      {/* Scrollable content */}
+      {/* Scrollable content. The Fields tab no longer wraps the EditorPanel
+          in extra padding — the panel renders edge-to-edge inside this 288px
+          column to maximise input width and avoid double framing. */}
       <div className="flex-1 overflow-y-auto">
         {tab === "properties" ? (
           <PropertiesPanel element={element} onChange={onChange} />
         ) : (
-          <div className="p-3">
-            <EditorPanel
-              fields={fields}
-              alignment={alignment}
-              onFieldChange={onFieldChange}
-              onAlignmentChange={onAlignmentChange}
-            />
-          </div>
+          <EditorPanel
+            fields={fields}
+            alignment={alignment}
+            onFieldChange={onFieldChange}
+            onAlignmentChange={onAlignmentChange}
+          />
         )}
       </div>
     </aside>

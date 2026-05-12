@@ -262,7 +262,7 @@ const VALID_PLACEMENTS = new Set([
   "bottom-band", "background-fill", "corner-accent", "none",
 ]);
 
-async function enhancePrompt({
+export async function enhancePrompt({
   adminClient,
   userPrompt,
   aspectRatio,
@@ -400,7 +400,7 @@ const VALID_CATEGORIES = new Set([
   "nature", "art", "other",
 ]);
 
-async function detectCategoryAndStyle({
+export async function detectCategoryAndStyle({
   adminClient,
   brief,
   referenceContext,

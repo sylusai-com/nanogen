@@ -173,7 +173,7 @@ export default function ImageField({ field, onChange, allFields = [] }) {
   const isDataUri = draft.startsWith("data:");
 
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-surface-2/40 p-4">
+    <div className="space-y-3 rounded-lg border border-border bg-surface-2/40 p-3 min-w-0">
       <Label className="flex items-center gap-1.5 text-xs">
         <ImageIcon className="h-3 w-3" />
         {field.label}

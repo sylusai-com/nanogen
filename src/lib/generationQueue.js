@@ -4,15 +4,25 @@
 
 const jobQueue = new Map();
 
-// 7-step generation workflow
+// Generation workflow steps.
+//
+// The original 7-step ladder (ids 1–7) is consumed by the live
+// /api/banners pipeline; ids and progress values for those entries are
+// load-bearing and must not change. Ids 8–10 are additions used by the
+// new orchestrator in lib/bannerGeneration.js (prompt enhancement,
+// post-gen category detection, AI-generated background). They are
+// optional — callers that don't run those stages simply skip them.
 export const GenerationJobSteps = {
-  UPLOAD_IMAGES: { id: 1, name: "upload_images", label: "Validating reference & subject images", progress: 15 },
-  ANALYZE_REFERENCE: { id: 2, name: "analyze_reference", label: "Analyzing reference image", progress: 30 },
-  ANALYZE_SUBJECT: { id: 3, name: "analyze_subject", label: "Analyzing subject image", progress: 45 },
-  FETCH_BG_IMAGE: { id: 4, name: "fetch_bg_image", label: "Finding background image", progress: 55 },
-  PARALLEL_MODELS: { id: 5, name: "parallel_models", label: "Generating from all AI models", progress: 75 },
-  SCORE_BANNERS: { id: 6, name: "score_banners", label: "Scoring & selecting best", progress: 90 },
-  SAVE_BANNER: { id: 7, name: "save_banner", label: "Saving to database", progress: 100 },
+  UPLOAD_IMAGES:       { id: 1,  name: "upload_images",       label: "Validating reference & subject images", progress: 15 },
+  ANALYZE_REFERENCE:   { id: 2,  name: "analyze_reference",   label: "Analyzing reference image",             progress: 30 },
+  ANALYZE_SUBJECT:     { id: 3,  name: "analyze_subject",     label: "Analyzing subject image",               progress: 45 },
+  FETCH_BG_IMAGE:      { id: 4,  name: "fetch_bg_image",      label: "Finding background image",              progress: 55 },
+  PARALLEL_MODELS:     { id: 5,  name: "parallel_models",     label: "Generating from all AI models",         progress: 75 },
+  SCORE_BANNERS:       { id: 6,  name: "score_banners",       label: "Scoring & selecting best",              progress: 90 },
+  SAVE_BANNER:         { id: 7,  name: "save_banner",         label: "Saving to database",                    progress: 100 },
+  ENHANCE_PROMPT:      { id: 8,  name: "enhance_prompt",      label: "Enhancing brief and deciding layout",   progress: 50 },
+  DETECT_CATEGORY:     { id: 9,  name: "detect_category",     label: "Classifying category and style",        progress: 80 },
+  GENERATE_BACKGROUND: { id: 10, name: "generate_background", label: "Generating matching background",        progress: 87 },
 };
 
 export class GenerationJob {

@@ -1,238 +1,46 @@
 // src/lib/bannerGeneration.js
 //
-// Isolated banner-generation orchestrator. Implements the seven-stage spec:
+// Two LLM helpers the /api/banners pipeline uses to implement the
+// orchestration spec without inflating the route handler:
 //
-//   1. Input handling          — validate prompt / aspect / images / models
-//   2. Parallel image analysis — extractReference + extractSubject in parallel
-//   3. Prompt enhancement      — LLM rewrites the brief using both contexts
-//   4. Subject placement       — emitted alongside the enhanced brief
-//   5. Banner generation       — fan-out across text models via composeBannerMessages
-//   6. Category & style        — post-generation classification
-//   7. Background (optional)   — generateBannerBackground when needed
+//   enhancePrompt          → spec steps 3 + 4 (intelligent prompt
+//                            enhancement + subject placement decision).
+//                            One LLM call rewrites the brief using the
+//                            reference + subject contexts and returns the
+//                            placement decision.
 //
-// Scoring and DB persistence are LEFT TO THE CALLER. This module returns
-// the candidates + context + detection + optional background so a route
-// can decide how to score, persist, and shape the response.
+//   detectCategoryAndStyle → spec step 6 (post-generation classification
+//                            of the winning banner — category, theme,
+//                            style, mood, needsExternalBackground).
 //
-// Best-effort stages (analysis, enhancement, detection, background) all
-// degrade gracefully to deterministic fallbacks when the LLM is missing
-// or returns junk. The only hard failures are missing required inputs
-// and "all text models failed to produce a candidate".
+// Both are best-effort: they fall back to deterministic shapes when the
+// default text model is unconfigured or returns junk, so the route never
+// hard-fails on a classification error.
+//
+// `GenerationSteps` is re-exported from the job queue so UI consumers can
+// pull every step constant from one place. The orchestration spec's seven
+// steps are mapped 1:1 onto the step IDs in lib/generationQueue.js.
 
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
 import { GenerationJobSteps } from "@/lib/generationQueue";
 import {
-  extractReferenceImageContext,
-  extractSubjectImageContext,
   formatReferenceContextForPrompt,
   formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
-import { composeBannerMessages, getActivePrompts } from "@/lib/prompts";
-import { generateBannerBackground } from "@/lib/imageGen";
 import { pickApiKey, pickEndpoint } from "@/lib/bannerTemplate";
 import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
 
 export { GenerationJobSteps as GenerationSteps };
 
-// Top-level orchestrator.
-//
-// `models` is an array of model rows (already loaded with secrets) — the
-// caller is responsible for resolving them so this module stays decoupled
-// from DB shape. `imageModel` is optional; supply it to enable AI background
-// generation in step 7.
-//
-// `onProgress(step)` and `job.setStep(step)` are both supported; pass
-// whichever your caller already speaks. Either may be omitted.
-export async function generateBannerSequentially(
-  {
-    prompt,
-    referenceImageUrl = null,
-    subjectImageUrl = null,
-    aspectRatio,
-    style = null,
-    models,
-    imageModel = null,
-    supabase = null,
-    adminClient,
-    userId = null,
-  },
-  onProgress = null,
-  job = null,
-) {
-  // ── Step 1: input handling ──────────────────────────────────────────────
-  if (typeof prompt !== "string" || prompt.trim().length === 0) {
-    throw new Error("prompt is required");
-  }
-  if (!Array.isArray(models) || models.length === 0) {
-    throw new Error("at least one model is required");
-  }
-  if (!adminClient) {
-    throw new Error("adminClient is required (used for vision and prompt loading)");
-  }
-
-  setStep(onProgress, job, GenerationJobSteps.UPLOAD_IMAGES);
-  const [referenceImage, subjectImage] = await Promise.all([
-    referenceImageUrl ? validateImageUrl(referenceImageUrl) : Promise.resolve(null),
-    subjectImageUrl   ? validateImageUrl(subjectImageUrl)   : Promise.resolve(null),
-  ]);
-  setResult(job, { referenceImage, subjectImage });
-
-  // ── Step 2: parallel image analysis ────────────────────────────────────
-  setStep(onProgress, job, GenerationJobSteps.ANALYZE_REFERENCE);
-  const [referenceContext, subjectContext] = await Promise.all([
-    referenceImageUrl
-      ? extractReferenceImageContext({ adminClient, imageUrl: referenceImageUrl }).catch(() => null)
-      : Promise.resolve(null),
-    subjectImageUrl
-      ? extractSubjectImageContext({ adminClient, imageUrl: subjectImageUrl }).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-  setStep(onProgress, job, GenerationJobSteps.ANALYZE_SUBJECT);
-  setResult(job, { referenceContext, subjectContext });
-
-  // ── Step 3 + 4: intelligent prompt enhancement + placement decision ────
-  setStep(onProgress, job, GenerationJobSteps.ENHANCE_PROMPT);
-  const enhancement = await enhancePrompt({
-    adminClient,
-    userPrompt: prompt,
-    aspectRatio,
-    style,
-    referenceContext,
-    subjectContext,
-  });
-  setResult(job, { enhancement });
-
-  // The placement decision flows into TWO places:
-  //   (a) the subject context handed to the text model (so headline / CTAs
-  //       avoid the subject's focal area)
-  //   (b) the image-gen call below (so the AI background reserves negative
-  //       space on the correct side)
-  const placedSubjectContext = subjectContext
-    ? { ...subjectContext, placement: enhancement.placement || subjectContext.placement }
-    : null;
-
-  // ── Step 5: banner generation (parallel across text models) ────────────
-  setStep(onProgress, job, GenerationJobSteps.PARALLEL_MODELS);
-  const prompts = await getActivePrompts(adminClient);
-
-  const settled = await Promise.all(
-    models.map((m) =>
-      generateFromTextModel({
-        modelRow: m,
-        prompts,
-        brief: enhancement.brief,
-        style,
-        aspect: aspectRatio,
-        referenceContext,
-        subjectContext: placedSubjectContext,
-      }).catch((err) => ({
-        error: err?.message || String(err),
-        modelSlug: m.slug,
-        modelLabel: m.label,
-      })),
-    ),
-  );
-
-  const candidates = settled.filter((r) => !r.error);
-  const modelErrors = settled.filter((r) => r.error);
-  if (candidates.length === 0) {
-    const first = modelErrors[0]?.error || "all text models failed";
-    throw new Error(`Banner generation failed: ${first}`);
-  }
-  setResult(job, { candidates, modelErrors });
-
-  // ── Step 6: category & style detection ─────────────────────────────────
-  setStep(onProgress, job, GenerationJobSteps.DETECT_CATEGORY);
-  const detection = await detectCategoryAndStyle({
-    adminClient,
-    brief: enhancement.brief,
-    referenceContext,
-    subjectContext,
-    sampleBanner: candidates[0],
-  });
-  setResult(job, { detection });
-
-  // ── Step 7: optional background generation ─────────────────────────────
-  // Generate ONLY when both the brief and the detector agree that an
-  // external photographic background would improve the result, AND the
-  // caller has supplied an image model. Otherwise the CSS-only background
-  // emitted by the text model carries the design — saves a provider call
-  // and avoids overwriting an already-coherent banner.
-  let background = null;
-  const shouldGenerateBackground =
-    !!imageModel &&
-    (enhancement.needsBackground || detection.needsExternalBackground);
-
-  if (shouldGenerateBackground) {
-    setStep(onProgress, job, GenerationJobSteps.GENERATE_BACKGROUND);
-    const result = await generateBannerBackground({
-      imageModel,
-      brief: enhancement.brief,
-      style: style || detection.style || null,
-      aspect: aspectRatio,
-      referenceContext,
-      subjectContext: placedSubjectContext,
-    });
-    background = result?.dataUrl ? result : null;
-    setResult(job, { background });
-  }
-
-  return {
-    success: true,
-    enhancedPrompt: enhancement.brief,
-    placement: {
-      reserveSpace: enhancement.reserveSpace,
-      placement: enhancement.placement,
-      reasoning: enhancement.reasoning,
-    },
-    referenceContext,
-    subjectContext: placedSubjectContext,
-    detection,
-    background,
-    candidates,
-    modelErrors,
-    userId,
-    supabase,
-  };
-}
-
 // ──────────────────────────────────────────────────────────────────────────
-// Helpers
+// enhancePrompt — spec steps 3 + 4
 // ──────────────────────────────────────────────────────────────────────────
 
-function setStep(onProgress, job, step) {
-  if (typeof onProgress === "function") onProgress(step);
-  if (job && typeof job.setStep === "function") job.setStep(step);
-}
-
-function setResult(job, patch) {
-  if (job && job.results && typeof job.results === "object") {
-    Object.assign(job.results, patch);
-  }
-}
-
-// Data URIs are valid by construction (we control upload); only remote URLs
-// get a HEAD probe so we fail fast on broken / forbidden hosts before
-// spending tokens on vision analysis.
-async function validateImageUrl(url) {
-  if (typeof url !== "string" || !url) return null;
-  if (url.startsWith("data:")) return { url, valid: true, dataUri: true };
-  try {
-    const res = await fetch(url, { method: "HEAD" });
-    if (!res.ok) throw new Error(`HEAD ${res.status}`);
-    return {
-      url,
-      valid: true,
-      size: res.headers.get("content-length"),
-      type: res.headers.get("content-type"),
-    };
-  } catch (e) {
-    throw new Error(`Invalid image URL: ${e.message}`);
-  }
-}
-
-// Enrich brief + decide placement + decide whether to generate a background.
-// One LLM call does all three so they stay consistent with each other.
+// One LLM call does three things at once so they stay consistent with each
+// other: enrich the brief, decide subject placement, decide whether a
+// photographic background should be fetched. Splitting these would let
+// the answers drift apart (e.g. enriched copy promising a sunset photo
+// while the placement step thinks no bg is needed).
 const ENHANCE_SYSTEM = `You are a senior design director. Given a marketing-banner brief plus optional analyses of a reference image and a subject image, you do three things at once:
 
 1. ENRICH the brief into a single tight paragraph (≤120 words) that:
@@ -325,62 +133,15 @@ export async function enhancePrompt({
   }
 }
 
-// One text-model invocation. Uses prompts.js's composeBannerMessages so the
-// emitted HTML/CSS stays compatible with every downstream validator
-// (data-slot, color contrast, bg_image field, etc.).
-async function generateFromTextModel({
-  modelRow,
-  prompts,
-  brief,
-  style,
-  aspect,
-  referenceContext,
-  subjectContext,
-}) {
-  const apiKey   = pickApiKey(modelRow);
-  const endpoint = pickEndpoint(modelRow);
-  if (!apiKey) {
-    throw new Error(`No API key configured for model "${modelRow.label || modelRow.slug}"`);
-  }
+// ──────────────────────────────────────────────────────────────────────────
+// detectCategoryAndStyle — spec step 6
+// ──────────────────────────────────────────────────────────────────────────
 
-  const referenceContextText = formatReferenceContextForPrompt(referenceContext);
-  const subjectContextText   = formatSubjectContextForPrompt(subjectContext);
-
-  const messages = composeBannerMessages({
-    prompts,
-    brief,
-    style,
-    aspect,
-    referenceContextText,
-    subjectContextText,
-  });
-
-  const { content } = await callOpenRouter({
-    apiKey,
-    endpoint: endpoint || undefined,
-    model: modelRow.modelId,
-    jsonMode: true,
-    temperature: 0.7,
-    maxTokens: 4096,
-    messages,
-  });
-
-  const parsed = extractJson(content);
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Model "${modelRow.label || modelRow.slug}" returned invalid JSON`);
-  }
-
-  return {
-    ...parsed,
-    modelId:    modelRow.modelId,
-    modelSlug:  modelRow.slug,
-    modelLabel: modelRow.label,
-    provider:   modelRow.provider,
-  };
-}
-
-// Post-generation classifier. Reads brief + a sample candidate's HTML/CSS to
-// produce metadata for the saved banner and to seed the background prompt.
+// Reads brief + the winner's HTML/CSS to produce metadata used by two
+// downstream stages:
+//   • the bg-fetch step picks providers / queries by category
+//   • the saved banner row carries category + theme + style + mood as
+//     dashboard / regenerate filters
 const DETECT_SYSTEM = `You are a brand strategist classifying a generated marketing banner. Given the brief and (optionally) the rendered banner's HTML/CSS, return ONLY this JSON:
 
 {

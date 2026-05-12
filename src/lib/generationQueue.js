@@ -6,12 +6,12 @@ const jobQueue = new Map();
 
 // Generation workflow steps.
 //
-// The original 7-step ladder (ids 1–7) is consumed by the live
-// /api/banners pipeline; ids and progress values for those entries are
-// load-bearing and must not change. Ids 8–10 are additions used by the
-// new orchestrator in lib/bannerGeneration.js (prompt enhancement,
-// post-gen category detection, AI-generated background). They are
-// optional — callers that don't run those stages simply skip them.
+// Ids and progress values for the original 7-step ladder (ids 1–7) are
+// load-bearing — they were minted before the spec's new stages and many
+// dashboards still read those exact progress numbers. Ids 8–9 cover the
+// spec additions (intelligent prompt enhancement, post-gen category
+// detection). Steps can be marked `skipped` rather than `completed`
+// when the pipeline doesn't actually run them on a given request.
 export const GenerationJobSteps = {
   UPLOAD_IMAGES:       { id: 1,  name: "upload_images",       label: "Validating reference & subject images", progress: 15 },
   ANALYZE_REFERENCE:   { id: 2,  name: "analyze_reference",   label: "Analyzing reference image",             progress: 30 },
@@ -22,7 +22,6 @@ export const GenerationJobSteps = {
   SAVE_BANNER:         { id: 7,  name: "save_banner",         label: "Saving to database",                    progress: 100 },
   ENHANCE_PROMPT:      { id: 8,  name: "enhance_prompt",      label: "Enhancing brief and deciding layout",   progress: 50 },
   DETECT_CATEGORY:     { id: 9,  name: "detect_category",     label: "Classifying category and style",        progress: 80 },
-  GENERATE_BACKGROUND: { id: 10, name: "generate_background", label: "Generating matching background",        progress: 87 },
 };
 
 export class GenerationJob {

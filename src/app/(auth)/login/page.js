@@ -24,7 +24,7 @@ function LoginForm() {
   const { signIn, supabase } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  const next = params.get("next") || "/dashboard/banners";
   // Surfaced to the user — populated by /auth/callback when OAuth fails
   // (provider denied consent, code exchange errored, etc).
   const callbackError = params.get("error");

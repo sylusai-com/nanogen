@@ -572,6 +572,7 @@ async function performBannerGeneration(job, userId, payload) {
           dataUrl: aiBackgroundImage,
           userId,
           jobId: job.jobId,
+          adminClient,
           kind: "bg",
         }).catch(() => null);
         if (storedBackgroundImage) {

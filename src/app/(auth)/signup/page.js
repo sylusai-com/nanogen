@@ -44,7 +44,7 @@ export default function SignupPage() {
         .select("role")
         .eq("id", user.id)
         .maybeSingle();
-      router.push(profile?.role === "admin" ? "/admin" : "/dashboard");
+      router.push(profile?.role === "admin" ? "/admin" : "/dashboard/banners");
     } catch (e) {
       setError(e?.message || "Sign-up failed");
     } finally {

@@ -9,8 +9,9 @@ import { createClient } from "@/lib/supabase/server";
 //   2. Honour `?next=…` if the caller passed one through (the SocialAuth
 //      button forwards the original /login?next=… target).
 //   3. If no `next` is provided, route admins to /admin and everyone else
-//      to /dashboard — keeps OAuth role-routing consistent with the
-//      email/password path.
+//      to /dashboard/banners — keeps OAuth role-routing consistent with
+//      the email/password path. Normal users land on the create+gallery
+//      hub (their primary workspace), not the bare /dashboard shell.
 //   4. On error (provider denied, code exchange failed, OAuth provider
 //      reported `error_description`), redirect to /login with a readable
 //      message so the user isn't left on a blank page.
@@ -57,7 +58,7 @@ export async function GET(request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  let destination = "/dashboard";
+  let destination = "/dashboard/banners";
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")

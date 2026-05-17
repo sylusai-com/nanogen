@@ -173,7 +173,23 @@ export async function POST(req) {
         const changeRequest = prompt;
         const originalBrief = String(prior.prompt || "").trim();
         if (originalBrief) {
-          prompt = `ORIGINAL BRIEF: ${originalBrief}\n\nREGENERATION INSTRUCTIONS (apply these changes while keeping the original brief's intent): ${changeRequest}`.slice(0, 4000);
+          // Strip any prior regeneration framing from the saved brief so
+          // it doesn't compound across regenerations (chains of
+          // "ORIGINAL BRIEF: ORIGINAL BRIEF: …" pollute the prompt).
+          const cleanOriginal = originalBrief
+            .replace(/^ORIGINAL BRIEF:\s*/i, "")
+            .replace(/\n+REGENERATION INSTRUCTIONS[^]*$/i, "")
+            .trim();
+          // Compact format. The previous wrapper read like an editing
+          // task ("apply these changes while keeping the original
+          // intent") and models — especially on 1:1 — interpreted it as
+          // "tweak the existing layout", producing tiny centered
+          // content with large empty bands. This version reads as a
+          // SINGLE fresh-banner brief with an explicit emphasis on the
+          // change, so the per-aspect guidance in the system prompt
+          // ("inner content fills nearly the full width") still kicks
+          // in and the canvas is filled.
+          prompt = `${cleanOriginal}\n\nUPDATED DIRECTION (apply these and produce a complete, fresh banner that fills the full ${aspect} canvas): ${changeRequest}`.slice(0, 4000);
         }
       }
     }

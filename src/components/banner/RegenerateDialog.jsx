@@ -40,8 +40,13 @@ const SUGGESTIONS = [
 ];
 
 export default function RegenerateDialog({ banner, open, onClose }) {
+  const router = useRouter();
   // Generation state — outlives the dialog itself so the popup keeps
-  // running after the dialog closes.
+  // running after the dialog closes. Submit + polling live HERE (not
+  // inside DialogBody) so closing the dialog mid-flight doesn't unmount
+  // the running closure — that bug surfaced as "Job not found" in the
+  // popup because the polling fetch races and re-runs in dev hot
+  // reload while the closure has already been torn down.
   const [gen, setGen] = useState({
     open: false,
     aspect: "16:9",
@@ -52,7 +57,79 @@ export default function RegenerateDialog({ banner, open, onClose }) {
     error: null,
     successTitle: null,
     targetUrl: null,
+    banner: null,
   });
+
+  const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const res = await fetch(`/api/generation-status/${jobId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
+      setGen((s) => ({
+        ...s,
+        currentStep: data.currentStep || s.currentStep,
+        stepsCompleted: Array.isArray(data.stepsCompleted) ? data.stepsCompleted : s.stepsCompleted,
+        stepsSkipped: Array.isArray(data.stepsSkipped) ? data.stepsSkipped : s.stepsSkipped,
+      }));
+      if (data.status === "completed") return data;
+      if (data.status === "failed") throw new Error(data.error || "Regeneration failed");
+      await new Promise((r) => setTimeout(r, 800));
+    }
+    throw new Error("Regeneration timed out");
+  }, []);
+
+  // The submit handler the dialog form calls — defined HERE (parent)
+  // so it survives the dialog closing mid-flight.
+  const runRegeneration = useCallback(async ({ prompt, modelSlug }) => {
+    if (!banner) return { ok: false, error: "No banner to regenerate" };
+    setGen({
+      open: true,
+      aspect: banner.aspect || "16:9",
+      currentStep: GenerationSteps.UPLOAD_IMAGES,
+      stepsCompleted: [],
+      stepsSkipped: [],
+      done: false,
+      error: null,
+      successTitle: null,
+      targetUrl: null,
+      banner: null,
+    });
+
+    try {
+      const res = await fetch("/api/banners", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          regenerateFromId: banner.id,
+          aspect: banner.aspect,
+          style: banner.style || null,
+          model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (!data.jobId) throw new Error("Server did not return a job ID");
+
+      const generation = await pollGeneration(data.jobId);
+      invalidateTags(["banners", "generation_results", `banner:${banner.id}`]);
+
+      const next = generation?.banner;
+      setGen((s) => ({
+        ...s,
+        done: true,
+        currentStep: null,
+        successTitle: next?.title || null,
+        targetUrl: next?.id ? `/dashboard/banners/${next.id}/edit` : null,
+        banner: next || null,
+      }));
+      return { ok: true, banner: next };
+    } catch (err) {
+      const message = err?.message || "Regeneration failed";
+      setGen((s) => ({ ...s, error: message }));
+      return { ok: false, error: message };
+    }
+  }, [banner, pollGeneration]);
 
   return (
     <>
@@ -60,22 +137,7 @@ export default function RegenerateDialog({ banner, open, onClose }) {
         <DialogBody
           banner={banner}
           onClose={onClose}
-          onStart={(aspect) =>
-            setGen({
-              open: true,
-              aspect: aspect || "16:9",
-              currentStep: GenerationSteps.UPLOAD_IMAGES,
-              stepsCompleted: [],
-              stepsSkipped: [],
-              done: false,
-              error: null,
-              successTitle: null,
-              targetUrl: null,
-            })
-          }
-          onStep={(patch) => setGen((s) => ({ ...s, ...patch }))}
-          onComplete={(payload) => setGen((s) => ({ ...s, ...payload, done: true, currentStep: null }))}
-          onFailure={(message) => setGen((s) => ({ ...s, error: message }))}
+          onSubmit={runRegeneration}
         />
       )}
 
@@ -88,19 +150,19 @@ export default function RegenerateDialog({ banner, open, onClose }) {
         done={gen.done}
         error={gen.error}
         successTitle={gen.successTitle}
+        banner={gen.banner}
         onCancel={() => setGen((s) => ({ ...s, open: false }))}
         onDismiss={() => {
           const target = gen.targetUrl;
           setGen((s) => ({ ...s, open: false }));
-          if (target) window.location.assign(target);
+          if (target) router.push(target);
         }}
       />
     </>
   );
 }
 
-function DialogBody({ banner, onClose, onStart, onStep, onComplete, onFailure }) {
-  const router = useRouter();
+function DialogBody({ banner, onClose, onSubmit }) {
   const { supabase } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [modelSlug, setModelSlug] = useState("auto");
@@ -127,64 +189,23 @@ function DialogBody({ banner, onClose, onStart, onStep, onComplete, onFailure })
     return () => document.removeEventListener("keydown", onKey);
   }, [submitting, onClose]);
 
-  const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const res = await fetch(`/api/generation-status/${jobId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
-      onStep({
-        currentStep: data.currentStep || null,
-        stepsCompleted: Array.isArray(data.stepsCompleted) ? data.stepsCompleted : [],
-        stepsSkipped: Array.isArray(data.stepsSkipped) ? data.stepsSkipped : [],
-      });
-      if (data.status === "completed") return data;
-      if (data.status === "failed") throw new Error(data.error || "Regeneration failed");
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    throw new Error("Regeneration timed out");
-  }, [onStep]);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!prompt.trim() || submitting) return;
     setSubmitting(true);
     setError(null);
 
-    onStart(banner.aspect);
-    // Close the dialog immediately. The floating popup takes over for
-    // progress so the user can keep looking at the current banner.
+    // Close the dialog immediately. The parent's onSubmit (defined in
+    // RegenerateDialog, not here) holds the polling closure so it
+    // survives this unmount — that's the fix for the "Job not found"
+    // popup the old version produced.
     onClose?.();
 
-    try {
-      const res = await fetch("/api/banners", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: prompt.trim(),
-          regenerateFromId: banner.id,
-          aspect: banner.aspect,
-          style: banner.style || null,
-          model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (!data.jobId) throw new Error("Server did not return a job ID");
-
-      const generation = await pollGeneration(data.jobId);
-      invalidateTags(["banners", "generation_results", `banner:${banner.id}`]);
-
-      const next = generation?.banner;
-      onComplete({
-        successTitle: next?.title || null,
-        targetUrl: next?.id ? `/dashboard/banners/${next.id}/edit` : null,
-      });
-      if (next?.id) router.push(`/dashboard/banners/${next.id}/edit`);
-    } catch (err) {
-      onFailure(err?.message || "Regeneration failed");
-      setError(err?.message || "Regeneration failed");
-      setSubmitting(false);
-    }
+    // Hand off to the parent and let it own polling + navigation.
+    // Awaiting here is fine even though DialogBody is about to unmount;
+    // setState after unmount is a no-op in React 19, and the parent
+    // tracks the actual lifecycle of the popup.
+    await onSubmit({ prompt, modelSlug });
   };
 
   return (

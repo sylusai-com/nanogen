@@ -2,7 +2,16 @@
 // Centralized banner generation job queue with step-by-step progress tracking
 // Sequential workflow: Image validation → Analysis → BG fetch → Parallel models → Scoring → Save
 
-const jobQueue = new Map();
+// The queue lives on globalThis so it survives module re-imports during
+// dev hot-reload. Without this, editing any file that transitively
+// imports this module would replace `jobQueue = new Map()` with a fresh
+// empty Map — and any in-flight job created by POST /api/banners would
+// vanish before the next GET /api/generation-status poll could find it
+// ("Job not found"). The symptom showed up most often during regenerate
+// flows because they touch more components (RegenerateDialog +
+// GenerationPopup + BannerPreview) and so trigger a recompile more
+// readily than the simple create flow.
+const jobQueue = globalThis.__nanogen_jobQueue || (globalThis.__nanogen_jobQueue = new Map());
 
 // Generation workflow steps.
 //
@@ -167,16 +176,21 @@ export function deleteJob(jobId) {
 const CLEANUP_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
 const JOB_RETENTION_MS = 10 * 60 * 1000; // Keep for 10 minutes
 
-setInterval(() => {
-  const now = Date.now();
-  const toDelete = [];
-  
-  for (const [jobId, job] of jobQueue.entries()) {
-    if ((job.status === "completed" || job.status === "failed") && 
-        now - job.completedAt > JOB_RETENTION_MS) {
-      toDelete.push(jobId);
+// Guard against double-registering the interval across hot reloads — the
+// queue itself is on globalThis so each reload would otherwise stack
+// another timer on top of the previous one.
+if (!globalThis.__nanogen_jobQueueCleanup) {
+  globalThis.__nanogen_jobQueueCleanup = setInterval(() => {
+    const now = Date.now();
+    const toDelete = [];
+
+    for (const [jobId, job] of jobQueue.entries()) {
+      if ((job.status === "completed" || job.status === "failed") &&
+          now - job.completedAt > JOB_RETENTION_MS) {
+        toDelete.push(jobId);
+      }
     }
-  }
-  
-  toDelete.forEach(jobId => jobQueue.delete(jobId));
-}, CLEANUP_INTERVAL);
+
+    toDelete.forEach(jobId => jobQueue.delete(jobId));
+  }, CLEANUP_INTERVAL);
+}

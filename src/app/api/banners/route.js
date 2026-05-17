@@ -716,10 +716,14 @@ async function performBannerGeneration(job, userId, payload) {
       };
     });
 
+    // Select the full renderable banner shape (html/css/fields/alignment
+    // /aspect) so the floating GenerationPopup can show the actual
+    // generated banner in place of the skeleton the moment the job
+    // completes — rather than waiting for the dashboard to refetch.
     const { data: savedBanners, error: bannersErr } = await supabase
       .from("banners")
       .insert(bannerRows)
-      .select("id, title, model_label, score");
+      .select("id, title, model_label, score, html, css, fields, alignment, aspect, preview_gradient, image_url, subject_image_url");
 
     if (bannersErr || !savedBanners?.length) {
       throw new Error(`Failed to save banners: ${bannersErr?.message || "Unknown error"}`);

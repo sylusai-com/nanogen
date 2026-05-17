@@ -75,6 +75,10 @@ export default function BannersHub() {
     targetUrl: null,
     modelErrors: [],
     warning: null,
+    // The full saved banner row (html/css/fields/alignment/aspect) once
+    // the job completes — flows into GenerationPopup so it can swap the
+    // skeleton for the real banner the moment generation finishes.
+    banner: null,
   });
 
   // Loader: fetches every page from 1..loadedPages in parallel via
@@ -240,6 +244,7 @@ export default function BannersHub() {
       targetUrl: null,
       modelErrors: [],
       warning: null,
+      banner: null,
     });
 
     try {
@@ -276,6 +281,9 @@ export default function BannersHub() {
               ? "Banner saved using the static fallback template — every configured model errored or returned malformed output. Fix in Admin → Models."
               : "We couldn't reach the AI model just now, so we saved a default banner you can edit.")
           : null,
+        // Stash the renderable banner so GenerationPopup can swap its
+        // skeleton for the real preview the instant the job lands.
+        banner: banner || null,
       }));
     } catch (err) {
       setGen((s) => ({
@@ -299,6 +307,7 @@ export default function BannersHub() {
       targetUrl: null,
       modelErrors: [],
       warning: null,
+      banner: null,
     });
   };
 
@@ -511,6 +520,7 @@ export default function BannersHub() {
         done={gen.done}
         error={gen.error}
         successTitle={gen.successTitle}
+        banner={gen.banner}
         onDismiss={onDismiss}
         onCancel={onCancel}
       />

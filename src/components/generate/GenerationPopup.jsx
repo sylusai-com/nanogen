@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { GenerationSteps } from "@/lib/bannerGeneration";
+import BannerPreview from "@/components/banner/BannerPreview";
 
 // Floating, non-blocking generation indicator anchored bottom-right.
 // Replaces the full-screen GenerationProgress card on the new hub page —
@@ -66,6 +67,12 @@ export default function GenerationPopup({
   // Optional: a tiny title appended to the success state (e.g. the
   // banner's headline). Falls back to "Banner ready" alone when absent.
   successTitle = null,
+  // The saved banner row (html/css/fields/alignment/aspect). When this
+  // is present AND `done` is true, the popup swaps its skeleton mini-
+  // preview for a real BannerPreview render — the user sees the actual
+  // generated banner the moment the job lands, instead of a skeleton
+  // that only goes away once the dashboard gallery refetches.
+  banner = null,
 }) {
   const [elapsed, setElapsed] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -122,27 +129,42 @@ export default function GenerationPopup({
           role="status"
           aria-live="polite"
         >
-          {/* Skeleton mini-preview — fixed compact height, content-aspect inside */}
+          {/* Mini-preview. Skeleton while generating; the actual banner
+              the instant the job completes and we have a renderable row.
+              The render aspect tracks the saved banner's aspect (falls
+              back to the prop while we wait for the row to land). */}
           <div className="relative border-b border-border bg-surface-2/60 p-3">
-            <div className={cn(
-              aspectClass(aspect),
-              "skeleton relative w-full overflow-hidden rounded-lg bg-surface-2",
-            )}>
-              <motion.div
-                className="absolute inset-0"
-                initial={{ x: "-100%" }}
-                animate={{ x: "100%" }}
-                transition={{ duration: 1.6, ease: "linear", repeat: Infinity }}
-                style={{
-                  background: "linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 10%, transparent), transparent)",
-                }}
-              />
-              <div className="absolute inset-0 flex flex-col items-start justify-end gap-2 p-3">
-                <div className="h-2 w-12 rounded-full bg-foreground/10" />
-                <div className="h-4 w-2/3 rounded-md bg-foreground/15" />
-                <div className="h-3 w-1/2 rounded-md bg-foreground/10" />
+            {done && banner?.html && banner?.css ? (
+              <div className={cn(
+                aspectClass(banner.aspect || aspect),
+                "relative w-full overflow-hidden rounded-lg bg-surface-2",
+              )}>
+                <BannerPreview
+                  banner={banner}
+                  className="absolute inset-0 h-full w-full"
+                />
               </div>
-            </div>
+            ) : (
+              <div className={cn(
+                aspectClass(aspect),
+                "skeleton relative w-full overflow-hidden rounded-lg bg-surface-2",
+              )}>
+                <motion.div
+                  className="absolute inset-0"
+                  initial={{ x: "-100%" }}
+                  animate={{ x: "100%" }}
+                  transition={{ duration: 1.6, ease: "linear", repeat: Infinity }}
+                  style={{
+                    background: "linear-gradient(90deg, transparent, color-mix(in oklab, var(--foreground) 10%, transparent), transparent)",
+                  }}
+                />
+                <div className="absolute inset-0 flex flex-col items-start justify-end gap-2 p-3">
+                  <div className="h-2 w-12 rounded-full bg-foreground/10" />
+                  <div className="h-4 w-2/3 rounded-md bg-foreground/15" />
+                  <div className="h-3 w-1/2 rounded-md bg-foreground/10" />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Header row */}

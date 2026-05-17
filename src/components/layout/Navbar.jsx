@@ -36,7 +36,7 @@ export default function Navbar() {
     Promise.resolve().then(() => setMobileOpen(false));
   }, [pathname]);
 
-  const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard") : "/signup";
+  const ctaHref = user ? (isAdmin ? "/admin" : "/dashboard/banners") : "/signup";
   const ctaLabel = user ? "Open dashboard" : "Sign up";
 
   return (

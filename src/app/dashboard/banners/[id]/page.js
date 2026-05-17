@@ -1,11 +1,13 @@
 // src/app/dashboard/banners/[id]/page.js
 "use client";
 
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ImageOff,
+  ImageIcon,
   Loader2,
   PenTool,
   RefreshCcw,
@@ -44,6 +46,14 @@ export default function BannerDetail({ params }) {
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
+  // Toggle for the photographic bg layer that the bg-image provider
+  // generated alongside the HTML/CSS banner. The toggle defaults to ON
+  // when this banner actually has a bg image — that's the "you see the
+  // bg in the gallery, you see it on the detail page" experience the
+  // user expects. When flipped OFF we render the same banner with the
+  // bg field's value forced to none so the model's CSS-only design
+  // shines through.
+  const [showBg, setShowBg] = useState(true);
 
   // Cached + stale-while-revalidate. Tagged on `banner:{id}` so updates
   // / deletes / favourites in the dashboard or editor invalidate this
@@ -100,6 +110,45 @@ export default function BannerDetail({ params }) {
     }
   };
 
+  // Does this banner actually carry a photographic bg image? Detected
+  // off the bg_image field (preferred — what the renderer reads) and
+  // falling back to image_url for legacy rows. We use it to (a) decide
+  // whether to even show the toggle, (b) drive its visible state, and
+  // (c) compute the banner variant fed to BannerPreview.
+  //
+  // Both hooks live ABOVE the early returns below so they run in the
+  // same order on every render — react-hooks/rules-of-hooks.
+  const hasBgImage = useMemo(() => {
+    if (!banner) return false;
+    const f = (banner.fields || []).find((x) => x?.id === "bg_image");
+    const raw = String(f?.value || banner.imageUrl || "").trim();
+    if (!raw || raw === "none") return false;
+    const m = raw.match(/^url\(\s*["']?(.*?)["']?\s*\)$/i);
+    const inner = (m ? m[1] : raw).trim();
+    return /^(?:https?:\/\/|data:image\/)/i.test(inner);
+  }, [banner]);
+
+  // Override the `bg_image_enabled` toggle field on the banner row when
+  // the user flips the local UI toggle. Cloning here (vs mutating) keeps
+  // the cached banner row pristine — the next render with showBg=true
+  // gets back the original fields without a refetch.
+  const previewBanner = useMemo(() => {
+    if (!banner) return null;
+    if (!hasBgImage || showBg) return banner;
+    const fields = (banner.fields || []).map((f) =>
+      f?.id === "bg_image_enabled" ? { ...f, value: false } : f,
+    );
+    if (!fields.some((f) => f?.id === "bg_image_enabled")) {
+      fields.push({
+        id: "bg_image_enabled",
+        type: "toggle",
+        label: "Show background image",
+        value: false,
+      });
+    }
+    return { ...banner, fields };
+  }, [banner, hasBgImage, showBg]);
+
   if (loading) {
     return (
       <>
@@ -155,7 +204,46 @@ export default function BannerDetail({ params }) {
           {/* Preview */}
           <Card elevated className="p-3">
             {hasTemplate ? (
-              <BannerPreview banner={banner} className="rounded-xl" />
+              <div className="space-y-3">
+                <BannerPreview banner={previewBanner} className="rounded-xl" />
+                {hasBgImage && (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-2/60 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-foreground">
+                        Background image
+                      </div>
+                      <div className="text-[11px] text-muted">
+                        {showBg
+                          ? "Photo backdrop from the bg provider is on."
+                          : "Showing the model's CSS-only design."}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowBg((v) => !v)}
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                        showBg
+                          ? "border-primary/40 bg-primary/15 text-primary hover:bg-primary/25"
+                          : "border-border bg-surface text-muted-strong hover:bg-surface-2",
+                      )}
+                      aria-pressed={showBg}
+                    >
+                      {showBg ? (
+                        <>
+                          <ImageIcon className="h-3.5 w-3.5" />
+                          With bg image
+                        </>
+                      ) : (
+                        <>
+                          <ImageOff className="h-3.5 w-3.5" />
+                          Without bg image
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className={cn(aspectClass(banner.aspect), "rounded-xl overflow-hidden")}>
                 <div className="flex h-full w-full items-center justify-center rounded-xl border border-border bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.08),transparent_38%),linear-gradient(135deg,#0c0c10,#17172a)] p-8 text-center">

@@ -225,17 +225,38 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     cssOut = `${cssOut}\n:root {\n${mergedOverrides}\n}\n`;
   }
 
-  // Single-layer fallback for templates that don't wire a dedicated
-  // bg-image layer themselves. We render `.banner::before` only when the
-  // template's HTML doesn't already contain a `.banner__bg-image` element
-  // and its CSS doesn't already consume `var(--bg-image)` — otherwise the
-  // fallback would stack a second copy of the photo on top of the first.
-  const templateHasBgLayer =
-    /class="[^"]*banner__bg-image[^"]*"/i.test(html || "") ||
-    /background-image\s*:\s*var\(\s*--bg-image\s*\)/i.test(cssOut);
-  if (effectiveBg && !templateHasBgLayer) {
-    cssOut += `\n.banner::before { content:""; position:absolute; inset:0; z-index:-2; background-image:${effectiveBg} !important; background-size:var(--bg-zoom,110%); background-position:var(--bg-position,center center); background-repeat:no-repeat; filter:brightness(var(--bg-brightness,0.4)) blur(var(--bg-blur,0px)); transform:scale(1.03); }`;
-    cssOut += `\n.banner::after  { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay,0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay,0.45))); pointer-events:none; }`;
+  // Always inject a dedicated `.banner__bg-image-injected` div when we
+  // have a bg URL. The previous strategy used `.banner::before`, which
+  // model templates routinely overrode (their own :root, their own
+  // .banner::before, or a solid `.banner__bg` painted on top). An
+  // injected div as the FIRST child of `.banner` lets us style it with
+  // !important and rely on DOM-order stacking (later z-index 0 siblings
+  // paint on top) so the model's decorative chrome (mesh, grid, orbs)
+  // and inner content all sit ABOVE this bg layer. The user's toggle on
+  // the detail page suppresses `effectiveBg` to "" so this whole block
+  // is skipped.
+  if (effectiveBg) {
+    cssOut += `
+.banner__bg-image-injected {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  background-image: ${effectiveBg} !important;
+  background-size: var(--bg-zoom, 110%) !important;
+  background-position: var(--bg-position, center center) !important;
+  background-repeat: no-repeat !important;
+  filter: brightness(var(--bg-brightness, 0.4)) blur(var(--bg-blur, 0px)) !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+.banner__bg-image-injected::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay, 0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay, 0.45))) !important;
+  pointer-events: none !important;
+}
+`;
   }
 
   // Force brightness / blur / overlay to apply to the rendered bg layer no
@@ -260,10 +281,13 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   // Toggle off → hide any bg layer the model emitted, even when it
   // hard-codes background-image:url(…) directly instead of referencing
   // var(--bg-image). Display:none on the layer + a no-op background on
-  // .banner::before catches the legacy fallback path too.
+  // .banner::before catches the legacy fallback path too. The injected
+  // bg div is already gated above by `if (effectiveBg)` which is gated
+  // by `bgEnabled`, so when the toggle is off no injection happens.
   if (!bgEnabled) {
     cssOut += `
 .banner__bg-image,
+.banner__bg-image-injected,
 .banner [class*="bg-image"] {
   background-image: none !important;
   display: none !important;
@@ -341,6 +365,28 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     }
   }
   htmlOut = htmlOut.replace(/data-align="[^"]*"/, `data-align="${alignment}"`);
+
+  // Inject the photographic bg layer as the FIRST child of `.banner` so
+  // it sits at the bottom of the z-index 0 stack — DOM order, not just
+  // z-index, decides the painting order among siblings at the same
+  // z-index. Putting it first lets the model's decorative chrome
+  // (banner__mesh / banner__grid / banner__orb) and inner content
+  // continue to paint on top of the photo, exactly as intended.
+  if (effectiveBg) {
+    const bgInjection = `<div class="banner__bg-image-injected"></div>`;
+    const before = htmlOut;
+    // Match `<div class="banner …">` (the opening tag of the banner
+    // root) and insert the bg div immediately after it.
+    htmlOut = htmlOut.replace(
+      /(<div\s+class="[^"]*\bbanner\b[^"]*"[^>]*>)/i,
+      `$1${bgInjection}`,
+    );
+    if (htmlOut === before) {
+      // Fallback: prepend at the very start of the body if no .banner
+      // wrapper was found. Better than skipping the injection entirely.
+      htmlOut = `${bgInjection}${htmlOut}`;
+    }
+  }
 
   // Inject the cleaned-subject overlay div as the LAST child of `.banner`
   // so it stacks above the model's bg layers (which appear earlier in DOM

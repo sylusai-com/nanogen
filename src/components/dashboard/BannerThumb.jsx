@@ -1,31 +1,29 @@
 // src/components/dashboard/BannerThumb.jsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { setCached, getCached } from "@/lib/cache";
+import BannerPreview from "@/components/banner/BannerPreview";
 
-// Lightweight static card — replaces the previous iframe-per-banner
-// preview that was crushing the gallery's main thread. Each thumb now
-// renders as a stack of CSS layers + (at most) a single <img> background
-// instead of mounting a full HTML/CSS sandbox.
+// Each tile renders the REAL banner via BannerPreview (an iframe) so the
+// gallery shows what the user actually generated — title typography, bg
+// photo, layout, decoration, everything. BannerPreview's `lazy` mode
+// gates the iframe on an IntersectionObserver so only the handful of
+// thumbs currently in the viewport (+ a 400px rootMargin) actually
+// mount one; the rest stay as a coloured fallback panel until scrolled
+// to. With CSS-columns masonry that translates to ~6-8 live iframes at
+// any time on a typical 1080p screen, which is light enough to scroll
+// smoothly even with 100+ banners in the accumulator.
 //
-// What we pull from the banner row (all already in LIST_COLUMNS):
-//   - banner.imageUrl: the bg photo URL (the strongest visual identifier
-//     when the banner has a photographic background). Rendered as an
-//     <img> with native lazy loading.
-//   - banner.fields: scanned for bg / accent / fg colour values so the
-//     card colour-matches the actual banner even when there's no bg
-//     photo. Cheaper than parsing CSS or rendering the template.
-//   - banner.gradient: fallback colour stop when neither of the above
-//     is set (very old rows or pure-gradient banners).
-//
-// The user still sees the real banner — fully rendered with the iframe —
-// when they click into the detail or builder page.
+// We still render a coloured fallback panel underneath the iframe so the
+// tile has SOMETHING visible the moment it's rendered — useful while the
+// iframe is mounting (a few hundred ms on cold load) and as a graceful
+// degradation when html/css are missing (very old rows, partial fields).
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
@@ -37,18 +35,6 @@ function aspectClass(a) {
 function fmtDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-// Strip a `url("…")` wrapper if the field value carries one (most do)
-// and return the bare URL. Returns "" when there's nothing usable.
-function unwrapUrl(value) {
-  const raw = String(value || "").trim();
-  if (!raw || raw === "none") return "";
-  const m = raw.match(/^url\(\s*["']?(.*?)["']?\s*\)$/i);
-  const inner = (m ? m[1] : raw).trim();
-  if (!inner || inner === "none") return "";
-  if (!/^(?:https?:\/\/|data:image\/)/i.test(inner)) return "";
-  return inner;
 }
 
 function findField(fields, id) {
@@ -64,30 +50,18 @@ export default function BannerThumb({
   const router = useRouter();
   const link = href || `/dashboard/banners/${banner.id}`;
   const isTopScore = banner.score != null && banner.score >= 80;
-  const [imgFailed, setImgFailed] = useState(false);
 
-  // Derive the visual signature of the banner once per row. Memoized
-  // because hoover/scroll re-renders shouldn't redo string parsing on
-  // every banner — with 100 thumbs in the gallery that adds up.
+  // Fallback panel colour from the banner's own palette so the tile
+  // has the right vibe even before its iframe mounts.
   const visual = useMemo(() => {
     const bgField     = findField(banner.fields, "bg");
-    const fgField     = findField(banner.fields, "fg");
     const accentField = findField(banner.fields, "accent");
-    const bgImageField = findField(banner.fields, "bg_image");
-    // Field value wins over the row column because users can edit fields
-    // post-generation; the column was set at insert time and goes stale.
-    const fieldImage  = bgImageField ? unwrapUrl(bgImageField.value) : "";
-    const rowImage    = unwrapUrl(banner.imageUrl);
-    const photoUrl    = fieldImage || rowImage || "";
-
     const baseBg = bgField?.value || banner.gradient || "#0c0c10";
     return {
-      photoUrl,
       baseBg,
-      fgColor:     fgField?.value || "#ffffff",
       accentColor: accentField?.value || "#a78bfa",
     };
-  }, [banner.fields, banner.imageUrl, banner.gradient]);
+  }, [banner.fields, banner.gradient]);
 
   // Hover/focus prefetch — seeds the detail page's cache with the full
   // row we already have on the list (saves the round-trip), and warms
@@ -105,16 +79,10 @@ export default function BannerThumb({
     try { router.prefetch?.(link); } catch { /* best-effort */ }
   };
 
-  // Decide which background visual to render. A photo URL wins because
-  // it's the strongest identifier; otherwise we render a coloured panel
-  // built from the banner's own palette so the card still feels like a
-  // miniature of the real thing.
-  const showPhoto = !!visual.photoUrl && !imgFailed;
-  const panelStyle = !showPhoto
-    ? {
-        background: `linear-gradient(135deg, ${visual.baseBg} 0%, color-mix(in oklab, ${visual.baseBg} 70%, ${visual.accentColor}) 100%)`,
-      }
-    : undefined;
+  const hasTemplate = Boolean(banner.html && banner.css);
+  const panelStyle = {
+    background: `linear-gradient(135deg, ${visual.baseBg} 0%, color-mix(in oklab, ${visual.baseBg} 70%, ${visual.accentColor}) 100%)`,
+  };
 
   return (
     <motion.div
@@ -141,39 +109,33 @@ export default function BannerThumb({
           )}
           style={panelStyle}
         >
-          {showPhoto && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={visual.photoUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={() => setImgFailed(true)}
-              className="absolute inset-0 h-full w-full object-cover"
-              // The bg layer renders at ~60% brightness in the real
-              // banner; matching that here means the card matches the
-              // real preview the user will see when they open the
-              // detail page.
-              style={{ filter: "brightness(0.62)" }}
+          {hasTemplate ? (
+            <BannerPreview
+              banner={banner}
+              className="absolute inset-0 h-full w-full"
+              lazy
+              rootMargin="400px"
             />
-          )}
+          ) : null}
 
           {/* Accent tint stripe on the left edge — a tiny, cheap visual
-              that hints at the banner's accent colour without rendering
-              the whole template. */}
+              that hints at the banner's accent colour. Sits ABOVE the
+              iframe so the tile still feels integrated with the gallery
+              chrome even while the iframe paints. */}
           <span
-            className="absolute left-0 top-0 h-full w-0.75"
+            className="pointer-events-none absolute left-0 top-0 z-10 h-full w-0.75"
             style={{
               background: `linear-gradient(to bottom, transparent, ${visual.accentColor} 25%, ${visual.accentColor} 75%, transparent)`,
               opacity: 0.7,
             }}
           />
 
-          {/* Bottom readability gradient so the title pops on any bg */}
-          <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/65 via-black/25 to-transparent" />
+          {/* Bottom readability gradient so the title overlay pops on
+              top of whatever the banner itself painted. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-2/3 bg-gradient-to-t from-black/65 via-black/25 to-transparent" />
 
           {banner.favourite && (
-            <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/40 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur">
+            <span className="absolute left-3 top-3 z-20 inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/40 px-2 py-0.5 text-[10px] font-medium text-amber-300 backdrop-blur">
               <Star className="h-2.5 w-2.5" fill="currentColor" strokeWidth={0} />
               Favourite
             </span>
@@ -182,7 +144,7 @@ export default function BannerThumb({
           {banner.score != null && (
             <span
               className={cn(
-                "absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] backdrop-blur",
+                "absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] backdrop-blur",
                 isTopScore
                   ? "border border-emerald-400/25 bg-emerald-400/15 text-emerald-100"
                   : "border border-amber-400/25 bg-amber-400/15 text-amber-100",
@@ -198,10 +160,10 @@ export default function BannerThumb({
             </span>
           )}
 
-          {/* Title block. White text over the readability gradient — the
-              same hierarchy the real banner uses, so the thumb reads as
-              a clean miniature of the full design. */}
-          <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-2">
+          {/* Title block — sits above the iframe and readability
+              gradient so the user can scan the gallery by title even
+              when the underlying banner art is busy. */}
+          <div className="absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-2">
             <div className="min-w-0">
               <div className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
                 {banner.title}

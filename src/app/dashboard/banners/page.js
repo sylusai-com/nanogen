@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImageIcon, Sparkles, AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
+import { ImageIcon, Sparkles, AlertCircle, AlertTriangle, Loader2, ArrowUp } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import BannerThumb from "@/components/dashboard/BannerThumb";
@@ -42,7 +42,14 @@ export default function BannersHub() {
   // fetched so far; the gallery shows pages 1..loadedPages concatenated.
   // Cap is enforced via `totalPages` returned by the server.
   const [loadedPages, setLoadedPages] = useState(1);
-  const [rows, setRows] = useState([]);
+  // `displayed` is what the user currently sees. `incoming` is what the
+  // loader most recently fetched. They diverge when the user is scrolled
+  // away from the top and a new banner lands: we don't want to push the
+  // existing rows down beneath them mid-scroll. Instead we hold the
+  // fresh set in `incoming` and surface a small "X new" pill the user
+  // can click to merge + scroll to top.
+  const [displayed, setDisplayed] = useState([]);
+  const [incoming, setIncoming] = useState(null);
   const [totalPages, setTotalPages] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -106,9 +113,58 @@ export default function BannersHub() {
             merged.push(row);
           }
         }
-        setRows(merged);
+        // Per-page results come back already ordered by created_at DESC,
+        // but pagination + caching can desync the pages (a stale page 1
+        // mixed with a fresh page 2, or a new banner landing between
+        // queries, can shift items across page boundaries). A single
+        // final sort on the merged accumulator guarantees that "newest
+        // first" holds regardless of how the pages arrived — without
+        // this, scrolling triggers loadedPages++ and refetches, and any
+        // newly-inserted banner appears in the middle of the list
+        // instead of at the top.
+        merged.sort((a, b) => {
+          const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return tb - ta;
+        });
         setTotalPages(results[results.length - 1]?.totalPages ?? 1);
         setLoadError(null);
+        // Decide whether to swap immediately or stash the result for a
+        // user-triggered merge:
+        //   1. First load (displayed is empty) → swap.
+        //   2. Just paginated (merged grew) → swap, no reordering of
+        //      existing rows above the fold.
+        //   3. New banner landed (head id differs from what we had)
+        //      AND the user is scrolled away from the top → hold it
+        //      in `incoming` and surface the "X new" pill.
+        //   4. Same as 3 but the user is at/near the top → swap (no
+        //      visible shift anyway).
+        const NEAR_TOP = 200;
+        const atTop = typeof window === "undefined" || window.scrollY < NEAR_TOP;
+        const prevHead = displayed[0]?.id;
+        const nextHead = merged[0]?.id;
+        const headChanged = prevHead && nextHead && prevHead !== nextHead;
+        const grew = merged.length > displayed.length;
+
+        if (displayed.length === 0) {
+          setDisplayed(merged);
+          setIncoming(null);
+        } else if (grew && !headChanged) {
+          // Pure pagination append — safe to swap, head didn't move.
+          setDisplayed(merged);
+          setIncoming(null);
+        } else if (headChanged && !atTop) {
+          // New content arrived above the user's scroll. Hold it so we
+          // don't yank the page out from under them. We still merge the
+          // existing displayed ids underneath so paginated rows the
+          // user already scrolled to don't disappear when they later
+          // click the "show new" pill.
+          setIncoming(merged);
+        } else {
+          // At the top, or no head change — safe to swap.
+          setDisplayed(merged);
+          setIncoming(null);
+        }
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err?.message || "Failed to load banners");
@@ -121,7 +177,11 @@ export default function BannersHub() {
       });
     return () => { cancelled = true; };
     // `tick` re-runs the loop on invalidation; `loadedPages` re-runs when
-    // the sentinel asks for more.
+    // the sentinel asks for more. `displayed` is intentionally NOT in
+    // the deps — reading it through the closure is what lets the resolve
+    // handler decide whether to stash vs swap based on the state that
+    // existed when the fetch fired, not after our own setDisplayed call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, supabase, loadedPages, tick]);
 
   // IntersectionObserver — bumps `loadedPages` when the sentinel scrolls
@@ -252,7 +312,7 @@ export default function BannersHub() {
   // large libraries we'd push these to the server, but for the dashboard
   // (rarely more than a few hundred rows) this is fine and immediate.
   const filtered = useMemo(() => {
-    let list = rows;
+    let list = displayed;
     if (view === "favourites") list = list.filter((b) => b.favourite);
     if (view === "passed") list = list.filter((b) => (b.score ?? 0) >= 80);
     if (query.trim()) {
@@ -265,13 +325,30 @@ export default function BannersHub() {
       );
     }
     return list;
-  }, [rows, view, query]);
+  }, [displayed, view, query]);
 
   const totals = {
-    all: rows.length,
-    favs: rows.filter((b) => b.favourite).length,
-    passed: rows.filter((b) => (b.score ?? 0) >= 80).length,
+    all: displayed.length,
+    favs: displayed.filter((b) => b.favourite).length,
+    passed: displayed.filter((b) => (b.score ?? 0) >= 80).length,
   };
+
+  // Count of new banners waiting above the fold (diff against current
+  // displayed set by id) — drives the "X new — show" pill.
+  const newCount = useMemo(() => {
+    if (!incoming) return 0;
+    const have = new Set(displayed.map((b) => b.id));
+    return incoming.filter((b) => !have.has(b.id)).length;
+  }, [incoming, displayed]);
+
+  const showIncoming = useCallback(() => {
+    if (!incoming) return;
+    setDisplayed(incoming);
+    setIncoming(null);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [incoming]);
 
   const hasMore = totalPages != null && loadedPages < totalPages;
   const showEmptyState = !initialLoading && filtered.length === 0;
@@ -344,6 +421,24 @@ export default function BannersHub() {
           />
         </section>
 
+        {/* "X new banners" pill — only shows when the user is scrolled
+            away from the top and fresh rows are waiting. Clicking it
+            swaps in the fresh set and scrolls back up smoothly, which
+            stops the gallery from shoving the user's current view down
+            every time a generation completes. */}
+        {newCount > 0 && (
+          <div className="sticky top-3 z-30 flex justify-center">
+            <button
+              type="button"
+              onClick={showIncoming}
+              className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/15 px-3.5 py-1.5 text-xs font-medium text-primary shadow-[0_8px_30px_-12px_rgba(167,139,250,0.55)] backdrop-blur transition-colors hover:bg-primary/25"
+            >
+              <ArrowUp className="h-3 w-3" />
+              {newCount} new banner{newCount > 1 ? "s" : ""} — show
+            </button>
+          </div>
+        )}
+
         {/* Gallery — only show the skeleton placeholder on the FIRST load
             (when there's no data yet). Subsequent loads / invalidations
             keep showing the previous rows while the loader refreshes. */}
@@ -372,19 +467,19 @@ export default function BannersHub() {
           />
         ) : (
           <>
-            {/* CSS-columns masonry. Each tile sets `break-inside-avoid`
-                so it never splits between columns. `gap` doesn't apply to
-                columns, so per-tile `mb-4` provides the vertical rhythm.
-                BannerThumb already renders at its native aspect (no
-                frameAspect) — that's what produces the masonry's varied
-                heights and the "real grid" look the gallery needs. */}
-            <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
-              {filtered.map((b, i) => (
-                <div key={b.id} className="mb-4 break-inside-avoid">
-                  <BannerThumb banner={b} index={i} />
-                </div>
-              ))}
-            </div>
+            {/* Row-wise masonry. CSS `columns` fills column 1 completely
+                before flowing into column 2, which means newest items
+                land at the bottom of column 1 — and every pagination
+                bump reshuffles the column boundaries because the column
+                heights re-balance around the new items. We instead split
+                the array into N parallel lists in round-robin order
+                (item i → list i % N), then render each list as a
+                vertical flex column. That gives true row-wise reading
+                order (1 2 3 4 / 5 6 7 8 / …), preserves masonry heights
+                (each column independently flows its own tiles), and
+                keeps existing tiles in the same column when new items
+                are appended at the end. */}
+            <MasonryGrid items={filtered} />
 
             {/* Sentinel — when this scrolls into view, the IO above fires
                 setLoadedPages(p => p + 1) and the loader fetches the next
@@ -421,4 +516,53 @@ export default function BannersHub() {
       />
     </>
   );
+}
+
+// Render the gallery as a row-wise masonry. We compute the column count
+// from the current viewport (1 / 2 / 3 / 4 matching the page's responsive
+// breakpoints) and round-robin the items into that many vertical lists.
+// Each list renders as its own flex column so per-tile heights still
+// vary, but the reading order across columns is row-wise.
+function MasonryGrid({ items }) {
+  const [cols, setCols] = useState(getColumnCount());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setCols(getColumnCount());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Round-robin distribution: item i → column (i % cols). With items
+  // ordered newest-first this means the newest banner always lands at
+  // the top of column 0, the second-newest at the top of column 1, etc.
+  // — which is the row-wise pattern the user expects.
+  const columns = useMemo(() => {
+    const buckets = Array.from({ length: cols }, () => []);
+    items.forEach((b, i) => {
+      buckets[i % cols].push({ banner: b, index: i });
+    });
+    return buckets;
+  }, [items, cols]);
+
+  return (
+    <div className="flex gap-4">
+      {columns.map((col, ci) => (
+        <div key={ci} className="flex min-w-0 flex-1 flex-col gap-4">
+          {col.map(({ banner, index }) => (
+            <BannerThumb key={banner.id} banner={banner} index={index} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function getColumnCount() {
+  if (typeof window === "undefined") return 4;
+  const w = window.innerWidth;
+  if (w >= 1280) return 4; // xl
+  if (w >= 1024) return 3; // lg
+  if (w >= 640) return 2;  // sm
+  return 1;
 }

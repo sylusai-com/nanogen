@@ -7,6 +7,7 @@ import RouteGuard from "@/components/dashboard/RouteGuard";
 import Sidebar from "@/components/dashboard/Sidebar";
 import Avatar from "@/components/ui/Avatar";
 import Link from "next/link";
+import GenerationProvider from "@/components/generate/GenerationProvider";
 
 const iconCls = "h-4 w-4";
 
@@ -52,10 +53,12 @@ export default function DashboardLayout({ children }) {
 
   return (
     <RouteGuard>
-      <div className="flex min-h-dvh items-start">
-        <Sidebar sections={sections} footer={footer} />
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
-      </div>
+      <GenerationProvider>
+        <div className="flex min-h-dvh items-start">
+          <Sidebar sections={sections} footer={footer} />
+          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        </div>
+      </GenerationProvider>
     </RouteGuard>
   );
 }

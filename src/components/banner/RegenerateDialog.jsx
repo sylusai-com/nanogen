@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import {
   Check,
   ChevronDown,
@@ -14,24 +13,22 @@ import {
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { useAuth } from "@/components/layout/AuthProvider";
-import { invalidateTags, useCachedQuery } from "@/lib/cache";
+import { useCachedQuery } from "@/lib/cache";
 import { listEnabledTextModels } from "@/lib/db/models";
-import { GenerationSteps } from "@/lib/bannerGeneration";
-import GenerationPopup from "@/components/generate/GenerationPopup";
+import { useGeneration } from "@/components/generate/GenerationProvider";
 import { cn } from "@/lib/cn";
 
-// Lightweight regeneration composer. The previous version showed a big
-// "inherited context" block (Aspect / Style / Reference / Subject) which
-// was redundant — the user is already looking at the banner they're
-// regenerating, so reiterating those props inside the dialog adds noise
-// without informing the decision. Now the dialog is just the textarea
-// + suggestions + model picker; the floating GenerationPopup takes over
-// for progress, mirroring the create flow.
+// Lightweight regeneration composer. The dialog is just the textarea +
+// suggestions + model picker; the floating GenerationPopup mounted by
+// GenerationProvider takes over for progress and persists across page
+// navigation, so the user can leave the detail page mid-regenerate and
+// still see the job's status in the bottom-right corner.
 //
 // On submit:
 //   1. Close the dialog immediately so the underlying banner stays visible.
-//   2. Show the floating popup while the job runs.
-//   3. On completion, route to the new banner's editor.
+//   2. Provider's popup takes over; job is owned at the layout level.
+//   3. On completion, the provider routes to /dashboard/banners (set via
+//      the redirectTo arg below).
 
 const SUGGESTIONS = [
   "Swap palette to warm earthy tones",
@@ -40,125 +37,39 @@ const SUGGESTIONS = [
 ];
 
 export default function RegenerateDialog({ banner, open, onClose }) {
-  const router = useRouter();
-  // Generation state — outlives the dialog itself so the popup keeps
-  // running after the dialog closes. Submit + polling live HERE (not
-  // inside DialogBody) so closing the dialog mid-flight doesn't unmount
-  // the running closure — that bug surfaced as "Job not found" in the
-  // popup because the polling fetch races and re-runs in dev hot
-  // reload while the closure has already been torn down.
-  const [gen, setGen] = useState({
-    open: false,
-    aspect: "16:9",
-    currentStep: null,
-    stepsCompleted: [],
-    stepsSkipped: [],
-    done: false,
-    error: null,
-    successTitle: null,
-    targetUrl: null,
-    banner: null,
-  });
+  const { startGeneration } = useGeneration();
+  const { isAdmin } = useAuth();
 
-  const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const res = await fetch(`/api/generation-status/${jobId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
-      setGen((s) => ({
-        ...s,
-        currentStep: data.currentStep || s.currentStep,
-        stepsCompleted: Array.isArray(data.stepsCompleted) ? data.stepsCompleted : s.stepsCompleted,
-        stepsSkipped: Array.isArray(data.stepsSkipped) ? data.stepsSkipped : s.stepsSkipped,
-      }));
-      if (data.status === "completed") return data;
-      if (data.status === "failed") throw new Error(data.error || "Regeneration failed");
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    throw new Error("Regeneration timed out");
-  }, []);
-
-  // The submit handler the dialog form calls — defined HERE (parent)
-  // so it survives the dialog closing mid-flight.
+  // Hand-off to the provider so the popup outlives this component when
+  // the user navigates away from the detail page. The provider handles
+  // popup state, polling, invalidation, and the post-completion redirect
+  // to /dashboard/banners (the gallery the user expects to land on after
+  // a regenerate).
   const runRegeneration = useCallback(async ({ prompt, modelSlug }) => {
-    if (!banner) return { ok: false, error: "No banner to regenerate" };
-    setGen({
-      open: true,
+    if (!banner) return;
+    await startGeneration({
+      payload: {
+        prompt: prompt.trim(),
+        regenerateFromId: banner.id,
+        aspect: banner.aspect,
+        style: banner.style || null,
+        model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
+      },
       aspect: banner.aspect || "16:9",
-      currentStep: GenerationSteps.UPLOAD_IMAGES,
-      stepsCompleted: [],
-      stepsSkipped: [],
-      done: false,
-      error: null,
-      successTitle: null,
-      targetUrl: null,
-      banner: null,
+      isAdmin,
+      // Per the user's request: regenerate lands on the gallery, not the
+      // new banner's editor. The provider will route here on dismiss.
+      redirectTo: "/dashboard/banners",
     });
+  }, [banner, isAdmin, startGeneration]);
 
-    try {
-      const res = await fetch("/api/banners", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: prompt.trim(),
-          regenerateFromId: banner.id,
-          aspect: banner.aspect,
-          style: banner.style || null,
-          model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (!data.jobId) throw new Error("Server did not return a job ID");
-
-      const generation = await pollGeneration(data.jobId);
-      invalidateTags(["banners", "generation_results", `banner:${banner.id}`]);
-
-      const next = generation?.banner;
-      setGen((s) => ({
-        ...s,
-        done: true,
-        currentStep: null,
-        successTitle: next?.title || null,
-        targetUrl: next?.id ? `/dashboard/banners/${next.id}/edit` : null,
-        banner: next || null,
-      }));
-      return { ok: true, banner: next };
-    } catch (err) {
-      const message = err?.message || "Regeneration failed";
-      setGen((s) => ({ ...s, error: message }));
-      return { ok: false, error: message };
-    }
-  }, [banner, pollGeneration]);
-
+  if (!open || !banner) return null;
   return (
-    <>
-      {open && banner && (
-        <DialogBody
-          banner={banner}
-          onClose={onClose}
-          onSubmit={runRegeneration}
-        />
-      )}
-
-      <GenerationPopup
-        open={gen.open}
-        aspect={gen.aspect}
-        currentStep={gen.currentStep}
-        stepsCompleted={gen.stepsCompleted}
-        stepsSkipped={gen.stepsSkipped}
-        done={gen.done}
-        error={gen.error}
-        successTitle={gen.successTitle}
-        banner={gen.banner}
-        onCancel={() => setGen((s) => ({ ...s, open: false }))}
-        onDismiss={() => {
-          const target = gen.targetUrl;
-          setGen((s) => ({ ...s, open: false }));
-          if (target) router.push(target);
-        }}
-      />
-    </>
+    <DialogBody
+      banner={banner}
+      onClose={onClose}
+      onSubmit={runRegeneration}
+    />
   );
 }
 

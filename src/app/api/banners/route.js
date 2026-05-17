@@ -94,7 +94,17 @@ export async function POST(req) {
   }
 
   // Validate required fields
-  let prompt, style, aspect, referenceImage, subjectImage, modelRef, regenerateFromId, regenerateContext;
+  let prompt, style, aspect, referenceImage, subjectImage, modelRef, regenerateFromId;
+  // Carry forward the prior banner's vision-analysis outputs when this
+  // is a regeneration with the same reference/subject images. Skips the
+  // vision-model calls (≈2-4s each) and the bg-removal call (≈3-5s) —
+  // those produced deterministic outputs from the same inputs last time
+  // and re-running them just burns wall-clock time on a click the user
+  // wants to feel snappy. Bg image is NOT carried forward: the prompt
+  // change is likely to want a different look.
+  let priorReferenceContext = null;
+  let priorSubjectContext = null;
+  let priorSubjectCutoutUrl = null;
   try {
     prompt = validateString(body.prompt, {
       name: "prompt",
@@ -135,14 +145,30 @@ export async function POST(req) {
         .eq("user_id", user.id)
         .maybeSingle();
       if (prior) {
-        regenerateContext = prior;
         if (!style) style = prior.style || null;
         if (!body.aspect) aspect = prior.aspect || aspect;
         if (!referenceImage && prior.reference_image_url) {
           referenceImage = prior.reference_image_url;
+          // Same reference image → previously-extracted context still
+          // applies. Reuse it and skip the vision call later.
+          priorReferenceContext = prior.reference_context || null;
         }
         if (!subjectImage && prior.subject_image_url) {
           subjectImage = prior.subject_image_url;
+          priorSubjectContext = prior.subject_context || null;
+          // The cutout from last generation lives on the previous
+          // banner's `subject_image` field. If it's still a usable URL
+          // we hand it forward so removeSubjectBackground (3-5s) can be
+          // skipped this round.
+          const subjField = Array.isArray(prior.fields)
+            ? prior.fields.find((f) => f?.id === "subject_image")
+            : null;
+          const raw = String(subjField?.value || "").trim();
+          const m = raw.match(/^url\(\s*["']?(.*?)["']?\s*\)$/i);
+          const inner = (m ? m[1] : raw).trim();
+          if (/^(?:https?:\/\/|data:image\/)/i.test(inner)) {
+            priorSubjectCutoutUrl = inner;
+          }
         }
         const changeRequest = prompt;
         const originalBrief = String(prior.prompt || "").trim();
@@ -180,6 +206,10 @@ export async function POST(req) {
       referenceImage,
       subjectImage,
       modelRef,
+      // Regenerate-only short-circuits — null on a fresh create.
+      priorReferenceContext,
+      priorSubjectContext,
+      priorSubjectCutoutUrl,
     }
   ).catch((error) => {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
@@ -199,7 +229,12 @@ export async function POST(req) {
 async function performBannerGeneration(job, userId, payload) {
   const supabase = await createClient();
   const adminClient = createAdminClient();
-  const { prompt, style, aspect, referenceImage, subjectImage, modelRef } = payload;
+  const {
+    prompt, style, aspect, referenceImage, subjectImage, modelRef,
+    priorReferenceContext = null,
+    priorSubjectContext = null,
+    priorSubjectCutoutUrl = null,
+  } = payload;
 
   try {
     // Step 1: Validate images exist and are accessible
@@ -256,30 +291,50 @@ async function performBannerGeneration(job, userId, payload) {
     // unused step is marked skipped (rendered as a strike-through cross on
     // the timeline) so the user can see the pipeline didn't stall — it
     // just had nothing to analyse.
-    if (refImageUrl) {
-      job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
-    } else {
+    // Regenerate short-circuits — when the prior banner already analysed
+    // THIS reference / subject we reuse those outputs and skip the vision
+    // calls + bg-removal. Cuts ~5-9s off a typical regenerate where the
+    // user only wanted prompt/style tweaks. Each reused step is recorded
+    // as a SKIPPED step (with "reused from previous generation" reason)
+    // so the popup timeline shows what was bypassed and why.
+    const reuseReference = !!(refImageUrl && priorReferenceContext);
+    const reuseSubjectContext = !!(subjImageUrl && priorSubjectContext);
+    const reuseSubjectCutout = !!(subjImageUrl && priorSubjectCutoutUrl);
+
+    if (!refImageUrl) {
       job.markStepSkipped(GenerationJobSteps.ANALYZE_REFERENCE, "no reference image uploaded");
-    }
-    if (subjImageUrl) {
-      job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
+    } else if (reuseReference) {
+      job.markStepSkipped(GenerationJobSteps.ANALYZE_REFERENCE, "reused from previous generation");
     } else {
+      job.setStep(GenerationJobSteps.ANALYZE_REFERENCE);
+    }
+    if (!subjImageUrl) {
       job.markStepSkipped(GenerationJobSteps.ANALYZE_SUBJECT, "no subject image uploaded");
+    } else if (reuseSubjectContext) {
+      job.markStepSkipped(GenerationJobSteps.ANALYZE_SUBJECT, "reused from previous generation");
+    } else {
+      job.setStep(GenerationJobSteps.ANALYZE_SUBJECT);
     }
 
     const [referenceContext, subjectContext, cutoutResult] = await Promise.all([
-      refImageUrl
-        ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl })
-        : Promise.resolve(null),
-      subjImageUrl
-        ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl })
-        : Promise.resolve(null),
-      subjImageUrl
-        ? removeSubjectBackground(subjImageUrl, { adminClient }).catch((e) => {
-            console.warn("Background removal failed; using original subject image", e?.message || e);
-            return null;
-          })
-        : Promise.resolve(null),
+      reuseReference
+        ? Promise.resolve(priorReferenceContext)
+        : refImageUrl
+          ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl })
+          : Promise.resolve(null),
+      reuseSubjectContext
+        ? Promise.resolve(priorSubjectContext)
+        : subjImageUrl
+          ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl })
+          : Promise.resolve(null),
+      reuseSubjectCutout
+        ? Promise.resolve({ dataUrl: priorSubjectCutoutUrl, reused: true })
+        : subjImageUrl
+          ? removeSubjectBackground(subjImageUrl, { adminClient }).catch((e) => {
+              console.warn("Background removal failed; using original subject image", e?.message || e);
+              return null;
+            })
+          : Promise.resolve(null),
     ]);
     const referenceContextText = formatReferenceContextForPrompt(referenceContext);
     const subjectContextText = formatSubjectContextForPrompt(subjectContext);
@@ -316,7 +371,12 @@ async function performBannerGeneration(job, userId, payload) {
     // and flows through `subjectImageForGeneration` into the rendered
     // bg_image / subject_image fields.
     let cleanedSubjectStoredUrl = null;
-    if (cutoutResult?.dataUrl) {
+    if (cutoutResult?.reused) {
+      // Regenerate path — the prior banner's cutout URL is already a
+      // Supabase-hosted asset; re-uploading would just waste cycles and
+      // multiply storage rows. Use the URL as-is.
+      cleanedSubjectStoredUrl = cutoutResult.dataUrl;
+    } else if (cutoutResult?.dataUrl) {
       try {
         const stored = await storeBannerImageAsset({
           dataUrl: cutoutResult.dataUrl,

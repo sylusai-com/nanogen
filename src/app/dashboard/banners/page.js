@@ -14,7 +14,6 @@
 // until each tile actually enters the viewport.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { ImageIcon, Sparkles, AlertCircle, AlertTriangle, Loader2, ArrowUp } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
@@ -24,16 +23,15 @@ import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
 import PromptForm from "@/components/generate/PromptForm";
-import GenerationPopup from "@/components/generate/GenerationPopup";
+import { useGeneration } from "@/components/generate/GenerationProvider";
 import { listBanners } from "@/lib/db/banners";
-import { cachedQuery, invalidateTags, useCacheTick } from "@/lib/cache";
-import { GenerationSteps } from "@/lib/bannerGeneration";
+import { cachedQuery, useCacheTick } from "@/lib/cache";
 
 const PAGE_SIZE = 12;
 
 export default function BannersHub() {
-  const router = useRouter();
   const { user, isAdmin, supabase } = useAuth();
+  const { gen, startGeneration } = useGeneration();
   const userId = user?.id;
   const [query, setQuery] = useState("");
   const [view, setView]   = useState("all");
@@ -62,24 +60,12 @@ export default function BannersHub() {
   // place. No skeleton flash.
   const tick = useCacheTick();
 
-  // Generation state — drives the floating popup.
-  const [gen, setGen] = useState({
-    open: false,
-    aspect: "16:9",
-    currentStep: null,
-    stepsCompleted: [],
-    stepsSkipped: [],
-    done: false,
-    error: null,
-    successTitle: null,
-    targetUrl: null,
-    modelErrors: [],
-    warning: null,
-    // The full saved banner row (html/css/fields/alignment/aspect) once
-    // the job completes — flows into GenerationPopup so it can swap the
-    // skeleton for the real banner the moment generation finishes.
-    banner: null,
-  });
+  // Generation state lives in GenerationProvider (at the dashboard
+  // layout). The popup is mounted there once and persists across
+  // navigation, so the user can click into a banner / change pages while
+  // a job runs and the popup stays visible until they explicitly cancel
+  // or dismiss it. `gen` is read here only to drive the "Heads up" /
+  // model-errors banners under the composer.
 
   // Loader: fetches every page from 1..loadedPages in parallel via
   // cachedQuery (which dedupes in-flight requests and respects the same
@@ -211,110 +197,15 @@ export default function BannersHub() {
     return () => io.disconnect();
   }, [initialLoading, loadingMore, totalPages, loadedPages]);
 
-  const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const res = await fetch(`/api/generation-status/${jobId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
-
-      setGen((s) => ({
-        ...s,
-        currentStep: data.currentStep || s.currentStep,
-        stepsCompleted: Array.isArray(data.stepsCompleted) ? data.stepsCompleted : s.stepsCompleted,
-        stepsSkipped: Array.isArray(data.stepsSkipped) ? data.stepsSkipped : s.stepsSkipped,
-      }));
-
-      if (data.status === "completed") return data;
-      if (data.status === "failed")    throw new Error(data.error || "Generation failed");
-      await new Promise((r) => setTimeout(r, 800));
-    }
-    throw new Error("Generation timed out");
-  }, []);
-
-  const onSubmit = async (payload) => {
-    setGen({
-      open: true,
+  // Generation kicks off via the provider. From here on the popup is
+  // managed by GenerationProvider (mounted in dashboard/layout.js) and
+  // stays visible across navigation until the user dismisses it.
+  const onSubmit = (payload) => {
+    startGeneration({
+      payload,
       aspect: payload.aspect || "16:9",
-      currentStep: GenerationSteps.UPLOAD_IMAGES,
-      stepsCompleted: [],
-      stepsSkipped: [],
-      done: false,
-      error: null,
-      successTitle: null,
-      targetUrl: null,
-      modelErrors: [],
-      warning: null,
-      banner: null,
+      isAdmin,
     });
-
-    try {
-      const res = await fetch("/api/banners", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (!data.jobId) throw new Error("Server did not return a job ID");
-
-      const generation = await pollGeneration(data.jobId);
-      // Soft-invalidate: keeps existing rows visible while the loader
-      // refetches, then swaps in the fresh list (including the new
-      // banner). No skeleton flash on the gallery.
-      invalidateTags(["banners", "generation_results", `banners:${userId || "anon"}`]);
-
-      const banner = generation?.banner;
-      const usedFallback = generation?.results?.usedFallback === true;
-      const jobModelErrors = generation?.results?.modelErrors || [];
-
-      setGen((s) => ({
-        ...s,
-        done: true,
-        currentStep: null,
-        stepsCompleted: Array.isArray(generation?.stepsCompleted) ? generation.stepsCompleted : s.stepsCompleted,
-        stepsSkipped: Array.isArray(generation?.stepsSkipped) ? generation.stepsSkipped : s.stepsSkipped,
-        successTitle: banner?.title || null,
-        targetUrl: banner?.id ? `/dashboard/banners/${banner.id}/edit` : null,
-        modelErrors: isAdmin && Array.isArray(jobModelErrors) ? jobModelErrors : [],
-        warning: usedFallback
-          ? (isAdmin
-              ? "Banner saved using the static fallback template — every configured model errored or returned malformed output. Fix in Admin → Models."
-              : "We couldn't reach the AI model just now, so we saved a default banner you can edit.")
-          : null,
-        // Stash the renderable banner so GenerationPopup can swap its
-        // skeleton for the real preview the instant the job lands.
-        banner: banner || null,
-      }));
-    } catch (err) {
-      setGen((s) => ({
-        ...s,
-        done: false,
-        error: err?.message || "Generation failed",
-      }));
-    }
-  };
-
-  const onCancel = () => {
-    setGen({
-      open: false,
-      aspect: "16:9",
-      currentStep: null,
-      stepsCompleted: [],
-      stepsSkipped: [],
-      done: false,
-      error: null,
-      successTitle: null,
-      targetUrl: null,
-      modelErrors: [],
-      warning: null,
-      banner: null,
-    });
-  };
-
-  const onDismiss = () => {
-    const target = gen.targetUrl;
-    setGen((s) => ({ ...s, open: false }));
-    if (target) router.push(target);
   };
 
   // Filter + search happen on the already-loaded accumulator. For very
@@ -511,19 +402,8 @@ export default function BannersHub() {
         )}
       </div>
 
-      <GenerationPopup
-        open={gen.open}
-        aspect={gen.aspect}
-        currentStep={gen.currentStep}
-        stepsCompleted={gen.stepsCompleted}
-        stepsSkipped={gen.stepsSkipped}
-        done={gen.done}
-        error={gen.error}
-        successTitle={gen.successTitle}
-        banner={gen.banner}
-        onDismiss={onDismiss}
-        onCancel={onCancel}
-      />
+      {/* GenerationPopup is mounted once by GenerationProvider in
+          dashboard/layout.js so it survives navigation between pages. */}
     </>
   );
 }

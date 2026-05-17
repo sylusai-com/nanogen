@@ -11,11 +11,21 @@ import { Input, Label, Textarea } from "@/components/ui/Input";
 
 const TYPE_OPTIONS = ["unsplash", "pexels", "pixabay", "custom"];
 
+// Canonical search endpoints per provider — keeps admins from having to
+// remember the exact URL when registering a new key. `custom` is left
+// blank so the admin must paste their own endpoint.
+const DEFAULT_ENDPOINTS = {
+  unsplash: "https://api.unsplash.com/search/photos",
+  pexels:   "https://api.pexels.com/v1/search",
+  pixabay:  "https://pixabay.com/api/",
+  custom:   "",
+};
+
 const EMPTY = {
   name: "",
   type: "unsplash",
   apiKey: "",
-  apiEndpoint: "",
+  apiEndpoint: DEFAULT_ENDPOINTS.unsplash,
   enabled: true,
   configExtra: "",
 };
@@ -61,6 +71,23 @@ export default function BgProviderFormModal({
 
   const set = (patch) => setForm((current) => ({ ...current, ...patch }));
 
+  // When the admin switches provider type during creation, swap the
+  // endpoint to the canonical one for that provider — but only if they
+  // haven't customised it already, so an edited endpoint isn't clobbered.
+  // While editing an existing provider, leave the endpoint alone entirely.
+  const handleTypeChange = (nextType) => {
+    setForm((current) => {
+      const next = { ...current, type: nextType };
+      if (provider) return next; // editing — don't touch endpoint
+      const canonical = DEFAULT_ENDPOINTS[nextType] ?? "";
+      const looksLikeDefault = Object.values(DEFAULT_ENDPOINTS).includes(current.apiEndpoint.trim());
+      if (!current.apiEndpoint.trim() || looksLikeDefault) {
+        next.apiEndpoint = canonical;
+      }
+      return next;
+    });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSubmitting(true);
@@ -100,14 +127,7 @@ export default function BgProviderFormModal({
   };
 
   const hasExistingKey = !!provider?.hasApiKey;
-  const endpointPlaceholder =
-    form.type === "unsplash"
-      ? "https://api.unsplash.com/search/photos"
-      : form.type === "pexels"
-      ? "https://api.pexels.com/v1/search"
-      : form.type === "pixabay"
-      ? "https://pixabay.com/api/"
-      : "https://api.example.com/search";
+  const endpointPlaceholder = DEFAULT_ENDPOINTS[form.type] || "https://api.example.com/search";
 
   return (
     <Modal
@@ -155,7 +175,7 @@ export default function BgProviderFormModal({
           </div>
           <div className="space-y-2">
             <Label htmlFor="type">Provider type</Label>
-            <Select id="type" value={form.type} onChange={(event) => set({ type: event.target.value })}>
+            <Select id="type" value={form.type} onChange={(event) => handleTypeChange(event.target.value)}>
               {TYPE_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {option}

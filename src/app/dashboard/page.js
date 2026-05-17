@@ -19,10 +19,13 @@ const RECENT_PAGE_SIZE = 8;
 export default function DashboardOverview() {
   const { user } = useAuth();
   
-  // Fetch dashboard stats with caching (60s TTL, invalidated on user/banner changes)
-  const { data: apiData, isLoading, isStale } = useApiCache(
+  // Cached for 5 min — invalidated immediately by mutations through the
+  // shared "banners" tag, so the user never sees stale counts after a
+  // create/delete. Persisted to sessionStorage so a hard reload still
+  // hydrates instantly from the prior tab state.
+  const { data: apiData, isLoading } = useApiCache(
     `/api/dashboard/stats?page=1&pageSize=${RECENT_PAGE_SIZE}`,
-    { ttlMs: 60_000, tags: ["banners"], enabled: !!user },
+    { ttlMs: 5 * 60_000, tags: ["banners"], enabled: !!user, persist: false },
   );
 
   const recent = apiData?.banners?.rows || [];

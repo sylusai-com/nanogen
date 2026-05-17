@@ -15,16 +15,16 @@ export default function BannerFilters({ query, onQuery, view, onView, total }) {
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="space-y-1">
         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-          Library filters
+          Recent banners
         </div>
         <div className="text-sm text-muted">
-          Toggle the view, then search across prompt, model, and style.
+          Filter by status or search across title, model, and style.
         </div>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Tabs tabs={tabs} value={view} onChange={onView} />
         <Input
-          placeholder="Search prompts, models, styles…"
+          placeholder="Search titles, models, styles…"
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           leftIcon={<Search className="h-4 w-4" />}

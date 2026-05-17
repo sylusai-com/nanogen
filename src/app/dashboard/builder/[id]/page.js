@@ -235,7 +235,7 @@ export default function BuilderPage({ params }) {
     if (!user) return;
     let cancelled = false;
     startTransition(() => setLoading(true));
-    getBanner(supabase, id)
+    getBanner(supabase, user.id, id)
       .then((b) => {
         if (cancelled) return;
         startTransition(() => setBanner(b));
@@ -399,7 +399,7 @@ export default function BuilderPage({ params }) {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateBanner(supabase, banner.id, {
+      const updated = await updateBanner(supabase, user.id, banner.id, {
         canvas:    { background, elements },
         fields,
         alignment,

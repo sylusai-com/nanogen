@@ -14,13 +14,18 @@ import { useCachedQuery } from "./cache";
  * 
  * @returns {object} { data, error, isLoading, isValidating, refresh, isStale }
  */
-export function useApiCache(url, { ttlMs = 60_000, tags = [], enabled = true } = {}) {
+export function useApiCache(url, { ttlMs = 60_000, tags = [], enabled = true, persist = true } = {}) {
   return useCachedQuery(
     ["api", url],
     async () => {
       const res = await fetch(url, {
         credentials: "same-origin",
-        cache: "no-store",
+        // Allow the HTTP cache to serve a fresh response within its
+        // Cache-Control window — `no-store` defeated browser caching
+        // entirely, so every navigation hit the network even when the
+        // payload hadn't changed. Server routes now set explicit
+        // private/max-age + stale-while-revalidate headers.
+        cache: "default",
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -28,6 +33,6 @@ export function useApiCache(url, { ttlMs = 60_000, tags = [], enabled = true } =
       }
       return res.json();
     },
-    { ttlMs, tags, enabled },
+    { ttlMs, tags, enabled, persist },
   );
 }

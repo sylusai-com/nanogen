@@ -46,20 +46,23 @@ export default function PromptForm({
   // / product / person actually appears IN the rendered banner.
   const [subject, setSubject] = useState(initialSubject);
 
+  // Catalogs change rarely (admins toggle them through /admin). 30 min
+  // TTL + sessionStorage persistence means a returning user hydrates
+  // pickers instantly on first paint; mutations invalidate by tag.
   const aspectsQ = useCachedQuery(
     ["catalog", "aspects"],
     () => listAspectRatios(supabase),
-    { ttlMs: 5 * 60_000, tags: ["aspects"] },
+    { ttlMs: 30 * 60_000, tags: ["aspects"] },
   );
   const stylesQ = useCachedQuery(
     ["catalog", "styles"],
     () => listBannerStyles(supabase),
-    { ttlMs: 5 * 60_000, tags: ["styles"] },
+    { ttlMs: 30 * 60_000, tags: ["styles"] },
   );
   const modelsQ = useCachedQuery(
     ["catalog", "text-models"],
     () => listEnabledTextModels(supabase),
-    { ttlMs: 5 * 60_000, tags: ["models"] },
+    { ttlMs: 30 * 60_000, tags: ["models"] },
   );
 
   const aspects   = aspectsQ.data;

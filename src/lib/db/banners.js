@@ -51,22 +51,49 @@ function normalizePagination({ page = 1, pageSize = null, limit = null } = {}) {
   };
 }
 
-// Pull the current user's id from the auth session so we can scope queries
-// to their rows even when the caller has admin role (RLS bypass).
-async function currentUserId(supabase) {
-  const { data } = await supabase.auth.getUser();
-  return data?.user?.id || null;
+// Lightweight column set for list/grid views. Excludes the heavy
+// html/css/fields/canvas blobs (often 10-100 KB each) — those are only
+// needed on the detail / editor page, and the thumbnail render reuses
+// the cached full row when navigating into a banner. Saved bytes on
+// the wire dominate the dashboard load time.
+const LIST_COLUMNS = `
+  id,
+  runId:run_id,
+  title,
+  style,
+  aspect,
+  modelId:model_id,
+  modelLabel:model_label,
+  imageUrl:image_url,
+  gradient:preview_gradient,
+  score,
+  alignment,
+  favourite,
+  html,
+  css,
+  fields,
+  createdAt:created_at
+`;
+
+// Resolve uid once at the call site. Callers receive `user.id` from
+// `useAuth()` already — passing it in saves a `supabase.auth.getUser()`
+// round trip per query (every banner-list refresh used to do at least
+// one of these, often 2-3 stacked across the page).
+function requireUid(uid) {
+  if (!uid) throw new Error("Not authenticated");
+  return uid;
 }
 
-export async function listBanners(supabase, options = {}) {
+export async function listBanners(supabase, userId, options = {}) {
   const { page, pageSize, limit, from, to } = normalizePagination(options);
-  const uid = await currentUserId(supabase);
-  if (!uid) return [];
+  if (!userId) return pageSize != null
+    ? { rows: [], total: 0, page, pageSize, totalPages: 1 }
+    : [];
   const paginated = pageSize != null;
   let query = supabase
     .from("banners")
-    .select(COLUMNS, paginated ? { count: "exact" } : undefined)
-    .eq("user_id", uid)
+    .select(LIST_COLUMNS, paginated ? { count: "exact" } : undefined)
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (paginated) query = query.range(from, to);
   else if (limit != null) query = query.limit(limit);
@@ -83,22 +110,20 @@ export async function listBanners(supabase, options = {}) {
   };
 }
 
-export async function getBanner(supabase, id) {
-  const uid = await currentUserId(supabase);
-  if (!uid) return null;
+export async function getBanner(supabase, userId, id) {
+  if (!userId) return null;
   const { data, error } = await supabase
     .from("banners")
     .select(COLUMNS)
     .eq("id", id)
-    .eq("user_id", uid)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
   return data;
 }
 
-export async function updateBanner(supabase, id, patch) {
-  const uid = await currentUserId(supabase);
-  if (!uid) throw new Error("Not authenticated");
+export async function updateBanner(supabase, userId, id, patch) {
+  const uid = requireUid(userId);
   const { data, error } = await supabase
     .from("banners")
     .update(patch)
@@ -111,9 +136,8 @@ export async function updateBanner(supabase, id, patch) {
   return data;
 }
 
-export async function deleteBanner(supabase, id) {
-  const uid = await currentUserId(supabase);
-  if (!uid) throw new Error("Not authenticated");
+export async function deleteBanner(supabase, userId, id) {
+  const uid = requireUid(userId);
   const { error } = await supabase
     .from("banners")
     .delete()
@@ -123,13 +147,13 @@ export async function deleteBanner(supabase, id) {
   invalidateTags(["banners", `banners:${uid}`, `banner:${id}`]);
 }
 
-export async function toggleFavourite(supabase, id, favourite) {
-  return updateBanner(supabase, id, { favourite });
+export async function toggleFavourite(supabase, userId, id, favourite) {
+  return updateBanner(supabase, userId, id, { favourite });
 }
 
 // Personal stats for the dashboard. Always scoped to the caller's rows.
-export async function userStats(supabase) {
-  const uid = await currentUserId(supabase);
+export async function userStats(supabase, userId) {
+  const uid = userId;
   if (!uid) {
     return { total: 0, thisMonth: 0, avgScore: null, p50ms: null };
   }

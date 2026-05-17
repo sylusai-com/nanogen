@@ -157,13 +157,16 @@ export default function AdminOutputs() {
 
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     listAllBanners(supabase, { page, pageSize: PAGE_SIZE })
       .then((result) => {
+        if (cancelled) return;
         setAll(result.rows || []);
         setTotalPages(result.totalPages || 1);
         setTotalRows(result.total || 0);
       })
-      .catch((e) => console.error("admin outputs", e));
+      .catch((e) => !cancelled && console.error("admin outputs", e));
+    return () => { cancelled = true; };
   }, [user, supabase, page]);
 
   const filtered = useMemo(() => {

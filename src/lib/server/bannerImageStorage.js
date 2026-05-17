@@ -61,6 +61,13 @@ export async function storeBannerImageAsset({
   userId = null,
   bannerId = null,
   jobId = null,
+  // Each banner generation uploads up to FOUR distinct assets (reference,
+  // subject original, subject cutout, bg image) inside one job. Without a
+  // per-asset suffix they all collide on `${userId}/${jobId}.jpg` and the
+  // last upload silently overwrites the others — which is why the
+  // ReferencePanel ended up showing the same image in both the Reference
+  // and Subject cards (whichever finished writing last won the URL).
+  kind = "asset",
   bucketName = DEFAULT_BUCKET,
   adminClient = null,
 } = {}) {
@@ -74,7 +81,8 @@ export async function storeBannerImageAsset({
   const compressed = await compressImageBuffer(rawBuffer, parsed.mimeType);
   const userPart = sanitizeSegment(userId || "user");
   const runPart = sanitizeSegment(bannerId || jobId || Date.now());
-  const filePath = `banners/${userPart}/${runPart}.jpg`;
+  const kindPart = sanitizeSegment(kind);
+  const filePath = `banners/${userPart}/${runPart}-${kindPart}.jpg`;
 
   const contentType = "image/jpeg";
   const { error } = await client.storage.from(bucketName).upload(filePath, compressed, {

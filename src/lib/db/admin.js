@@ -34,13 +34,33 @@ export async function listAllUsers(supabase, options = {}) {
 // Pulls every banner across the platform with its creator profile embedded.
 // Includes html/css/fields/alignment so the admin outputs page can render the
 // actual banner thumbnail in an iframe (same approach as user-side BannerThumb).
+//
+// `lightweight: true` skips the heavy html/css/fields blobs — useful for
+// the admin overview's "Recent banners" strip where we only need the
+// gradient + title + meta. The admin outputs page (full gallery) keeps
+// the heavy columns so iframes can render the real templates.
 export async function listAllBanners(supabase, options = {}) {
   const { page, pageSize, limit, from, to } = normalizePagination(options);
+  const lightweight = options.lightweight === true;
   const paginated = pageSize != null;
-  let query = supabase
-    .from("banners")
-    .select(
+  const cols = lightweight
+    ? `
+        id,
+        user_id,
+        title,
+        prompt,
+        style,
+        aspect,
+        model_id,
+        model_label,
+        image_url,
+        preview_gradient,
+        score,
+        favourite,
+        created_at,
+        profiles ( name, email, avatar_url )
       `
+    : `
         id,
         user_id,
         title,
@@ -59,9 +79,10 @@ export async function listAllBanners(supabase, options = {}) {
         alignment,
         created_at,
         profiles ( name, email, avatar_url )
-      `,
-      paginated ? { count: "exact" } : undefined,
-    )
+      `;
+  let query = supabase
+    .from("banners")
+    .select(cols, paginated ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false });
   if (paginated) query = query.range(from, to);
   else if (limit != null) query = query.limit(limit);

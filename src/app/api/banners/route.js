@@ -216,19 +216,31 @@ async function performBannerGeneration(job, userId, payload) {
     // permanent HTTPS URL we can hand to vision models cheaply.
     let refImageUrl = referenceImage;
     let subjImageUrl = subjectImage;
+    // Falling back to a data URI keeps the pipeline working but persists a
+    // multi-hundred-KB base64 blob in the banner row, which slows the
+    // dashboard and editor. The most common cause is the `banner-images`
+    // bucket not existing — point future-me at the migration so the fix
+    // is obvious.
+    const onStoreFail = (which) => (e) => {
+      const msg = e?.message || String(e);
+      const hint = /bucket not found/i.test(msg)
+        ? " (apply supabase/migrations/0014_banner_images_bucket.sql to create it)"
+        : "";
+      console.warn(`Failed to store ${which} image; continuing with data URL: ${msg}${hint}`);
+    };
     const storageJobs = [];
     if (refImageUrl && typeof refImageUrl === "string" && refImageUrl.startsWith("data:image/")) {
       storageJobs.push(
-        storeBannerImageAsset({ dataUrl: refImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient })
+        storeBannerImageAsset({ dataUrl: refImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient, kind: "reference" })
           .then((stored) => { if (stored) refImageUrl = stored; })
-          .catch((e) => console.warn("Failed to store reference image; continuing with data URL", e?.message || e)),
+          .catch(onStoreFail("reference")),
       );
     }
     if (subjImageUrl && typeof subjImageUrl === "string" && subjImageUrl.startsWith("data:image/")) {
       storageJobs.push(
-        storeBannerImageAsset({ dataUrl: subjImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient })
+        storeBannerImageAsset({ dataUrl: subjImageUrl, userId, bannerId: null, jobId: job.jobId, adminClient, kind: "subject" })
           .then((stored) => { if (stored) subjImageUrl = stored; })
-          .catch((e) => console.warn("Failed to store subject image; continuing with data URL", e?.message || e)),
+          .catch(onStoreFail("subject")),
       );
     }
     if (storageJobs.length) await Promise.all(storageJobs);
@@ -295,30 +307,31 @@ async function performBannerGeneration(job, userId, payload) {
       : null;
     const placedSubjectContextText = formatSubjectContextForPrompt(placedSubjectContext);
 
-    // Persist the cutout (when one was produced) and swap the subject
-    // URL we'll send downstream to point at it.
-    let cleanedSubjectDataUrl = null;
+    // Persist the cutout (when one was produced) for use in rendering.
+    // IMPORTANT: do NOT overwrite `subjImageUrl` with the cutout — that
+    // variable still represents the user's ORIGINAL upload and is saved
+    // verbatim as `subject_image_url` on the banner row so the editor's
+    // Reference / Subject card shows what they actually uploaded, not the
+    // transparent cutout. The cutout lives only in `cleanedSubjectStoredUrl`
+    // and flows through `subjectImageForGeneration` into the rendered
+    // bg_image / subject_image fields.
+    let cleanedSubjectStoredUrl = null;
     if (cutoutResult?.dataUrl) {
-      cleanedSubjectDataUrl = cutoutResult.dataUrl;
       try {
         const stored = await storeBannerImageAsset({
           dataUrl: cutoutResult.dataUrl,
           userId,
           jobId: job.jobId,
           adminClient,
+          kind: "subject-cutout",
         });
-        if (stored) {
-          subjImageUrl = stored;
-          cleanedSubjectDataUrl = stored;
-        } else {
-          subjImageUrl = cutoutResult.dataUrl;
-        }
+        cleanedSubjectStoredUrl = stored || cutoutResult.dataUrl;
       } catch (e) {
         console.warn("Failed to store cutout; using data URL", e?.message || e);
-        subjImageUrl = cutoutResult.dataUrl;
+        cleanedSubjectStoredUrl = cutoutResult.dataUrl;
       }
     }
-    const subjectImageForGeneration = cleanedSubjectDataUrl || subjImageUrl || subjectImage;
+    const subjectImageForGeneration = cleanedSubjectStoredUrl || subjImageUrl || subjectImage;
 
     // Photographic background fetching has MOVED to after model generation
     // and category detection (see "Step 6c" below). The text model writes
@@ -483,7 +496,7 @@ async function performBannerGeneration(job, userId, payload) {
     // We do NOT fetch a bg when the user supplied a subject image whose
     // background was not removed — the subject already carries its own
     // scene and a stock photo behind it would clash.
-    const subjectIsCutout = !!cleanedSubjectDataUrl;
+    const subjectIsCutout = !!cleanedSubjectStoredUrl;
     const shouldFetchBg = !subjectImage || subjectIsCutout;
 
     if (shouldFetchBg) {
@@ -559,6 +572,7 @@ async function performBannerGeneration(job, userId, payload) {
           dataUrl: aiBackgroundImage,
           userId,
           jobId: job.jobId,
+          kind: "bg",
         }).catch(() => null);
         if (storedBackgroundImage) {
           aiBackgroundImage = storedBackgroundImage;
@@ -691,9 +705,11 @@ async function performBannerGeneration(job, userId, payload) {
         canvas: { background: bg, elements: [] },
         reference_image_url: refImageUrl || referenceImage || null,
         reference_context: referenceContext || null,
-        // Persist the cleaned subject (transparent cutout) when bg
-        // removal ran — that is the canonical render. Falls back to
-        // the stored URL, then the original input.
+        // Persist the user's ORIGINAL upload (never the cutout). The
+        // ReferencePanel + edit page show this URL directly to the user
+        // as their "Subject image" thumbnail, so it must match what they
+        // actually picked from disk. The cleaned cutout lives only in
+        // the banner's subject_image field for rendering — never here.
         subject_image_url: subjImageUrl || subjectImage || null,
         subject_context: subjectContext || null,
       };
@@ -711,6 +727,15 @@ async function performBannerGeneration(job, userId, payload) {
     const rankedBanners = [...savedBanners].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     const winnerBanner = rankedBanners.find((b) => b.model_label === (template.generator || "fallback") && b.score === winner.score) || rankedBanners[0];
 
+    // `usedFallback` reflects the underlying truth users care about: did
+    // the LLM actually generate this banner, or did we ship the static
+    // built-in fallback template because the model call failed? The old
+    // `passedThreshold` (winner.score >= 80) was conflating two very
+    // different states — a perfectly good model output that scored 75
+    // was triggering the same "we couldn't reach the AI" warning as a
+    // genuine fallback. Now both flags ship and the client decides what
+    // to surface: only `usedFallback` warrants the user-facing warning.
+    const winnerUsedFallback = (winner.template?.generator || "").toLowerCase() === "fallback";
     job.results = {
       referenceContext,
       subjectContext,
@@ -718,6 +743,7 @@ async function performBannerGeneration(job, userId, payload) {
       backgroundModel: aiBackgroundModel,
       backgroundImageUrl: storedBackgroundImage,
       modelErrors,
+      usedFallback: winnerUsedFallback,
       passedThreshold: winner.score >= SCORE_THRESHOLD,
       score: winner.score,
       enhancement: {

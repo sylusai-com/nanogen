@@ -19,10 +19,13 @@ const LATEST_PAGE_SIZE = 8;
 export default function AdminOverview() {
   const { user } = useAuth();
   
-  // Fetch admin overview with caching (60s TTL, invalidated on banner/generation changes)
-  const { data: apiData, isLoading, isStale } = useApiCache(
+  // Cached for 5 min — invalidated by the banners/generation_results
+  // mutation tags. The recent-banners section embeds rendered template
+  // payloads, so we keep this in-memory only (persist:false) instead
+  // of trying to mirror it into sessionStorage.
+  const { data: apiData, isLoading } = useApiCache(
     `/api/admin/overview?page=1&pageSize=${LATEST_PAGE_SIZE}`,
-    { ttlMs: 60_000, tags: ["banners", "generation_results"], enabled: !!user },
+    { ttlMs: 5 * 60_000, tags: ["banners", "generation_results"], enabled: !!user, persist: false },
   );
 
   const kpis = apiData?.kpis || null;

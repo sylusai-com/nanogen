@@ -12,6 +12,7 @@ Numbered SQL files under [migrations/](migrations/). Apply in order.
 | `0002_banners_profiles_fk.sql` | re-points user_id FKs to profiles so admin embeds work |
 | `0003_models.sql` | DB-driven model registry (image + text) + admin CRUD policies |
 | `0004_canvas_and_catalog.sql` | adds `canvas` jsonb to banners; moves aspect ratios + styles into admin-managed tables |
+| `0014_banner_images_bucket.sql` | creates the `banner-images` storage bucket + RLS policies used to persist reference / subject / AI-generated bg images |
 
 When you add a new schema change, create the next file as `0002_<name>.sql`,
 `0003_<name>.sql`, etc. Each file should be **append-only** — never edit a
@@ -51,8 +52,12 @@ idempotent.
    **Authentication → Providers → Email** → turn off "Confirm email".
    With it on, users can't log in until they click the email link.
 4. (Optional) Enable Google / GitHub OAuth — see the setup sections below.
-5. (Optional) Create a public storage bucket named `banners` if you'll upload
-   reference images or store generated banner files.
+5. Apply `0014_banner_images_bucket.sql` to create the `banner-images`
+   storage bucket. Without it the banner pipeline still works but falls back
+   to inlining reference / subject images as base64 data URIs in the
+   `banners` row, which bloats the row and slows the editor + dashboard.
+   You'll see `Failed to store … image; continuing with data URL: Bucket
+   not found` in the dev server log until the migration is applied.
 
 ## Creating an admin account
 

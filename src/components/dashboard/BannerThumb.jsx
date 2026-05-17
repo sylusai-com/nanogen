@@ -1,11 +1,13 @@
 // src/components/dashboard/BannerThumb.jsx
 "use client";
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/cn";
 import BannerPreview from "@/components/banner/BannerPreview";
+import { setCached, getCached } from "@/lib/cache";
 
 function aspectClass(a) {
   if (a === "1:1") return "aspect-square";
@@ -30,10 +32,32 @@ export default function BannerThumb({
   index = 0,
   frameAspect = null,
 }) {
+  const router = useRouter();
   const link = href || `/dashboard/banners/${banner.id}`;
   const isTopScore = banner.score != null && banner.score >= 80;
   const hasTemplate = Boolean(banner.html && banner.css);
   const useFrame = Boolean(frameAspect) && banner.aspect !== frameAspect;
+
+  // Hover/focus prefetch — seeds the detail page's cache with the full
+  // row we already have on the list (saves the round-trip), and warms
+  // the Next.js route bundle. Result: detail navigation feels instant.
+  const prefetch = () => {
+    const cached = getCached(["banner", banner.id, banner.user_id]);
+    if (!cached) {
+      // The detail page keys by ["banner", id, userId] — seed it. If
+      // we don't know the user id at thumb-time, the cache hit is
+      // skipped and the page falls back to the live query, which is
+      // still fine.
+      const ttlMs = 5 * 60_000;
+      try {
+        setCached(["banner", banner.id, banner.user_id], banner, {
+          ttlMs,
+          tags: ["banners", `banner:${banner.id}`],
+        });
+      } catch { /* sessionStorage may be over quota — ignore */ }
+    }
+    try { router.prefetch?.(link); } catch { /* prefetch is best-effort */ }
+  };
 
   return (
     <motion.div
@@ -42,12 +66,15 @@ export default function BannerThumb({
       viewport={{ once: true, margin: "-40px" }}
       transition={{
         duration: 0.4,
-        delay: index * 0.04,
+        delay: Math.min(index, 6) * 0.04,
         ease: [0.21, 0.47, 0.32, 0.98],
       }}
     >
       <Link
         href={link}
+        prefetch
+        onMouseEnter={prefetch}
+        onFocus={prefetch}
         className="group block overflow-hidden rounded-3xl border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] shadow-[0_18px_60px_-46px_rgba(0,0,0,0.6)] transition-all duration-300 hover:-translate-y-1 hover:border-border-strong hover:shadow-[0_28px_80px_-48px_rgba(0,0,0,0.7)]"
       >
         <div className="p-2">
@@ -65,7 +92,7 @@ export default function BannerThumb({
                     className="max-h-full max-w-full"
                     style={{ aspectRatio: banner.aspect.replace(":", " / "), height: "100%" }}
                   >
-                    <BannerPreview banner={banner} className="h-full w-full" />
+                    <BannerPreview banner={banner} className="h-full w-full" lazy />
                   </div>
                 </div>
               ) : (

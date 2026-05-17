@@ -1,7 +1,7 @@
 // src/app/dashboard/layout.js
 "use client";
 
-import { Home, Sparkles, Images, Settings, Shield } from "lucide-react";
+import { Home, Sparkles, Settings, Shield } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import RouteGuard from "@/components/dashboard/RouteGuard";
 import Sidebar from "@/components/dashboard/Sidebar";
@@ -17,9 +17,13 @@ export default function DashboardLayout({ children }) {
     {
       title: "Workspace",
       items: [
+        // Create-first ordering: the primary action of this app is
+        // generating a banner, so the entry sits at the top of the nav.
+        // /dashboard/banners is the unified hub — composer at top, gallery
+        // below — so the same destination serves "make something new" and
+        // "browse what I've made". Overview (stats / status) sits beneath.
+        { href: "/dashboard/banners", label: "Create banner", icon: <Sparkles className={iconCls} /> },
         { href: "/dashboard", label: "Overview", icon: <Home className={iconCls} />, exact: true },
-        { href: "/dashboard/create", label: "Create banner", icon: <Sparkles className={iconCls} /> },
-        { href: "/dashboard/banners", label: "Banners", icon: <Images className={iconCls} /> },
       ],
     },
     {

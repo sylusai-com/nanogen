@@ -70,7 +70,7 @@ export default function BannerEditor({ params }) {
     if (!userId) return;
     let cancelled = false;
     startTransition(() => setLoading(true));
-    getBanner(supabase, id)
+    getBanner(supabase, userId, id)
       .then((b) => {
         if (cancelled) return;
         startTransition(() => setBanner(b));
@@ -141,7 +141,7 @@ export default function BannerEditor({ params }) {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateBanner(supabase, banner.id, {
+      const updated = await updateBanner(supabase, userId, banner.id, {
         html: template.html,
         css: template.css,
         fields,

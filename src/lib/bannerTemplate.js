@@ -178,7 +178,7 @@ const FALLBACK_TEMPLATE = {
   --accent3: #f472b6;
   --headline-size: 64px;
   --bg-image: none;
-  --bg-brightness: 0.7;
+  --bg-brightness: 0.4;
   --bg-blur: 0px;
   --bg-overlay: 0.45;
   --bg-zoom: 110%;
@@ -204,7 +204,7 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
   background-size: var(--bg-zoom, 110%);
   background-position: var(--bg-position, center center);
   background-repeat: no-repeat;
-  filter: brightness(var(--bg-brightness, 0.7)) blur(var(--bg-blur, 0px));
+  filter: brightness(var(--bg-brightness, 0.4)) blur(var(--bg-blur, 0px));
 }
 .banner__bg-image::after {
   content: ""; position: absolute; inset: 0;
@@ -344,8 +344,9 @@ body { font-family: 'Geist', ui-sans-serif, system-ui, sans-serif; }
     { id: "accent2",        type: "color",  cssVar: "--accent2",    label: "Accent 2",         value: "#22d3ee" },
     { id: "accent3",        type: "color",  cssVar: "--accent3",    label: "Accent 3",         value: "#f472b6" },
     { id: "headline_size",  type: "range",  cssVar: "--headline-size", label: "Headline size", value: 64, min: 32, max: 120, step: 2, unit: "px" },
-    { id: "bg_image",       type: "image",  cssVar: "--bg-image",   slot: "bg_image", label: "Background image", value: "" },
-    { id: "bg_brightness",  type: "range",  cssVar: "--bg-brightness", label: "Image brightness", value: 0.7, min: 0.2, max: 1.2, step: 0.05, unit: "" },
+    { id: "bg_image",         type: "image",  cssVar: "--bg-image",   slot: "bg_image", label: "Background image", value: "" },
+    { id: "bg_image_enabled", type: "toggle", label: "Show background image", value: true },
+    { id: "bg_brightness",    type: "range",  cssVar: "--bg-brightness", label: "Image brightness", value: 0.4, min: 0.2, max: 1.2, step: 0.05, unit: "" },
     { id: "bg_blur",        type: "range",  cssVar: "--bg-blur",       label: "Image blur",       value: 0,   min: 0,   max: 20,  step: 1,    unit: "px" },
     { id: "bg_overlay",     type: "range",  cssVar: "--bg-overlay",    label: "Image overlay",    value: 0.45, min: 0,  max: 0.9, step: 0.05, unit: "" },
     { id: "bg_zoom",        type: "range",  cssVar: "--bg-zoom",       label: "Image zoom",       value: 110, min: 100, max: 200, step: 5,    unit: "%" },
@@ -495,10 +496,16 @@ function ensureBgImageField(template) {
       label: "Background image", value: "",
     });
   }
+  if (!has("bg_image_enabled")) {
+    fields.push({
+      id: "bg_image_enabled", type: "toggle",
+      label: "Show background image", value: true,
+    });
+  }
   if (!has("bg_brightness")) {
     fields.push({
       id: "bg_brightness", type: "range", cssVar: "--bg-brightness",
-      label: "Image brightness", value: 0.7, min: 0.2, max: 1.2, step: 0.05, unit: "",
+      label: "Image brightness", value: 0.4, min: 0.2, max: 1.2, step: 0.05, unit: "",
     });
   }
   if (!has("bg_blur")) {
@@ -551,7 +558,14 @@ export function applySubjectImage(template, subjectImage) {
   let found = false;
   for (const f of next.fields) {
     if (f.id === "bg_image") {
+      // Force the canonical label too — many models emit bg_image labelled
+      // "Subject image" because the prompt tells them that field carries
+      // the subject. Once we put a real bg URL in it the label would
+      // mislead the editor's Media tab.
       f.value = wrapped;
+      f.label = "Background image";
+      f.cssVar = f.cssVar || "--bg-image";
+      f.slot = f.slot || "bg_image";
       found = true;
     }
   }
@@ -584,11 +598,19 @@ export function applyLayeredImages(template, { backgroundImage, subjectImage }) 
   const wrappedBg = wrap(backgroundImage);
   const wrappedSubject = wrap(subjectImage);
 
+  // Forces every image field this function touches to have the canonical
+  // label/cssVar/slot. Otherwise a field the model emitted with label
+  // "Subject image" (because it was carrying the subject pre-layering)
+  // stays mislabelled when we move the BG into it.
   const upsert = (id, cssVar, label, value) => {
     if (!value) return;
     const existing = next.fields.find((f) => f.id === id);
     if (existing) {
       existing.value = value;
+      existing.label = label;
+      existing.cssVar = cssVar;
+      existing.slot = id;
+      existing.type = "image";
     } else {
       next.fields.push({ id, type: "image", cssVar, slot: id, label, value });
     }

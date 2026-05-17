@@ -129,17 +129,114 @@ export async function callOpenRouter({
 }
 
 // Strips ```json ... ``` fences and trailing prose so JSON.parse succeeds.
+// Then runs the result through a series of forgiving repairs for the most
+// common malformations real-world LLMs emit even with jsonMode enabled:
+//   - line comments (`// note`) — Gemini frequently adds these
+//   - block comments (`/* … */`)
+//   - trailing commas before } or ]
+//   - literal newlines / tabs inside string values (CSS blocks tend to)
+// Each repair only kicks in after the strict parse has already failed, so
+// well-formed JSON pays no robustness tax.
 export function extractJson(text) {
   if (!text) return null;
   const fenced    = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced ? fenced[1] : text;
-  // Find the first { and the last } so we ignore any pre/post commentary.
   const first = candidate.indexOf("{");
   const last  = candidate.lastIndexOf("}");
   if (first === -1 || last === -1 || last < first) return null;
-  try {
-    return JSON.parse(candidate.slice(first, last + 1));
-  } catch {
-    return null;
+  const sliced = candidate.slice(first, last + 1);
+
+  const attempts = [
+    sliced,
+    () => stripComments(sliced),
+    () => stripTrailingCommas(stripComments(sliced)),
+    () => escapeRawNewlinesInStrings(stripTrailingCommas(stripComments(sliced))),
+  ];
+  for (const a of attempts) {
+    const src = typeof a === "function" ? a() : a;
+    try { return JSON.parse(src); } catch { /* try next repair */ }
   }
+  return null;
+}
+
+function stripComments(src) {
+  // Remove block comments and line comments — but only when they appear
+  // OUTSIDE string literals so we don't eat `// ` inside a URL or a CSS
+  // value. The state machine tracks whether we're inside a "…" string.
+  let out = "";
+  let i = 0;
+  let inString = false;
+  while (i < src.length) {
+    const c = src[i];
+    const n = src[i + 1];
+    if (inString) {
+      out += c;
+      if (c === "\\" && i + 1 < src.length) { out += src[i + 1]; i += 2; continue; }
+      if (c === '"') inString = false;
+      i++;
+      continue;
+    }
+    if (c === '"') { inString = true; out += c; i++; continue; }
+    if (c === "/" && n === "/") {
+      const nl = src.indexOf("\n", i);
+      i = nl === -1 ? src.length : nl;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      const end = src.indexOf("*/", i + 2);
+      i = end === -1 ? src.length : end + 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+function stripTrailingCommas(src) {
+  // Skip commas that sit inside string literals; only remove the syntactic
+  // trailing commas before } or ].
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inString) {
+      out += c;
+      if (c === "\\" && i + 1 < src.length) { out += src[i + 1]; i++; continue; }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') { inString = true; out += c; continue; }
+    if (c === ",") {
+      let j = i + 1;
+      while (j < src.length && /\s/.test(src[j])) j++;
+      if (src[j] === "}" || src[j] === "]") continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+function escapeRawNewlinesInStrings(src) {
+  // Models sometimes emit multi-line CSS blocks as a single string value
+  // without escaping the newlines, which makes JSON.parse choke on the
+  // raw \n. Replace raw control characters (newline, carriage return,
+  // tab) inside string literals with their escaped form.
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inString) {
+      if (c === "\\" && i + 1 < src.length) { out += c + src[i + 1]; i++; continue; }
+      if (c === '"') { inString = false; out += c; continue; }
+      if (c === "\n") { out += "\\n"; continue; }
+      if (c === "\r") { out += "\\r"; continue; }
+      if (c === "\t") { out += "\\t"; continue; }
+      out += c;
+      continue;
+    }
+    if (c === '"') { inString = true; out += c; continue; }
+    out += c;
+  }
+  return out;
 }

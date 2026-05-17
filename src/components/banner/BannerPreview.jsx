@@ -73,6 +73,15 @@ export default function BannerPreview({
   background,
   pointerEvents = false,
   iframeRef,
+  // When `lazy` is true the iframe is only mounted once the wrapper
+  // enters the viewport. This is a major perf win on the dashboard
+  // gallery — 12 iframes parsing + laying out + rendering at once on
+  // first paint stalls the main thread for 200-500ms. With lazy mount
+  // we render only the visible thumbs (typically 4-6) and let the rest
+  // mount as the user scrolls. Detail / editor pages set this to false
+  // so the banner shows immediately.
+  lazy = false,
+  rootMargin = "400px",
 }) {
   const aspect = banner?.aspect || "16:9";
   const { width: designW, height: designH } = exportRenderSize(aspect);
@@ -101,7 +110,18 @@ export default function BannerPreview({
   }, [fields, rawSubjectImageUrl]);
 
   const resolvedFields = useMemo(() => {
-    const next = (fields || []).map((field) => {
+    // The user's reference upload and subject upload have STRICTLY
+    // separate roles: reference informs the model (palette / mood) and is
+    // never rendered; subject is rendered via the subject_image field
+    // (cutout overlay) or — only when bg removal failed and no AI bg was
+    // fetched — via the bg_image field set by the route. We deliberately
+    // do NOT pull `subjectImageUrl` into bg_image here as a "fallback":
+    // that legacy convenience silently turned the user's raw subject
+    // upload (full scene + native background) into the banner backdrop,
+    // which conflated the two roles and made the subject look like the
+    // bg. The route always populates bg_image / subject_image with the
+    // right asset; this component just passes them through.
+    return (fields || []).map((field) => {
       if (field?.type === "image" && imageFieldUrlMap.has(field.id)) {
         const swapped = imageFieldUrlMap.get(field.id);
         const wrapped = swapped.startsWith("url(") ? swapped : `url("${swapped}")`;
@@ -109,34 +129,7 @@ export default function BannerPreview({
       }
       return { ...field };
     });
-
-    const raw = String(subjectImageUrl || "").trim();
-    if (!raw) return next;
-
-    const wrapped = raw.startsWith("url(") ? raw : `url("${raw}")`;
-    let hasBgImageField = false;
-
-    for (const field of next) {
-      const id = String(field?.id || "").toLowerCase();
-      const cssVar = String(field?.cssVar || "").toLowerCase();
-      if (id === "bg_image" || cssVar === "--bg-image") {
-        field.value = wrapped;
-        hasBgImageField = true;
-      }
-    }
-
-    if (!hasBgImageField) {
-      next.push({
-        id: "bg_image",
-        type: "image",
-        label: "Background Image",
-        cssVar: "--bg-image",
-        value: wrapped,
-      });
-    }
-
-    return next;
-  }, [fields, subjectImageUrl, imageFieldUrlMap]);
+  }, [fields, imageFieldUrlMap]);
 
   const previewBackground = typeof background === "string" && /^(?:data:image\/|https?:\/\/)/i.test(background.trim())
     ? banner?.gradient || "#0c0c10"
@@ -158,6 +151,10 @@ export default function BannerPreview({
 
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);
+  // `visible` gates iframe mounting under lazy mode. Once true it stays
+  // true — we don't want to unmount the iframe just because the user
+  // scrolled past it (re-mounting would re-fire parse + layout).
+  const [visible, setVisible] = useState(!lazy);
 
   useEffect(() => {
     const node = wrapperRef.current;
@@ -176,6 +173,26 @@ export default function BannerPreview({
     return () => ro.disconnect();
   }, [designW]);
 
+  useEffect(() => {
+    if (!lazy || visible) return;
+    const node = wrapperRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, [lazy, visible, rootMargin]);
+
   return (
     <div
       ref={wrapperRef}
@@ -185,12 +202,17 @@ export default function BannerPreview({
         background: previewBackground,
       }}
     >
-      {srcDoc && (
+      {srcDoc && visible && (
         <iframe
           ref={iframeRef}
           title={banner?.title || "Banner preview"}
           srcDoc={srcDoc}
           sandbox="allow-scripts allow-same-origin"
+          // `loading="lazy"` is a belt-and-braces with the IntersectionObserver
+          // above. The IO determines whether we mount the iframe element at
+          // all; once mounted, the browser still gets to defer the actual
+          // resource fetch for any embedded images.
+          loading="lazy"
           className={cn(
             "absolute left-0 top-0 origin-top-left border-0 bg-transparent",
             !pointerEvents && "pointer-events-none",

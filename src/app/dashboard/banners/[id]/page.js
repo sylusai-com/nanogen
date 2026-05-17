@@ -54,11 +54,15 @@ export default function BannerDetail({ params }) {
     refresh,
   } = useCachedQuery(
     ["banner", id, userId],
-    () => getBanner(supabase, id),
+    () => getBanner(supabase, userId, id),
     {
-      ttlMs: 60_000,
+      ttlMs: 5 * 60_000,
       tags: ["banners", `banner:${id}`, `banners:${userId || "anon"}`],
       enabled: !!userId,
+      // Single banner rows include html/css/fields — these can be tens
+      // of KB. Stay in-memory only so we don't blow the sessionStorage
+      // quota after a user browses through a handful of banners.
+      persist: false,
     },
   );
 
@@ -75,7 +79,7 @@ export default function BannerDetail({ params }) {
     if (!banner) return;
     setBusy(true);
     try {
-      const next = await toggleFavourite(supabase, banner.id, !banner.favourite);
+      const next = await toggleFavourite(supabase, userId, banner.id, !banner.favourite);
       patchBanner(next);
     } finally {
       setBusy(false);
@@ -86,7 +90,7 @@ export default function BannerDetail({ params }) {
     if (!banner) return;
     setBusy(true);
     try {
-      await deleteBanner(supabase, banner.id);
+      await deleteBanner(supabase, userId, banner.id);
       router.push("/dashboard/banners");
     } catch (e) {
       alert(e.message || "Failed to delete");

@@ -20,10 +20,18 @@ export async function GET(req) {
       getKpis(admin),
       getDailyActivity(admin, 14),
       getModelShare(admin),
-      listAllBanners(admin, { page, pageSize }),
+      // Admin overview's recent strip only renders metadata, not full
+      // template iframes — skip the html/css/fields blobs (often 10-80
+      // KB each) to keep the response sub-second on bigger workspaces.
+      listAllBanners(admin, { page, pageSize, lightweight: true }),
     ]);
 
-    return NextResponse.json({ kpis, activity, share, recent });
+    const res = NextResponse.json({ kpis, activity, share, recent });
+    // Lets the browser HTTP cache serve a stale copy while we refresh in
+    // the background. Mutation tags on the client cache still invalidate
+    // immediately, so the admin sees fresh numbers right after a change.
+    res.headers.set("Cache-Control", "private, max-age=15, stale-while-revalidate=60");
+    return res;
   } catch (e) {
     const status = e.status || 500;
     return NextResponse.json({ error: e.message || String(e) }, { status });

@@ -1,0 +1,466 @@
+# Simple Overview
+
+When a user clicks **“Generate Banner”**, the system creates a banner automatically using AI.
+
+The process happens in **7 main stages**:
+
+1. Upload images
+2. Analyze images
+3. Improve the prompt
+4. Generate banner designs
+5. Score and choose the best design
+6. Detect banner style/category
+7. Add background image and save
+
+The system uses:
+
+* **Text/Vision AI models** → understand prompts & images
+* **Image generation models** → create backgrounds if needed
+* **Background removal tools** → remove image backgrounds
+
+The system is designed to **never fail completely** unless every AI model fails.
+
+---
+
+# Complete Flow (Easy Version)
+
+## 1. User Starts Banner Generation
+
+User goes to:
+
+`/dashboard/create`
+
+and clicks:
+
+**Generate Banner**
+
+Then:
+
+* Request goes to:
+  `POST /api/banners`
+* A job is created
+* User immediately gets a `jobId`
+* Frontend starts checking progress continuously
+
+---
+
+# 2. Upload Images
+
+If user uploaded:
+
+* reference image
+* subject image
+
+they are first stored in **Supabase Storage**.
+
+Why?
+
+Because AI models work better with image URLs instead of huge base64 data.
+
+The system:
+
+* compresses image
+* converts to JPEG
+* stores it
+* creates public URL
+
+---
+
+# 3. Analyze Images (Runs in Parallel)
+
+Three tasks happen together:
+
+---
+
+## A. Analyze Reference Image
+
+Purpose:
+Use the image only for **inspiration**.
+
+AI extracts:
+
+* mood
+* colors
+* composition
+* vibe
+* style
+
+Example:
+If reference image looks futuristic neon cyberpunk,
+AI understands:
+
+* dark colors
+* glowing lights
+* futuristic style
+
+BUT:
+The actual reference image is NEVER shown in final banner.
+
+It only inspires the design.
+
+---
+
+## B. Analyze Subject Image
+
+This is the image that WILL appear in banner.
+
+AI detects:
+
+* Is it a person/product/scene?
+* Best placement
+* Dominant colors
+* Background quality
+* Recommended visual treatment
+
+Example:
+
+* place person on right side
+* use feather mask
+* center product
+
+---
+
+## C. Remove Background
+
+System tries multiple background removal providers:
+
+* remove.bg
+* Cloudinary AI
+* others
+
+If one works:
+→ transparent cutout is created.
+
+If all fail:
+→ original image is still used.
+
+So pipeline continues safely.
+
+---
+
+# 4. Enhance Prompt
+
+Now AI improves the user prompt.
+
+Example:
+
+User writes:
+
+> “Gaming banner”
+
+AI converts it into:
+
+> “Modern futuristic gaming banner with neon lighting, bold typography, dark cyberpunk atmosphere…”
+
+This improved prompt becomes the **main prompt** for all future steps.
+
+AI also decides:
+
+* where subject should be placed
+* whether background image is needed
+
+---
+
+# 5. Generate Banner Variants
+
+Now multiple AI text models generate banner designs in parallel.
+
+Each model creates:
+
+* HTML
+* CSS
+* banner fields
+
+These are basically complete webpage-style banner templates.
+
+The AI follows strict rules from `prompts.js`.
+
+Important:
+At this stage:
+
+* no real image compositing yet
+* AI mainly creates layout/design structure
+
+The generated banner may include:
+
+* gradients
+* SVG decorations
+* typography
+* layout structure
+
+---
+
+# 6. Score All Banners
+
+Now another AI evaluates all generated banners.
+
+It scores them on:
+
+* design quality
+* layout
+* readability
+* aesthetics
+* overall quality
+
+Each banner gets score out of 100.
+
+Highest scoring banner becomes the winner.
+
+Even if all scores are bad:
+→ system STILL chooses the best available one.
+
+So user always gets something.
+
+---
+
+# 7. Detect Banner Category
+
+AI now classifies the winning banner.
+
+Example categories:
+
+* gaming
+* luxury
+* fashion
+* sports
+* business
+* cinematic
+* futuristic
+* minimal
+* food
+* travel
+
+This helps decide:
+
+* what type of background image should be fetched later
+
+---
+
+# 8. Fetch Background Image
+
+Now system decides whether a real background image is needed.
+
+---
+
+## First Try: Stock Image Providers
+
+System searches:
+
+* Unsplash
+* Pexels
+* Pixabay
+* other providers
+
+using AI-generated search queries.
+
+Example:
+AI may generate:
+
+> “dark futuristic gaming room neon”
+
+If a good image is found:
+→ use it.
+
+---
+
+## Fallback: AI Image Generation
+
+If no stock image is found:
+system uses AI image generation model.
+
+It creates a custom background.
+
+---
+
+## If Everything Fails
+
+No problem.
+
+The original CSS-only banner is still used.
+
+So the banner generation still succeeds.
+
+---
+
+# 9. Save Banner
+
+Finally everything is stored in database.
+
+Three tables are used:
+
+| Table                | Purpose                   |
+| -------------------- | ------------------------- |
+| `generation_runs`    | entire generation request |
+| `generation_results` | all banner variants       |
+| `banners`            | final saved banners       |
+
+Then user is redirected to:
+
+* editor page
+  OR
+* banners page
+
+---
+
+# How Subject Image Works
+
+This is the most important image flow.
+
+---
+
+## Flow
+
+### Step 1
+
+User uploads image.
+
+### Step 2
+
+Image stored in Supabase.
+
+### Step 3
+
+AI analyzes image.
+
+### Step 4
+
+Background removal happens.
+
+### Step 5
+
+AI decides placement.
+
+Example:
+
+* left side
+* center hero
+* right portrait
+
+### Step 6
+
+Banner HTML/CSS references image using CSS variables.
+
+### Step 7
+
+Final rendering injects actual image into banner.
+
+### Step 8
+
+If background image later gets added:
+
+* subject image moves to separate layer
+* background image becomes main background
+
+---
+
+# How Reference Image Works
+
+Much simpler.
+
+Reference image:
+
+* NEVER appears in final banner
+* only inspires design
+
+AI extracts:
+
+* colors
+* mood
+* composition
+* vibe
+
+Then models use that information while designing.
+
+---
+
+# Progress System
+
+Frontend continuously polls backend every 500ms.
+
+UI shows:
+
+| Symbol | Meaning           |
+| ------ | ----------------- |
+| ✓      | completed         |
+| ◌      | currently running |
+| ✗      | skipped           |
+| ·      | not started       |
+
+So user sees real-time progress.
+
+---
+
+# Failure Handling (Very Important)
+
+The system is designed with **graceful degradation**.
+
+Meaning:
+if one part fails,
+everything else still continues.
+
+Examples:
+
+| Failure                  | What Happens               |
+| ------------------------ | -------------------------- |
+| Storage missing          | uses base64 image instead  |
+| Vision AI fails          | generation still continues |
+| Background removal fails | original image used        |
+| Prompt enhancement fails | original prompt used       |
+| One AI model fails       | others continue            |
+| Background fetch fails   | CSS-only design used       |
+
+ONLY fatal failure:
+
+* if ALL text models fail.
+
+Then generation stops.
+
+---
+
+# Architecture Summary
+
+## Main Technologies
+
+| Component               | Purpose                     |
+| ----------------------- | --------------------------- |
+| Supabase                | storage + database          |
+| OpenRouter              | AI model access             |
+| Vision models           | image understanding         |
+| Text models             | banner generation           |
+| Image models            | AI backgrounds              |
+| Background-removal APIs | transparent subject cutouts |
+
+---
+
+# Final Mental Model
+
+Think of the pipeline like this:
+
+```text
+User Prompt + Images
+        ↓
+Image Analysis
+        ↓
+Prompt Enhancement
+        ↓
+Multiple AI Banner Designs
+        ↓
+AI Scoring
+        ↓
+Best Banner Selected
+        ↓
+Optional Background Added
+        ↓
+Saved to Database
+        ↓
+Shown in Editor
+```
+
+This is essentially an **AI-powered automated design factory** that:
+
+* understands images
+* improves prompts
+* generates layouts
+* scores designs
+* adds backgrounds
+* saves final editable banners automatically.

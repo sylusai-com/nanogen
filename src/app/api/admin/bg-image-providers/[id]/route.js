@@ -18,7 +18,13 @@ export async function PATCH(req, { params }) {
   try {
     const { supabase } = await validateAdminRole();
 
-    const { id } = params;
+    // Next.js 15+ delivers `params` as a Promise — destructuring it
+    // synchronously yields `undefined` for `id` and silently fails the
+    // update. Other admin route handlers in this app already await it
+    // (models/[id], bg-removal-providers/[id]); this route was the
+    // outlier, which is why the disable toggle and delete button on
+    // /admin/bg-image-providers stopped working under the new runtime.
+    const { id } = await params;
     const body = await req.json();
     const updates = {};
 
@@ -42,7 +48,7 @@ export async function DELETE(req, { params }) {
   try {
     const { supabase } = await validateAdminRole();
 
-    const { id } = params;
+    const { id } = await params;
     await deleteBgImageProvider(supabase, id);
     return NextResponse.json({ message: "Provider deleted" });
   } catch (error) {

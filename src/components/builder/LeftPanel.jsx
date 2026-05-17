@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { compressImage, isImageFile } from "@/lib/imageUpload";
+import Switch from "@/components/ui/Switch";
 
 // ── Element type catalogue ─────────────────────────────────────────────────
 const ELEMENT_GROUPS = [
@@ -350,13 +351,18 @@ export default function LeftPanel({
     }
   };
 
-  const bgImage      = findField(fields, "bg_image");
-  const bgBrightness = findField(fields, "bg_brightness");
-  const bgBlur       = findField(fields, "bg_blur");
-  const bgOverlay    = findField(fields, "bg_overlay");
-  const bgZoom       = findField(fields, "bg_zoom");
-  const bgPosition   = findField(fields, "bg_position");
-  const subjectImage = findField(fields, "subject_image");
+  const bgImage        = findField(fields, "bg_image");
+  const bgImageEnabled = findField(fields, "bg_image_enabled");
+  const bgBrightness   = findField(fields, "bg_brightness");
+  const bgBlur         = findField(fields, "bg_blur");
+  const bgOverlay      = findField(fields, "bg_overlay");
+  const bgZoom         = findField(fields, "bg_zoom");
+  const bgPosition     = findField(fields, "bg_position");
+  const subjectImage   = findField(fields, "subject_image");
+  // Default to enabled when the template (an older banner row) has no
+  // toggle field yet — we still want the bg layer to render for legacy
+  // banners until the user explicitly disables it.
+  const bgImageOn = bgImageEnabled ? bgImageEnabled.value !== false : true;
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface/70 backdrop-blur">
@@ -452,17 +458,44 @@ export default function LeftPanel({
 
             {/* Background image */}
             {bgImage ? (
-              <ImageFieldCard
-                title="Background image"
-                hint="Upload to override the AI-generated background. Use the sliders below to dial in brightness, blur, overlay, and zoom."
-                field={bgImage}
-                brightness={bgBrightness}
-                blur={bgBlur}
-                overlay={bgOverlay}
-                zoom={bgZoom}
-                position={bgPosition}
-                onFieldChange={onFieldChange}
-              />
+              <div className="space-y-2">
+                {/* Visibility toggle. Hides the bg layer without losing its
+                    URL so the user can flip back on later. When off, all
+                    brightness/blur/zoom controls are disabled to make it
+                    obvious they have no effect. */}
+                {bgImageEnabled && (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-2/40 px-3 py-2">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[11px] font-medium text-foreground">
+                        Show background image
+                      </span>
+                      <span className="text-[10px] text-muted leading-snug">
+                        Hide the bg layer entirely. Subject image and the
+                        rest of the design stay visible.
+                      </span>
+                    </div>
+                    <Switch
+                      checked={bgImageOn}
+                      onChange={(next) => onFieldChange(bgImageEnabled.id, next)}
+                      ariaLabel="Toggle background image"
+                      size="sm"
+                    />
+                  </div>
+                )}
+                <div className={cn(!bgImageOn && "opacity-50 pointer-events-none")}>
+                  <ImageFieldCard
+                    title="Background image"
+                    hint="Upload to override the AI-generated background. Use the sliders below to dial in brightness, blur, overlay, and zoom."
+                    field={bgImage}
+                    brightness={bgBrightness}
+                    blur={bgBlur}
+                    overlay={bgOverlay}
+                    zoom={bgZoom}
+                    position={bgPosition}
+                    onFieldChange={onFieldChange}
+                  />
+                </div>
+              </div>
             ) : (
               <p className="text-[10px] text-muted px-0.5">
                 This template has no <code className="font-mono">bg_image</code> field.

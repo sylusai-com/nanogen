@@ -50,34 +50,6 @@ function wrapImageUrl(url) {
   return value.startsWith("url(") ? value : `url("${value}")`;
 }
 
-function normalizeRenderFields(fields = [], subjectImageUrl = null) {
-  const next = (fields || []).map((field) => ({ ...field }));
-  if (!subjectImageUrl) return next;
-
-  const wrapped = wrapImageUrl(subjectImageUrl);
-  if (!wrapped) return next;
-
-  const bgField = next.find((field) => field?.id === "bg_image");
-  if (bgField) {
-    bgField.value = wrapped;
-  } else {
-    // If no explicit bg_image field exists, add one so CSS var overrides
-    // and template background-image usage pick up the provided subject/bg.
-    next.push({
-      id: "bg_image",
-      type: "image",
-      cssVar: "--bg-image",
-      slot: "bg_image",
-      label: "Background image",
-      value: wrapped,
-    });
-  }
-
-  // Keep subject rendering deterministic: only bg_image/--bg-image is
-  // populated from the subject data URI. Do not fan out to other fields.
-  return next;
-}
-
 function getFieldById(fields, id) {
   return (fields || []).find((field) => field?.id === id) || null;
 }
@@ -195,46 +167,51 @@ function extractStyleBlock(docHtml) {
 
 // Build the full HTML document the iframe would have shown, with the
 // patched field values applied to the markup and the chosen alignment set.
-export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, hiddenSlots = null, subjectImageUrl = null }) {
+export function buildStandaloneHtml({ html, css, fields = [], alignment = "left", title = "banner", hideSlots = false, hiddenSlots = null, subjectImageUrl: _subjectImageUrl = null }) {
   let cssOut = css || "";
-  const renderFields = normalizeRenderFields(fields, subjectImageUrl);
-  const forcedSubjectBg = wrapImageUrl(subjectImageUrl);
-  // The "effective" bg image is whatever should be rendered: prefer the
-  // explicit subjectImageUrl (user upload) and fall back to whatever value
-  // a bg_image field already carries (AI-generated or provider-fetched
-  // photo lands here through applySubjectImage()).
-  const bgField = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+  const renderFields = fields || [];
+  // The user's reference and subject uploads have STRICTLY separate
+  // roles — reference is for model inspiration only and never reaches
+  // the renderer; subject lands in the dedicated `subject_image` field
+  // (overlay layer) while a photographic / AI bg lands in `bg_image`.
+  // We deliberately ignore the legacy `subjectImageUrl` argument so the
+  // raw subject upload (full scene + native background) is never
+  // promoted to the banner backdrop as a fallback — that was the source
+  // of the "subject and reference behave the same" bug.
+  //
+  // The `bg_image_enabled` toggle (default true) lets the editor hide
+  // the bg layer without losing its URL. When false we treat the bg as
+  // absent for every downstream branch.
+  const bgEnabledField = renderFields.find((f) => f?.id === "bg_image_enabled");
+  const bgEnabled = bgEnabledField ? bgEnabledField.value !== false : true;
+  const bgFieldRaw = renderFields.find((f) => f?.id === "bg_image" || getFieldCssVar(f) === "--bg-image");
+  const bgField = bgEnabled ? bgFieldRaw : null;
   const bgFieldCssValue = bgField ? getFieldCssValue(bgField) : "";
+  const hasFieldBg = !!(bgFieldCssValue && bgFieldCssValue !== "none");
   // Subject layer (--subject-image): set when the route layered both a
   // photographic bg AND a separate cleaned subject cutout. The subject
   // gets its own var so it stacks ABOVE the bg image, instead of
-  // replacing it like in the legacy single-layer path.
+  // replacing it.
   const subjectField = renderFields.find((f) => f?.id === "subject_image" || getFieldCssVar(f) === "--subject-image");
   const subjectFieldCssValue = subjectField ? getFieldCssValue(subjectField) : "";
   const effectiveSubject = subjectFieldCssValue && subjectFieldCssValue !== "none" ? subjectFieldCssValue : "";
-  const effectiveBg = forcedSubjectBg
-    || (bgFieldCssValue && bgFieldCssValue !== "none" ? bgFieldCssValue : "");
+  const effectiveBg = bgFieldCssValue && bgFieldCssValue !== "none" ? bgFieldCssValue : "";
 
   const overrides = renderFields
     .filter((f) => getFieldCssVar(f))
+    // When the user toggled the bg layer off, skip writing --bg-image so
+    // it doesn't fight with the forced "none" override appended below.
+    .filter((f) => !(bgEnabled === false && (f.id === "bg_image" || getFieldCssVar(f) === "--bg-image")))
     .map((f) => {
       return `  ${getFieldCssVar(f)}: ${getFieldCssValue(f)};`;
     })
     .join("\n");
-  // When a subject image is present, force `contain` sizing so the whole
-  // subject (head, hair, full body, etc.) renders inside whatever layer
-  // the model created. Models frequently set --bg-zoom to 100% or 110%
-  // which crops portrait subjects — overriding the variable here means
-  // every `background-size: var(--bg-zoom, …)` consumer gets `contain`
-  // automatically. We also normalize --bg-position to "center" because
-  // "center bottom" / "bottom" on a contain-sized image leaves an empty
-  // band at the top instead of fitting the subject.
-  const subjectLayoutOverrides = forcedSubjectBg
-    ? `  --bg-zoom: contain;\n  --bg-position: center;`
-    : "";
   const mergedOverrides = [
-    forcedSubjectBg ? `  --bg-image: ${forcedSubjectBg};` : "",
-    subjectLayoutOverrides,
+    // Wins over both the template's :root and the per-field overrides
+    // above. Without this, a model that hard-codes `--bg-image: url("…")`
+    // somewhere inside :root would keep painting the photo even after the
+    // user flipped the toggle off.
+    !bgEnabled ? `  --bg-image: none;` : "",
     overrides,
   ].filter(Boolean).join("\n");
   if (mergedOverrides) {
@@ -248,25 +225,6 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     cssOut = `${cssOut}\n:root {\n${mergedOverrides}\n}\n`;
   }
 
-  // Catch-all for templates that hard-code background-size (ignoring
-  // --bg-zoom) on the subject layer. Forces the full subject to show
-  // and prevents the "head/hair cut off" symptom when models pick
-  // overly aggressive cover sizing.
-  if (forcedSubjectBg) {
-    cssOut += `
-.banner [class*="subject"],
-.banner [class*="bg-image"],
-.banner__subject,
-.banner__bg-image {
-  background-size: contain !important;
-  background-position: center center !important;
-  background-repeat: no-repeat !important;
-  -webkit-mask-image: none !important;
-  mask-image: none !important;
-}
-`;
-  }
-
   // Single-layer fallback for templates that don't wire a dedicated
   // bg-image layer themselves. We render `.banner::before` only when the
   // template's HTML doesn't already contain a `.banner__bg-image` element
@@ -276,25 +234,82 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
     /class="[^"]*banner__bg-image[^"]*"/i.test(html || "") ||
     /background-image\s*:\s*var\(\s*--bg-image\s*\)/i.test(cssOut);
   if (effectiveBg && !templateHasBgLayer) {
-    cssOut += `\n.banner::before { content:""; position:absolute; inset:0; z-index:-2; background-image:${effectiveBg} !important; background-size:var(--bg-zoom,110%); background-position:var(--bg-position,center center); background-repeat:no-repeat; filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px)); transform:scale(1.03); }`;
+    cssOut += `\n.banner::before { content:""; position:absolute; inset:0; z-index:-2; background-image:${effectiveBg} !important; background-size:var(--bg-zoom,110%); background-position:var(--bg-position,center center); background-repeat:no-repeat; filter:brightness(var(--bg-brightness,0.4)) blur(var(--bg-blur,0px)); transform:scale(1.03); }`;
     cssOut += `\n.banner::after  { content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg, transparent, rgba(0,0,0,calc(var(--bg-overlay,0.45) * 0.9)), rgba(0,0,0,var(--bg-overlay,0.45))); pointer-events:none; }`;
+  }
+
+  // Force brightness / blur / overlay to apply to the rendered bg layer no
+  // matter what class the model chose. Many text models emit a
+  // `.banner__bg-image` (or similar) that hard-codes background-image but
+  // never references `var(--bg-brightness)`, which made the LeftPanel
+  // brightness slider a no-op on those templates. Injecting these rules
+  // last (in the cascade) wins via `!important` and a higher selector
+  // weight than what the model wrote inline.
+  //
+  // The default brightness is lowered from the legacy 0.75 to 0.55 so the
+  // photographic bg sits behind the text instead of competing with it.
+  if (hasFieldBg || effectiveBg) {
+    cssOut += `
+.banner__bg-image,
+.banner [class*="bg-image"] {
+  filter: brightness(var(--bg-brightness, 0.4)) blur(var(--bg-blur, 0px)) !important;
+}
+`;
+  }
+
+  // Toggle off → hide any bg layer the model emitted, even when it
+  // hard-codes background-image:url(…) directly instead of referencing
+  // var(--bg-image). Display:none on the layer + a no-op background on
+  // .banner::before catches the legacy fallback path too.
+  if (!bgEnabled) {
+    cssOut += `
+.banner__bg-image,
+.banner [class*="bg-image"] {
+  background-image: none !important;
+  display: none !important;
+}
+.banner::before {
+  background-image: none !important;
+}
+`;
   }
 
   // Subject overlay. When the layered path produced a separate cutout
   // we always inject our own subject layer (templates don't yet emit
-  // .banner__subject-image of their own). The layer sits above the bg
-  // image and decoration, with `contain` sizing so the entire subject
-  // is visible. We render this whether or not the model template
-  // happens to declare one — it wins the cascade with `!important`.
+  // .banner__subject-image of their own). The layer must sit ABOVE the
+  // bg image but BELOW the inner content / text. Models put text/CTA at
+  // z-index >= 1, so we use z-index 0 — and rely on DOM order (the div
+  // is injected as the LAST child of .banner) to win against the model's
+  // own .banner__bg / .banner__bg-image layer that comes earlier in DOM
+  // at the same z-index. The previous z-index of 6 painted the subject
+  // ON TOP of the headline, which read as "subject is missing" because
+  // the silhouette merged into the rest of the composition.
+  //
+  // Default placement: the subject sits opposite the banner's text
+  // alignment, so a left-aligned headline gets the subject on the right
+  // half (and vice versa). For center-aligned templates we fall back to
+  // full-banner contain — the subject is centered behind the text.
   if (effectiveSubject) {
+    const subjectPlacement = alignment === "right"
+      ? "left: 2% !important; right: auto !important; width: 48% !important;"
+      : alignment === "center"
+        ? "inset: 0 !important;"
+        : "left: auto !important; right: 2% !important; width: 48% !important;";
+    const subjectPosition = alignment === "right"
+      ? "left bottom"
+      : alignment === "center"
+        ? "center center"
+        : "right bottom";
     cssOut += `
 .banner__subject-image-injected {
   position: absolute !important;
-  inset: 0 !important;
-  z-index: 6 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  ${subjectPlacement}
+  z-index: 0 !important;
   background-image: ${effectiveSubject} !important;
   background-size: contain !important;
-  background-position: center center !important;
+  background-position: ${subjectPosition} !important;
   background-repeat: no-repeat !important;
   pointer-events: none !important;
 }
@@ -327,14 +342,39 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   }
   htmlOut = htmlOut.replace(/data-align="[^"]*"/, `data-align="${alignment}"`);
 
-  // Inject the cleaned-subject overlay div near the end of `.banner` so
-  // it stacks above the model's bg layers without disturbing the rest
-  // of the markup. Only added when --subject-image is actually set.
+  // Inject the cleaned-subject overlay div as the LAST child of `.banner`
+  // so it stacks above the model's bg layers (which appear earlier in DOM
+  // at the same z-index 0) without disturbing the rest of the markup. The
+  // injection has to land inside the .banner element — anchoring on the
+  // string's trailing </div> works when the model emits a single .banner
+  // wrapper (the common case), but some models append trailing whitespace,
+  // a sibling decoration div, or even comments. Use a more specific
+  // matcher that finds the .banner element by class and injects before
+  // its closing tag, with the loose trailing-</div> form as a fallback.
   if (effectiveSubject) {
+    const injection = `<div class="banner__subject-image-injected"></div>`;
+    const before = htmlOut;
+    // Match `<div class="banner …">…</div>` (well-formed, with nested divs)
+    // and inject before the closing </div>. The non-greedy capture stops
+    // at the LAST </div> that balances the opening — relying on the fact
+    // that the banner is the outermost div in the template output.
     htmlOut = htmlOut.replace(
-      /<\/div>\s*$/,
-      `<div class="banner__subject-image-injected"></div></div>`,
+      /(<div\s+class="[^"]*\bbanner\b[^"]*"[^>]*>[\s\S]*)<\/div>(\s*)$/i,
+      `$1${injection}</div>$2`,
     );
+    if (htmlOut === before) {
+      // Fallback: trailing </div> with no .banner class match (e.g. when
+      // the model wrapped its banner in an outer container).
+      htmlOut = htmlOut.replace(
+        /<\/div>(\s*)$/,
+        `${injection}</div>$1`,
+      );
+    }
+    if (htmlOut === before) {
+      // Last-resort fallback: append at the very end so the layer at least
+      // renders, even if it stacks against `body` instead of `.banner`.
+      htmlOut += injection;
+    }
   }
 
   return `<!doctype html>
@@ -429,7 +469,7 @@ export function buildTemplateFromCanvas({ elements = [], background = "#0c0c10",
   // If we have an explicit bg image URL from the canvas/background param,
   // ensure it's added to the root overrides so CSS var is present.
   const explicitBgOverride = bgImageUrl ? `  --bg-image: ${bgImageUrl};\n` : "";
-  const css = `${rootOverrides || explicitBgOverride ? `:root {\n${explicitBgOverride}${rootOverrides ? rootOverrides + "\n" : ""}}\n` : ""}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;isolation:isolate;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${bgColor}}.banner-inner{position:absolute;inset:0}${hasBgImage ? `\n.banner::before{content:"";position:absolute;inset:0;z-index:-2;background-image:var(--bg-image);background-size:var(--bg-zoom,110%);background-position:var(--bg-position,center center);background-repeat:no-repeat;filter:brightness(var(--bg-brightness,0.75)) blur(var(--bg-blur,0px));transform:scale(1.03)}.banner::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,calc(var(--bg-overlay,0.45)*0.9)),rgba(0,0,0,var(--bg-overlay,0.45)))}` : ""}`;
+  const css = `${rootOverrides || explicitBgOverride ? `:root {\n${explicitBgOverride}${rootOverrides ? rootOverrides + "\n" : ""}}\n` : ""}*{box-sizing:border-box;margin:0;padding:0}body{font-family:Geist,ui-sans-serif,system-ui,sans-serif}.banner{position:relative;isolation:isolate;width:100%;padding-bottom:${pct.toFixed(2)}%;background:${bgColor}}.banner-inner{position:absolute;inset:0}${hasBgImage ? `\n.banner::before{content:"";position:absolute;inset:0;z-index:-2;background-image:var(--bg-image);background-size:var(--bg-zoom,110%);background-position:var(--bg-position,center center);background-repeat:no-repeat;filter:brightness(var(--bg-brightness,0.4)) blur(var(--bg-blur,0px));transform:scale(1.03)}.banner::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(to bottom,rgba(0,0,0,calc(var(--bg-overlay,0.45)*0.9)),rgba(0,0,0,var(--bg-overlay,0.45)))}` : ""}`;
 
   const innerHtml = renderCanvasElementsMarkup(elements);
 

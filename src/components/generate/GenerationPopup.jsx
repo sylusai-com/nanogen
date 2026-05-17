@@ -70,24 +70,22 @@ export default function GenerationPopup({
   const [elapsed, setElapsed] = useState(0);
   const [expanded, setExpanded] = useState(false);
 
+  // Single source of truth for the elapsed-seconds counter:
+  //   - Resets to 0 each time the popup goes from closed→open or the
+  //     job state flips (so a follow-up generation starts from 0s, and
+  //     the final value is frozen as soon as `done`/`error` land).
+  //   - Only the actively-ticking state schedules a setInterval.
+  // Keeping both behaviours in one effect avoids the "set state in
+  // effect just to reset" pattern, which React 19's new lint rule
+  // (correctly) flags as a smell.
+  const ticking = open && !done && !error;
   useEffect(() => {
-    // Stop the elapsed-seconds counter the moment the job completes or
-    // errors out — keeping it running was making the popup feel like the
-    // generation was still in flight even after the success state landed.
-    if (!open || done || error) return;
-    const start = Date.now() - elapsed * 1000;
+    if (!ticking) return;
+    setElapsed(0);
+    const start = Date.now();
     const tick = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 250);
     return () => clearInterval(tick);
-    // We intentionally exclude `elapsed` — it's a seed for `start` on
-    // resume, not a dependency that should re-arm the interval.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, done, error]);
-
-  // Reset the counter whenever the popup transitions from closed→open so
-  // a second generation starts from 0s instead of resuming the prior count.
-  useEffect(() => {
-    if (open) setElapsed(0);
-  }, [open]);
+  }, [ticking]);
 
   const completedSet = useMemo(
     () => new Set((stepsCompleted || []).map((s) => s?.step || s?.name || s?.id)),

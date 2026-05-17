@@ -4,15 +4,18 @@
 // Unified Create + History hub. Inspired by Ideogram's layout:
 //   - Prompt composer pinned at the top
 //   - Generation runs as a non-blocking background job (popup bottom-right)
-//   - Grid of past banners flows below, instantly scannable
+//   - Masonry-style grid below, newest first, infinite scroll
 //
-// The old standalone /dashboard/create now redirects here. The marketing
-// hero / stats sections were dropped because they pushed the gallery
-// below the fold and competed with the composer for attention.
+// Pagination uses an IntersectionObserver sentinel: the next page loads
+// as soon as the user scrolls within ~600px of the bottom, so they never
+// see prev/next buttons. CSS columns drive the masonry layout (no JS
+// libraries, no per-tile height measurement) — it stays smooth even with
+// 100+ banners loaded because BannerPreview also defers its srcDoc build
+// until each tile actually enters the viewport.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ImageIcon, Sparkles, AlertCircle, AlertTriangle } from "lucide-react";
+import { ImageIcon, Sparkles, AlertCircle, AlertTriangle, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import BannerThumb from "@/components/dashboard/BannerThumb";
@@ -20,11 +23,10 @@ import BannerFilters from "@/components/dashboard/BannerFilters";
 import EmptyData from "@/components/ui/EmptyData";
 import Skeleton from "@/components/ui/Skeleton";
 import Button from "@/components/ui/Button";
-import Pagination from "@/components/ui/Pagination";
 import PromptForm from "@/components/generate/PromptForm";
 import GenerationPopup from "@/components/generate/GenerationPopup";
 import { listBanners } from "@/lib/db/banners";
-import { useCachedQuery, invalidateTags } from "@/lib/cache";
+import { cachedQuery, invalidateTags, useCacheTick } from "@/lib/cache";
 import { GenerationSteps } from "@/lib/bannerGeneration";
 
 const PAGE_SIZE = 12;
@@ -35,10 +37,25 @@ export default function BannersHub() {
   const userId = user?.id;
   const [query, setQuery] = useState("");
   const [view, setView]   = useState("all");
-  const [page, setPage]   = useState(1);
 
-  // Generation state — drives the floating popup. All fields are cleared
-  // when the popup is dismissed.
+  // Infinite scroll state. `loadedPages` is the highest page number we've
+  // fetched so far; the gallery shows pages 1..loadedPages concatenated.
+  // Cap is enforced via `totalPages` returned by the server.
+  const [loadedPages, setLoadedPages] = useState(1);
+  const [rows, setRows] = useState([]);
+  const [totalPages, setTotalPages] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const sentinelRef = useRef(null);
+
+  // useCacheTick fires whenever invalidateTags() runs (or any setCached
+  // anywhere in the app). We use it to re-run the loader — soft-invalidation
+  // keeps the stale rows visible, then the loader's results swap them in
+  // place. No skeleton flash.
+  const tick = useCacheTick();
+
+  // Generation state — drives the floating popup.
   const [gen, setGen] = useState({
     open: false,
     aspect: "16:9",
@@ -53,29 +70,83 @@ export default function BannersHub() {
     warning: null,
   });
 
-  const { data: pageResult = null } = useCachedQuery(
-    ["banners", userId, page],
-    () => listBanners(supabase, userId, { page, pageSize: PAGE_SIZE }),
-    {
-      // Banners change after a mutation (create / update / favourite /
-      // delete) — those paths invalidate the "banners" tag explicitly,
-      // so a long TTL is safe and means navigating away and back is
-      // instant. The previous 30s window forced a refetch every time.
-      ttlMs: 5 * 60_000,
-      tags: ["banners", `banners:${userId || "anon"}`],
-      enabled: !!userId,
-      // The list payload contains rendered html/css per banner — way
-      // too heavy for sessionStorage. Keep it in-memory only; the
-      // first visit per tab pays the network cost, navigations after
-      // that hit the in-memory tier.
-      persist: false,
-    },
-  );
+  // Loader: fetches every page from 1..loadedPages in parallel via
+  // cachedQuery (which dedupes in-flight requests and respects the same
+  // 5-min TTL + tag invalidation the rest of the app uses). Concat +
+  // de-dupe so a banner that shifted between pages while loading more
+  // doesn't appear twice.
+  useEffect(() => {
+    if (!userId) {
+      setInitialLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const pages = Array.from({ length: loadedPages }, (_, i) => i + 1);
+    setLoadingMore(true);
+    Promise.all(
+      pages.map((p) =>
+        cachedQuery(
+          ["banners", userId, p],
+          () => listBanners(supabase, userId, { page: p, pageSize: PAGE_SIZE }),
+          {
+            ttlMs: 5 * 60_000,
+            tags: ["banners", `banners:${userId}`],
+          },
+        ),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        const seen = new Set();
+        const merged = [];
+        for (const r of results) {
+          for (const row of r?.rows || []) {
+            if (seen.has(row.id)) continue;
+            seen.add(row.id);
+            merged.push(row);
+          }
+        }
+        setRows(merged);
+        setTotalPages(results[results.length - 1]?.totalPages ?? 1);
+        setLoadError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err?.message || "Failed to load banners");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingMore(false);
+          setInitialLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+    // `tick` re-runs the loop on invalidation; `loadedPages` re-runs when
+    // the sentinel asks for more.
+  }, [userId, supabase, loadedPages, tick]);
 
-  const all = pageResult?.rows ?? null;
+  // IntersectionObserver — bumps `loadedPages` when the sentinel scrolls
+  // into the bottom 600px of the viewport. Cleans up + re-arms whenever
+  // the dependency state changes.
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+    if (initialLoading) return;
+    if (loadingMore) return;
+    if (totalPages == null || loadedPages >= totalPages) return;
+    if (typeof IntersectionObserver === "undefined") return;
 
-  // Poll the active job until it terminates. Returns the final status
-  // payload so the caller can route to the new banner.
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setLoadedPages((p) => p + 1);
+        }
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, [initialLoading, loadingMore, totalPages, loadedPages]);
+
   const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const res = await fetch(`/api/generation-status/${jobId}`);
@@ -122,14 +193,12 @@ export default function BannersHub() {
       if (!data.jobId) throw new Error("Server did not return a job ID");
 
       const generation = await pollGeneration(data.jobId);
+      // Soft-invalidate: keeps existing rows visible while the loader
+      // refetches, then swaps in the fresh list (including the new
+      // banner). No skeleton flash on the gallery.
       invalidateTags(["banners", "generation_results", `banners:${userId || "anon"}`]);
 
       const banner = generation?.banner;
-      // Only flag a warning when the LITERAL fallback template was
-      // shipped (LLM call failed, malformed JSON, missing model, etc).
-      // A model output that scored below 80 is still a real banner —
-      // surfacing the "we couldn't reach the AI" message there would
-      // (and did) terrify users for no reason.
       const usedFallback = generation?.results?.usedFallback === true;
       const jobModelErrors = generation?.results?.modelErrors || [];
 
@@ -157,10 +226,6 @@ export default function BannersHub() {
     }
   };
 
-  // When the user clicks "Cancel" mid-generation we close the popup but
-  // do NOT abort the upstream job — the backend doesn't expose cancel
-  // yet, so the safest UX is to drop the in-flight UI state and let the
-  // job finish silently. Future: hit /api/generation-status/[id]/cancel.
   const onCancel = () => {
     setGen({
       open: false,
@@ -183,15 +248,11 @@ export default function BannersHub() {
     if (target) router.push(target);
   };
 
-  // Flat list, newest first. The previous version grouped siblings by
-  // run and rendered each group as its own <section> — which on real
-  // data (most runs produce a single variant under the new "auto picks
-  // best model" path) made the page feel like one banner per row instead
-  // of a dense gallery. Ideogram-style: one flat grid, newest first,
-  // every cell the same size.
+  // Filter + search happen on the already-loaded accumulator. For very
+  // large libraries we'd push these to the server, but for the dashboard
+  // (rarely more than a few hundred rows) this is fine and immediate.
   const filtered = useMemo(() => {
-    if (!all) return [];
-    let list = all;
+    let list = rows;
     if (view === "favourites") list = list.filter((b) => b.favourite);
     if (view === "passed") list = list.filter((b) => (b.score ?? 0) >= 80);
     if (query.trim()) {
@@ -203,23 +264,23 @@ export default function BannersHub() {
           (b.style || "").toLowerCase().includes(q),
       );
     }
-    return [...list].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [all, view, query]);
-
-  const totalPages = pageResult?.totalPages ?? 1;
-  const totalRows = pageResult?.total ?? 0;
+    return list;
+  }, [rows, view, query]);
 
   const totals = {
-    all: all?.length ?? 0,
-    favs: (all || []).filter((b) => b.favourite).length,
-    passed: (all || []).filter((b) => (b.score ?? 0) >= 80).length,
+    all: rows.length,
+    favs: rows.filter((b) => b.favourite).length,
+    passed: rows.filter((b) => (b.score ?? 0) >= 80).length,
   };
+
+  const hasMore = totalPages != null && loadedPages < totalPages;
+  const showEmptyState = !initialLoading && filtered.length === 0;
 
   return (
     <>
       <TopBar title="Create" />
       <div className="mx-auto w-full max-w-6xl space-y-8 px-5 py-8 md:px-8 md:py-10">
-        {/* Composer — pinned at the top */}
+        {/* Composer */}
         <section className="space-y-3">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
@@ -232,9 +293,6 @@ export default function BannersHub() {
           <PromptForm onSubmit={onSubmit} isGenerating={gen.open && !gen.done && !gen.error} />
         </section>
 
-        {/* One-time admin-only error / fallback warnings, surfaced after
-            generation finishes. Non-admin users only see the high-level
-            "saved a default" warning. */}
         {gen.done && gen.warning && (
           <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -269,7 +327,13 @@ export default function BannersHub() {
           </div>
         )}
 
-        {/* Filters bar */}
+        {loadError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+            {loadError}
+          </div>
+        )}
+
+        {/* Filters */}
         <section className="rounded-2xl border border-border bg-surface-2/60 p-4">
           <BannerFilters
             query={query}
@@ -280,29 +344,16 @@ export default function BannersHub() {
           />
         </section>
 
-        {/* Gallery */}
-        {all === null ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {/* Gallery — only show the skeleton placeholder on the FIRST load
+            (when there's no data yet). Subsequent loads / invalidations
+            keep showing the previous rows while the loader refreshes. */}
+        {initialLoading && filtered.length === 0 ? (
+          <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="aspect-video rounded-2xl" />
+              <Skeleton key={i} className="mb-4 aspect-video rounded-2xl break-inside-avoid" />
             ))}
           </div>
-        ) : filtered.length ? (
-          // Single flat grid — Ideogram-style. Uniform 16:9 frame across
-          // every cell so 1:1 / 9:16 / 4:5 banners don't stretch rows to
-          // different heights. The source banner still renders at its
-          // true aspect, just centered inside the 16:9 cell.
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((b, i) => (
-              <BannerThumb
-                key={b.id}
-                banner={b}
-                index={i}
-                frameAspect="16:9"
-              />
-            ))}
-          </div>
-        ) : (
+        ) : showEmptyState ? (
           <EmptyData
             icon={<ImageIcon className="h-5 w-5" />}
             title={query ? "No matches" : "No banners yet"}
@@ -319,16 +370,40 @@ export default function BannersHub() {
               )
             }
           />
-        )}
+        ) : (
+          <>
+            {/* CSS-columns masonry. Each tile sets `break-inside-avoid`
+                so it never splits between columns. `gap` doesn't apply to
+                columns, so per-tile `mb-4` provides the vertical rhythm.
+                BannerThumb already renders at its native aspect (no
+                frameAspect) — that's what produces the masonry's varied
+                heights and the "real grid" look the gallery needs. */}
+            <div className="columns-1 gap-4 sm:columns-2 lg:columns-3 xl:columns-4">
+              {filtered.map((b, i) => (
+                <div key={b.id} className="mb-4 break-inside-avoid">
+                  <BannerThumb banner={b} index={i} />
+                </div>
+              ))}
+            </div>
 
-        {pageResult && filtered.length > 0 && totalPages > 1 && (
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
-        )}
-
-        {pageResult && filtered.length === 0 && totalRows > 0 && (
-          <div className="rounded-2xl border border-border bg-surface-2/70 p-4 text-sm text-muted">
-            No matches on this page.
-          </div>
+            {/* Sentinel — when this scrolls into view, the IO above fires
+                setLoadedPages(p => p + 1) and the loader fetches the next
+                page. We render a small "loading more" indicator next to
+                it so the user knows more is coming. */}
+            <div ref={sentinelRef} className="flex h-12 items-center justify-center">
+              {hasMore && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-2/60 px-3 py-1.5 text-[11px] text-muted">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading more
+                </div>
+              )}
+              {!hasMore && filtered.length > 0 && (
+                <div className="text-[11px] text-muted/60">
+                  End of library
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 

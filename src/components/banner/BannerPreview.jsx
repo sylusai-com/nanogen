@@ -135,26 +135,45 @@ export default function BannerPreview({
     ? banner?.gradient || "#0c0c10"
     : (background ?? banner?.gradient ?? "#0c0c10");
 
-  const srcDoc = !banner?.html || !banner?.css
-    ? null
-    : buildCompositeStandaloneHtml({
-        html: banner.html,
-        css: banner.css,
-        fields: resolvedFields,
-        alignment: banner.alignment || "left",
-        title: banner.title || "banner",
-        subjectImageUrl,
-        elements: banner.canvas?.elements || [],
-        background: banner.canvas?.background || "#0c0c10",
-        aspect,
-      });
-
   const wrapperRef = useRef(null);
   const [scale, setScale] = useState(1);
   // `visible` gates iframe mounting under lazy mode. Once true it stays
   // true — we don't want to unmount the iframe just because the user
   // scrolled past it (re-mounting would re-fire parse + layout).
   const [visible, setVisible] = useState(!lazy);
+
+  // Defer the (expensive) srcDoc HTML assembly until the iframe is
+  // actually about to mount. On a gallery page with 30+ banners this
+  // alone cuts initial render work from "30× buildCompositeStandaloneHtml"
+  // to "0×" — the work only happens when the IntersectionObserver flips
+  // `visible` true. `useMemo` covers the common subsequent renders so
+  // toggling sibling state doesn't re-run the build.
+  const srcDoc = useMemo(() => {
+    if (!visible) return null;
+    if (!banner?.html || !banner?.css) return null;
+    return buildCompositeStandaloneHtml({
+      html: banner.html,
+      css: banner.css,
+      fields: resolvedFields,
+      alignment: banner.alignment || "left",
+      title: banner.title || "banner",
+      subjectImageUrl,
+      elements: banner.canvas?.elements || [],
+      background: banner.canvas?.background || "#0c0c10",
+      aspect,
+    });
+  }, [
+    visible,
+    banner?.html,
+    banner?.css,
+    banner?.alignment,
+    banner?.title,
+    banner?.canvas?.elements,
+    banner?.canvas?.background,
+    resolvedFields,
+    subjectImageUrl,
+    aspect,
+  ]);
 
   useEffect(() => {
     const node = wrapperRef.current;
@@ -202,7 +221,7 @@ export default function BannerPreview({
         background: previewBackground,
       }}
     >
-      {srcDoc && visible && (
+      {srcDoc && (
         <iframe
           ref={iframeRef}
           title={banner?.title || "Banner preview"}

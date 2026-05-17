@@ -288,7 +288,9 @@ function subscribeKey(k, fn) {
 // Subscribe to global cache ticks — lets components participate in SWR
 // without each one wiring its own subscription. Using
 // useSyncExternalStore avoids tearing on concurrent renders.
-function useCacheTick() {
+// Exported so callers driving their own fetch loops (e.g. the infinite-
+// scroll gallery) can re-run when tags are invalidated elsewhere.
+export function useCacheTick() {
   return useSyncExternalStore(
     (cb) => {
       globalListeners.add(cb);

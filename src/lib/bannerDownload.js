@@ -226,23 +226,43 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
   }
 
   // Always inject a dedicated `.banner__bg-image-injected` div when we
-  // have a bg URL. The previous strategy used `.banner::before`, which
-  // model templates routinely overrode (their own :root, their own
-  // .banner::before, or a solid `.banner__bg` painted on top). An
-  // injected div as the FIRST child of `.banner` lets us style it with
-  // !important and rely on DOM-order stacking (later z-index 0 siblings
-  // paint on top) so the model's decorative chrome (mesh, grid, orbs)
-  // and inner content all sit ABOVE this bg layer. The user's toggle on
-  // the detail page suppresses `effectiveBg` to "" so this whole block
-  // is skipped.
+  // have a bg URL. Forcing `.banner` to be a relatively-positioned,
+  // isolated stacking context lets us drop the bg div to z-index: -1 —
+  // inside the banner that puts the photo above the .banner element's
+  // own background color but below every other in-banner layer (static
+  // blocks paint at the "in-flow non-positioned" step, which is above
+  // negative-z-index per the CSS stacking spec). Crucially, isolation
+  // contains the -1 inside .banner so the photo doesn't bleed behind
+  // the iframe or the page.
+  //
+  // We also suppress any opaque, full-cover gradient layer the model
+  // emitted (`.banner__bg` etc.) — that's what was hiding the photo
+  // bg in the latest builds. Decorative layers (orbs, mesh, pattern,
+  // frame) are semi-transparent at z-index ≥ 1 so they keep painting
+  // on top of the photo, exactly as intended.
+  //
+  // `background-size: cover` replaces the old `var(--bg-zoom, 110%)` so
+  // a small-image / mismatched-aspect upload still fills the banner end
+  // to end instead of sitting as a shrunken tile somewhere in the middle.
   if (effectiveBg) {
     cssOut += `
+.banner {
+  position: relative !important;
+  isolation: isolate !important;
+}
+.banner__bg,
+.banner__background,
+.banner__backdrop,
+.banner__bg-gradient,
+.banner__bg-base {
+  display: none !important;
+}
 .banner__bg-image-injected {
   position: absolute !important;
   inset: 0 !important;
-  z-index: 0 !important;
+  z-index: -1 !important;
   background-image: ${effectiveBg} !important;
-  background-size: var(--bg-zoom, 110%) !important;
+  background-size: cover !important;
   background-position: var(--bg-position, center center) !important;
   background-repeat: no-repeat !important;
   filter: brightness(var(--bg-brightness, 0.4)) blur(var(--bg-blur, 0px)) !important;
@@ -259,20 +279,29 @@ export function buildStandaloneHtml({ html, css, fields = [], alignment = "left"
 `;
   }
 
-  // Force brightness / blur / overlay to apply to the rendered bg layer no
-  // matter what class the model chose. Many text models emit a
-  // `.banner__bg-image` (or similar) that hard-codes background-image but
-  // never references `var(--bg-brightness)`, which made the LeftPanel
-  // brightness slider a no-op on those templates. Injecting these rules
-  // last (in the cascade) wins via `!important` and a higher selector
-  // weight than what the model wrote inline.
-  //
-  // The default brightness is lowered from the legacy 0.75 to 0.55 so the
-  // photographic bg sits behind the text instead of competing with it.
-  if (hasFieldBg || effectiveBg) {
+  // When our own `.banner__bg-image-injected` layer is in play, hide the
+  // model's bg-image layer entirely. Otherwise both elements render the
+  // same `var(--bg-image)` simultaneously — at different z-index /
+  // background-size — and the user sees a small, mis-positioned tile
+  // painted on top of our full-cover backdrop. Suppressing the model's
+  // layer leaves the injected div as the single source of truth so the
+  // bg is consistently cover-sized, behind all content, and respects
+  // the LeftPanel brightness / blur / overlay sliders.
+  if (effectiveBg) {
     cssOut += `
 .banner__bg-image,
-.banner [class*="bg-image"] {
+.banner [class*="bg-image"]:not(.banner__bg-image-injected):not(.banner__subject-image-injected):not([class*="subject-image"]) {
+  background-image: none !important;
+  filter: none !important;
+}
+`;
+  } else if (hasFieldBg) {
+    // Field bg present but `bg_image_enabled` was flipped off above —
+    // still apply the brightness / blur cascade so legacy templates that
+    // hard-code `.banner__bg-image` respond to the LeftPanel sliders.
+    cssOut += `
+.banner__bg-image,
+.banner [class*="bg-image"]:not([class*="subject-image"]) {
   filter: brightness(var(--bg-brightness, 0.4)) blur(var(--bg-blur, 0px)) !important;
 }
 `;

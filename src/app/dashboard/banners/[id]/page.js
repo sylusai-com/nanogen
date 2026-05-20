@@ -28,7 +28,7 @@ import ReferencePanel from "@/components/banner/ReferencePanel";
 import RegenerateDialog from "@/components/banner/RegenerateDialog";
 import BannerPreview from "@/components/banner/BannerPreview";
 import { cn } from "@/lib/cn";
-import { deleteBanner, getBanner, toggleFavourite } from "@/lib/db/banners";
+import { deleteBanner, getBanner, toggleFavourite, updateBanner } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
 
 function aspectClass(a) {
@@ -44,16 +44,23 @@ export default function BannerDetail({ params }) {
   const router = useRouter();
   const userId = user?.id;
   const [busy, setBusy] = useState(false);
+  const [bgSaving, setBgSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   // Toggle for the photographic bg layer that the bg-image provider
-  // generated alongside the HTML/CSS banner. The toggle defaults to ON
-  // when this banner actually has a bg image — that's the "you see the
-  // bg in the gallery, you see it on the detail page" experience the
-  // user expects. When flipped OFF we render the same banner with the
-  // bg field's value forced to none so the model's CSS-only design
-  // shines through.
-  const [showBg, setShowBg] = useState(true);
+  // generated alongside the HTML/CSS banner. The truth lives on the
+  // banner row's `fields[bg_image_enabled]`, which is also what the
+  // builder, dashboard thumbs, and exports all read — flipping the
+  // toggle here PERSISTS so the choice is reflected in every other
+  // surface (preview iframe, builder, list grid).
+  //
+  // `optimisticShowBg` lets the UI flip instantly while the save round-
+  // trip is in flight; once `refresh()` resolves and the banner row
+  // carries the new field value, we clear the optimistic override and
+  // fall back to the persisted value. Storing this as `null` / boolean
+  // (rather than a synced `useEffect`) avoids the React 19 "setState
+  // inside useEffect" lint and keeps render order strictly derivational.
+  const [optimisticShowBg, setOptimisticShowBg] = useState(null);
 
   // Cached + stale-while-revalidate. Tagged on `banner:{id}` so updates
   // / deletes / favourites in the dashboard or editor invalidate this
@@ -127,6 +134,58 @@ export default function BannerDetail({ params }) {
     const inner = (m ? m[1] : raw).trim();
     return /^(?:https?:\/\/|data:image\/)/i.test(inner);
   }, [banner]);
+
+  // Persisted value from the banner row — defaults to ON for legacy
+  // rows that pre-date `bg_image_enabled`. The visible `showBg` prefers
+  // the in-flight optimistic value when one is set (so the toggle
+  // animates without waiting for the round-trip), otherwise falls back
+  // to whatever the row currently has.
+  const persistedShowBg = useMemo(() => {
+    if (!banner) return true;
+    const f = (banner.fields || []).find((x) => x?.id === "bg_image_enabled");
+    return f ? f.value !== false : true;
+  }, [banner]);
+  const showBg = optimisticShowBg ?? persistedShowBg;
+
+  // Toggle handler — flips local state immediately for snappy UI, then
+  // writes the new value back to `fields[bg_image_enabled]` on the
+  // banner row. The DB write invalidates the shared cache so every
+  // other surface that reads this banner (builder, gallery thumbs,
+  // generation popup) re-renders with the new value.
+  const persistBgToggle = async (next) => {
+    if (!banner || bgSaving) return;
+    setOptimisticShowBg(next);
+    setBgSaving(true);
+    try {
+      const existing = Array.isArray(banner.fields) ? banner.fields : [];
+      const hasField = existing.some((f) => f?.id === "bg_image_enabled");
+      const nextFields = hasField
+        ? existing.map((f) =>
+            f?.id === "bg_image_enabled" ? { ...f, value: next } : f,
+          )
+        : [
+            ...existing,
+            {
+              id: "bg_image_enabled",
+              type: "toggle",
+              label: "Show background image",
+              value: next,
+            },
+          ];
+      await updateBanner(supabase, userId, banner.id, { fields: nextFields });
+      await refresh();
+      // Clear the optimistic override now that the persisted row carries
+      // the new value — subsequent renders pull from `persistedShowBg`.
+      setOptimisticShowBg(null);
+    } catch (e) {
+      // Roll back local state on failure so the UI matches the source
+      // of truth — user can retry the toggle.
+      setOptimisticShowBg(null);
+      alert(e.message || "Failed to save bg image setting");
+    } finally {
+      setBgSaving(false);
+    }
+  };
 
   // Override the `bg_image_enabled` toggle field on the banner row when
   // the user flips the local UI toggle. Cloning here (vs mutating) keeps
@@ -213,33 +272,33 @@ export default function BannerDetail({ params }) {
                         Background image
                       </div>
                       <div className="text-[11px] text-muted">
-                        {showBg
-                          ? "Photo backdrop from the bg provider is on."
-                          : "Showing the model's CSS-only design."}
+                        {bgSaving
+                          ? "Saving…"
+                          : showBg
+                            ? "Photo backdrop from the bg provider is on."
+                            : "Showing the model's CSS-only design."}
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowBg((v) => !v)}
+                      onClick={() => persistBgToggle(!showBg)}
+                      disabled={bgSaving}
                       className={cn(
-                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors",
+                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-60",
                         showBg
                           ? "border-primary/40 bg-primary/15 text-primary hover:bg-primary/25"
                           : "border-border bg-surface text-muted-strong hover:bg-surface-2",
                       )}
                       aria-pressed={showBg}
                     >
-                      {showBg ? (
-                        <>
-                          <ImageIcon className="h-3.5 w-3.5" />
-                          With bg image
-                        </>
+                      {bgSaving ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : showBg ? (
+                        <ImageIcon className="h-3.5 w-3.5" />
                       ) : (
-                        <>
-                          <ImageOff className="h-3.5 w-3.5" />
-                          Without bg image
-                        </>
+                        <ImageOff className="h-3.5 w-3.5" />
                       )}
+                      {showBg ? "With bg image" : "Without bg image"}
                     </button>
                   </div>
                 )}

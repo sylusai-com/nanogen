@@ -160,15 +160,12 @@ export default function BannerThumb({
             </span>
           )}
 
-          {/* Title block — sits above the iframe and readability
-              gradient so the user can scan the gallery by title even
-              when the underlying banner art is busy. */}
+          {/* Meta strip — model / style and the created date. The banner
+              heading is intentionally not rendered here so the preview
+              art stays unobstructed in the gallery. */}
           <div className="absolute inset-x-3 bottom-3 z-20 flex items-end justify-between gap-2">
             <div className="min-w-0">
-              <div className="line-clamp-2 text-sm font-semibold leading-snug text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]">
-                {banner.title}
-              </div>
-              <div className="mt-1 truncate text-[10px] uppercase tracking-[0.14em] text-white/65">
+              <div className="truncate text-[10px] uppercase tracking-[0.14em] text-white/65">
                 {banner.modelLabel || "—"} · {banner.style || "—"}
               </div>
             </div>

@@ -53,13 +53,25 @@ async function fetchBytes(imageUrlOrDataUri) {
 // original image through unchanged.
 async function localUniformBackgroundCutout(buffer) {
   try {
-    const img = sharp(buffer).ensureAlpha().rotate();
-    const meta = await img.metadata();
-    const { width, height } = meta;
-    if (!width || !height) return null;
+    // Rasterise to raw RGBA in one pass and read the dimensions from the
+    // returned `info` — NOT from metadata().
+    //
+    // `.rotate()` with no args bakes in the EXIF orientation. For phone
+    // photos that flag is almost always set, and metadata() reports the
+    // *stored* width/height, which is transposed 90° relative to the
+    // pixels `.raw()` actually emits. The old code indexed the raw
+    // buffer with metadata()'s width/height, so for any rotated photo
+    // the sampled "edge" pixels and the alpha mask landed on the wrong
+    // coordinates — the cutout was garbage and the background was left
+    // in. `info` from toBuffer() is the post-rotation truth.
+    const { data: raw, info } = await sharp(buffer)
+      .rotate()
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
+    if (!width || !height || channels !== 4) return null;
 
-    const raw = await img.raw().toBuffer();
-    const channels = 4;
     const get = (x, y) => {
       const i = (y * width + x) * channels;
       return [raw[i], raw[i + 1], raw[i + 2]];

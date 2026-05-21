@@ -9,6 +9,7 @@ import {
   Loader2,
   Palette,
   Ratio,
+  Shapes,
   Sparkles,
   UserPlus,
   Wand2,
@@ -41,6 +42,8 @@ export default function PromptInput({
   style,
   onStyleChange,
   catalogLoading,
+  allowExtras,
+  onAllowExtrasChange,
 }) {
   const textareaRef = useRef(null);
   const [focused, setFocused] = useState(false);
@@ -122,6 +125,12 @@ export default function PromptInput({
             onChange={onStyleChange}
             loading={catalogLoading}
           />
+          {onAllowExtrasChange && (
+            <>
+              <span className="mx-0.5 h-4 w-px bg-border-strong/60" />
+              <ExtrasToggle value={!!allowExtras} onChange={onAllowExtrasChange} />
+            </>
+          )}
         </div>
       </div>
 
@@ -263,6 +272,33 @@ function SubjectButton({ subject, onChange }) {
       tone="primary"
       title={subject ? "Replace subject image" : "Subject image — appears IN the banner"}
     />
+  );
+}
+
+// Toggle for decorative "extra elements". OFF → the banner is generated
+// strictly from the prompt; ON → the model may add orbs, badges,
+// patterns, and other rich decoration.
+function ExtrasToggle({ value, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      aria-pressed={value}
+      title={
+        value
+          ? "Extra elements ON — the model may add decorative orbs, badges, patterns and other ornamentation."
+          : "Extra elements OFF — the banner is generated strictly from your prompt, with no extra decoration."
+      }
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-colors",
+        value
+          ? "border-primary/35 bg-[color-mix(in_oklab,var(--primary)_10%,transparent)] text-primary"
+          : "border-border text-muted hover:border-border-strong hover:text-foreground",
+      )}
+    >
+      <Shapes className="h-3 w-3" />
+      <span>{value ? "Extra elements ✓" : "Extra elements"}</span>
+    </button>
   );
 }
 

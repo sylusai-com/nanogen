@@ -126,6 +126,18 @@ The banner is HTML + CSS only — NO external image URLs. Build any background d
 There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.
 Return ONLY the JSON object.`;
 
+// Appended to the banner user message when the user has NOT opted into
+// "extra elements". It deliberately countermands the richness-heavy
+// guidance in the system prompt so the model produces a banner that is
+// strictly what the brief describes — nothing more. Placed last in the
+// message so it carries the most weight.
+const STRICT_ELEMENTS_DIRECTIVE = `STRICT CONTENT MODE — THIS OVERRIDES EVERY EARLIER INSTRUCTION THAT ENCOURAGES RICH, LAYERED, OR DECORATION-HEAVY COMPOSITIONS:
+- Render ONLY what the brief explicitly asks for. Do not invent extra content, copy, or decorative elements.
+- Do NOT add eyebrows, badges, pills, chips, version tags, trust lines, avatar stacks, feature lists, stat counters, secondary CTAs, decorative micro-icons, or any text the brief did not request.
+- Keep the background simple — a solid color or one clean gradient that suits the brief. NO decorative orbs, mesh, grids, noise textures, ribbons, scanlines, or busy SVG motif layers.
+- The composition must stay minimal and focused: the headline plus only the specific elements named in the brief, and nothing else.
+- You MUST still emit the required fields (headline, bg, fg, accent) and the bg_image layer, and the banner must still fill the canvas for its aspect ratio — just without any extra ornamentation.`;
+
 // Per-aspect briefing. Keyed by the literal aspect ratio string. The
 // `fallback` entry is used for any aspect not listed; it can reference
 // `{aspect}` as a placeholder.
@@ -465,6 +477,10 @@ export function composeBannerMessages({
   variantSeed = 0,
   referenceContextText = null,
   subjectContextText = null,
+  // When false, the strict-content directive is appended so the model
+  // renders only what the brief asks for (no extra decorative elements).
+  // Defaults to true so callers that don't opt in keep the rich output.
+  allowExtras = true,
 }) {
   const stylePreference =
     style && String(style).trim() ? `STYLE PREFERENCE: ${style}` : "";
@@ -476,7 +492,7 @@ export function composeBannerMessages({
   const subjectContext   = subjectContextText   ? String(subjectContextText)   : "";
   const variantNote = variantSeed > 0 ? `VARIANT: ${variantSeed}` : "";
 
-  const userContent = substitutePlaceholders(prompts.bannerUserScaffold, {
+  let userContent = substitutePlaceholders(prompts.bannerUserScaffold, {
     brief: brief ?? "",
     stylePreference,
     aspectGuidance,
@@ -484,6 +500,10 @@ export function composeBannerMessages({
     subjectContext,
     variantNote,
   });
+
+  if (!allowExtras) {
+    userContent = `${userContent}\n\n${STRICT_ELEMENTS_DIRECTIVE}`;
+  }
 
   return [
     { role: "system", content: prompts.bannerSystem },

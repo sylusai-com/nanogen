@@ -270,6 +270,51 @@ export async function listImageModelsWithSecrets(adminClient, slugs) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Credit-health telemetry — server-only, best-effort.
+// ─────────────────────────────────────────────────────────────────────
+
+// Record whether a model's provider account had enough credits on the
+// last generation attempt. Surfaced on /admin/models so an admin can see
+// when a user's banner fell back to the static template because the
+// provider account ran out of credits.
+//
+// Best-effort by design: never throws, and is a harmless no-op on
+// projects that have not applied migration 0015 yet (the update returns
+// an error we deliberately ignore). Pass status "ok" to clear a prior
+// flag, "insufficient" to raise one.
+export async function recordModelCreditStatus(adminClient, modelId, status, detail = null) {
+  if (!adminClient || !modelId) return;
+  try {
+    if (status === "ok") {
+      // Only touches rows currently flagged — keeps the healthy path a
+      // cheap conditional no-op rather than a write on every generation.
+      await adminClient
+        .from("models")
+        .update({
+          credit_status: "ok",
+          credit_detail: null,
+          credit_checked_at: new Date().toISOString(),
+        })
+        .eq("id", modelId)
+        .eq("credit_status", "insufficient");
+    } else {
+      await adminClient
+        .from("models")
+        .update({
+          credit_status: "insufficient",
+          credit_detail: detail
+            ? String(detail).slice(0, 600)
+            : "Insufficient provider credits",
+          credit_checked_at: new Date().toISOString(),
+        })
+        .eq("id", modelId);
+    }
+  } catch {
+    /* telemetry only — ignore (e.g. migration 0015 not applied yet) */
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Mutations — admin-only via RLS. The form is rendered in the admin app
 // (so the request is authenticated) and the API does the write via the
 // signed-in user's client. The DB enforces the admin role.

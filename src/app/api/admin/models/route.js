@@ -68,6 +68,11 @@ function sanitizeModel(row) {
     previewGradient: row.preview_gradient,
     config:          safeConfig,
     hasApiKey,
+    // Credit-health telemetry (migration 0015). Undefined on projects
+    // that haven't applied it yet — coerced to null so the UI is stable.
+    creditStatus:    row.credit_status ?? null,
+    creditDetail:    row.credit_detail ?? null,
+    creditCheckedAt: row.credit_checked_at ?? null,
     createdAt:       row.created_at,
     updatedAt:       row.updated_at,
   };

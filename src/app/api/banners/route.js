@@ -95,6 +95,10 @@ export async function POST(req) {
 
   // Validate required fields
   let prompt, style, aspect, referenceImage, subjectImage, modelRef, regenerateFromId;
+  // Opt-in flag for decorative "extra elements". Defaults to false so the
+  // banner is generated strictly from the brief unless the user enables
+  // extras in the composer.
+  let allowExtras = false;
   // Carry forward the prior banner's vision-analysis outputs when this
   // is a regeneration with the same reference/subject images. Skips the
   // vision-model calls (≈2-4s each) and the bg-removal call (≈3-5s) —
@@ -115,6 +119,7 @@ export async function POST(req) {
     style = validateString(body.style, { name: "style", max: 60 }) || null;
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
     modelRef = validateString(body.model, { name: "model", max: 80 }) || null;
+    allowExtras = body.allowExtras === true;
 
     // Optional reference image (data URL or https URL)
     if (typeof body.referenceImage === "string") {
@@ -206,6 +211,7 @@ export async function POST(req) {
     subjectImage,
     modelRef,
     regenerateFromId,
+    allowExtras,
   });
 
   job.setStatus("processing");
@@ -222,6 +228,7 @@ export async function POST(req) {
       referenceImage,
       subjectImage,
       modelRef,
+      allowExtras,
       // Regenerate-only short-circuits — null on a fresh create.
       priorReferenceContext,
       priorSubjectContext,
@@ -247,6 +254,7 @@ async function performBannerGeneration(job, userId, payload) {
   const adminClient = createAdminClient();
   const {
     prompt, style, aspect, referenceImage, subjectImage, modelRef,
+    allowExtras = false,
     priorReferenceContext = null,
     priorSubjectContext = null,
     priorSubjectCutoutUrl = null,
@@ -480,6 +488,7 @@ async function performBannerGeneration(job, userId, payload) {
           subjectContextText: placedSubjectContextText || subjectContextText,
           subjectImage: subjectImageForGeneration,
           backgroundImage: null,
+          allowExtras,
         }),
       ),
     );
@@ -506,6 +515,18 @@ async function performBannerGeneration(job, userId, payload) {
       });
       return null;
     });
+
+    // Surface model failures in the server log — the user-facing warning
+    // only shows a summary, so this is where to look when a generation
+    // falls back to the static template.
+    if (modelErrors.length) {
+      console.warn(
+        `[Job ${job.jobId}] ${modelErrors.length} model error(s) during banner generation:\n  ` +
+        modelErrors
+          .map((m) => `• ${m.modelLabel || m.modelId || "model"}: ${m.reason}`)
+          .join("\n  "),
+      );
+    }
 
     const usableVariants = variants.filter(Boolean);
     if (usableVariants.length === 0) {

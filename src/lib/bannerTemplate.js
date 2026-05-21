@@ -9,7 +9,7 @@
 // etc.) are stripped from the output to ensure the banner renders even
 // when the model hallucinates a stock photo URL.
 
-import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
+import { getDefaultTextModelWithSecrets, recordModelCreditStatus } from "@/lib/db/models";
 import { getStyleByName } from "@/lib/db/styles";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -480,6 +480,26 @@ function validateTemplate(t) {
   return t;
 }
 
+// Human-readable explanation of why validateTemplate rejected a parsed
+// model response. Surfaced in the fallback `reason` so admins can see at
+// a glance what the model got wrong, instead of a generic failure.
+function describeValidationFailure(repaired) {
+  if (typeof repaired?.html !== "string" || typeof repaired?.css !== "string") {
+    return "missing html or css string";
+  }
+  if (!Array.isArray(repaired?.fields) || repaired.fields.length === 0) {
+    return "fields array empty";
+  }
+  const ids = new Set(repaired.fields.map((f) => f?.id));
+  const missing = ["headline", "bg", "fg", "accent"].filter((id) => !ids.has(id));
+  if (missing.length) return `missing required fields: ${missing.join(", ")}`;
+  if ((repaired.html.match(/<[a-zA-Z][^>/]*>/g) || []).length < 3) {
+    return "html had fewer than 3 tags";
+  }
+  if ((repaired.css || "").length < 100) return "css was too short (< 100 chars)";
+  return "schema validation failed";
+}
+
 // Guarantee a bg_image field exists (with value === "" when absent) so
 // downstream consumers (editor, server inserts, exports) can rely on the
 // field shape regardless of which model produced the template. We append
@@ -734,6 +754,9 @@ export async function generateBannerTemplate({
   // user-uploaded subjectImage is present — a real subject always wins,
   // because the user explicitly chose what should appear IN the banner.
   backgroundImage = null,
+  // When false, the model is told to render strictly what the brief asks
+  // for — no extra decorative elements. Defaults to true (rich output).
+  allowExtras = true,
 }) {
   // Layered images: the subject (transparent cutout when bg-removal ran)
   // sits on its own --subject-image variable so the photographic bg
@@ -801,108 +824,160 @@ export async function generateBannerTemplate({
     activePrompts.bannerSystem = systemPromptOverride;
   }
 
-  try {
-    const messages = activePrompts
-      ? composeBannerMessages({
-          prompts:               activePrompts,
-          brief:                 prompt,
-          style,
-          aspect,
-          variantSeed,
-          referenceContextText,
-          subjectContextText,
-        })
-      : null;
-    if (!messages) {
-      return {
-        ...styled,
-        generator: "fallback",
-        reason: "Could not load prompts from app_settings — using fallback template.",
-        styleRow,
-      };
-    }
-    const { content } = await callOpenRouter({
-      apiKey,
-      endpoint:    endpoint || undefined,
-      model:       textModel.modelId,
-      jsonMode:    true,
-      temperature: textModel.config?.temperature ?? 0.9,
-      // Banner JSON tends to run 2-4k tokens; bigger inline-SVG attempts
-      // can push past 6k. Default to 8k so the model rarely truncates.
-      maxTokens:   textModel.config?.maxTokens   ?? 8000,
-      messages,
-    });
-
-    const parsed     = extractJson(content);
-     if (!parsed) {
-      return {
-        ...styled,
-        generator: "fallback",
-        reason: `Model "${textModel.label}" returned malformed JSON. Try regenerating or pick a different model.`,
-        styleRow,
-      };
-    }
-    const cleaned    = stripExternalImageUrls(parsed);
-    const repaired   = autoRepairFields(cleaned);
-    const validated  = validateTemplate(repaired);
-        if (!validated) {
-      // Surface a more useful reason than the generic "thin HTML" — admins
-      // can tell at a glance whether the model emitted no fields, missing
-      // required ids, or a CSS block that's too short.
-      const missing = [];
-      const ids = new Set((repaired?.fields || []).map((f) => f?.id));
-      for (const required of ["headline", "bg", "fg", "accent"]) {
-        if (!ids.has(required)) missing.push(required);
-      }
-      let why;
-      if (typeof repaired?.html !== "string" || typeof repaired?.css !== "string") {
-        why = "missing html or css string";
-      } else if (!Array.isArray(repaired?.fields) || repaired.fields.length === 0) {
-        why = "fields array empty";
-      } else if (missing.length) {
-        why = `missing required fields: ${missing.join(", ")}`;
-      } else if ((repaired.html.match(/<[a-zA-Z][^>/]*>/g) || []).length < 3) {
-        why = "html had fewer than 3 tags";
-      } else if ((repaired.css || "").length < 100) {
-        why = "css was too short (< 100 chars)";
-      } else {
-        why = "schema validation failed";
-      }
-      return {
-        ...styled,
-        generator: "fallback",
-        reason: `Model "${textModel.label}" output failed validation (${why}). Regenerate or pick a different model.`,
-        styleRow,
-      };
-    }
-    const colorSafe  = enforceContrast(validated);
-    const aspected   = applyAspectToTemplate(colorSafe, aspect);
-    const withBgField = ensureBgImageField(aspected);
-    const imagesApplied = layered.subjectImage && layered.backgroundImage
-      ? applyLayeredImages(withBgField, layered)
-      : applySubjectImage(withBgField, layered.subjectImage || layered.backgroundImage || null);
-    const staticSafe = enforceStaticBanner(imagesApplied);
-
-    return {
-      ...staticSafe,
-      generator: textModel.label,
-      modelId:   textModel.modelId,
-      provider:  textModel.provider,
-      styleRow,
-    };
-  } catch (e) {
-    // Network / upstream errors land here. The OpenRouterError class
-    // already pretty-prints provider responses, but tag the model label
-    // so admins can see which row is misbehaving when several models
-    // fan out in parallel.
-    const reason = e?.message
-      ? `Model "${textModel.label}": ${e.message}`
-      : `Model "${textModel.label}" request failed`;
+  const messages = activePrompts
+    ? composeBannerMessages({
+        prompts:               activePrompts,
+        brief:                 prompt,
+        style,
+        aspect,
+        variantSeed,
+        referenceContextText,
+        subjectContextText,
+        allowExtras,
+      })
+    : null;
+  if (!messages) {
     return {
       ...styled,
       generator: "fallback",
-      reason,
+      reason: "Could not load prompts from app_settings — using fallback template.",
       styleRow,
     };
   }
+
+  // The banner JSON is the largest, most schema-heavy payload we ask any
+  // model for, so even a healthy, correctly-configured model occasionally
+  // returns un-parseable JSON or schema-invalid output — far more often
+  // than the small vision / enhance / detect calls (which is why those
+  // succeed while banner generation falls back). A single bad roll used
+  // to drop the user straight onto the static fallback and surface a
+  // misleading "couldn't reach the AI model" warning even though the
+  // model was perfectly reachable. We now retry a few times before
+  // giving up: a re-roll almost always parses, and retries use a lower
+  // temperature so the JSON comes back more reliably structured.
+  const baseTemperature = textModel.config?.temperature ?? 0.7;
+  // Banner JSON tends to run 2-4k tokens; rich inline-SVG attempts push
+  // past 6k. Start at the configured cap (default 8k); escalate it when a
+  // response comes back truncated (finish_reason "length").
+  let maxTokens = textModel.config?.maxTokens ?? 8000;
+  // Hard ceiling discovered from an OpenRouter credit-limit (402) error.
+  // Once known, no retry — including the truncation escalation — may
+  // exceed it, or the request is rejected again for the same reason.
+  let affordableCeiling = null;
+  const MAX_ATTEMPTS = 4;
+  let lastReason = `Model "${textModel.label}" did not return a usable banner`;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // The first attempt honors the configured temperature; retries drop
+    // to a low one so the model is far more likely to emit valid,
+    // schema-correct JSON instead of another creative-but-broken roll.
+    const temperature = attempt === 0 ? baseTemperature : Math.min(baseTemperature, 0.35);
+    try {
+      const { content, finishReason } = await callOpenRouter({
+        apiKey,
+        endpoint:    endpoint || undefined,
+        model:       textModel.modelId,
+        jsonMode:    true,
+        temperature,
+        maxTokens,
+        messages,
+      });
+
+      const parsed = extractJson(content);
+      if (!parsed) {
+        if (finishReason === "length") {
+          // The model ran out of output budget mid-JSON. Escalate the
+          // cap so the retry has room to finish — but never past a known
+          // credit ceiling, or the request just gets rejected again.
+          lastReason = `Model "${textModel.label}" hit its ${maxTokens}-token output limit and the banner JSON was cut off`;
+          let escalated = Math.min(Math.round(maxTokens * 1.8), 16000);
+          if (affordableCeiling != null) escalated = Math.min(escalated, affordableCeiling);
+          if (escalated <= maxTokens) break; // no headroom left to grow
+          maxTokens = escalated;
+        } else {
+          lastReason = `Model "${textModel.label}" returned malformed JSON`;
+        }
+        continue;
+      }
+      const cleaned   = stripExternalImageUrls(parsed);
+      const repaired  = autoRepairFields(cleaned);
+      const validated = validateTemplate(repaired);
+      if (!validated) {
+        lastReason = `Model "${textModel.label}" output failed validation (${describeValidationFailure(repaired)})`;
+        continue;
+      }
+
+      const colorSafe   = enforceContrast(validated);
+      const aspected    = applyAspectToTemplate(colorSafe, aspect);
+      const withBgField = ensureBgImageField(aspected);
+      const imagesApplied = layered.subjectImage && layered.backgroundImage
+        ? applyLayeredImages(withBgField, layered)
+        : applySubjectImage(withBgField, layered.subjectImage || layered.backgroundImage || null);
+      const staticSafe = enforceStaticBanner(imagesApplied);
+
+      // The model just generated successfully — its provider account can
+      // pay. Clear any stale "insufficient credits" flag on /admin/models.
+      await recordModelCreditStatus(adminClient, textModel.id, "ok");
+
+      return {
+        ...staticSafe,
+        generator: textModel.label,
+        modelId:   textModel.modelId,
+        provider:  textModel.provider,
+        styleRow,
+      };
+    } catch (e) {
+      // Network / upstream errors land here. The OpenRouterError class
+      // already pretty-prints provider responses, but tag the model
+      // label so admins can see which row is misbehaving when several
+      // models fan out in parallel.
+      lastReason = e?.message
+        ? `Model "${textModel.label}": ${e.message}`
+        : `Model "${textModel.label}" request failed`;
+
+      // OpenRouter rejects a request when the account's credit balance
+      // can't cover the worst-case cost (prompt + max_tokens). The error
+      // states the exact output budget the balance CAN afford — drop
+      // max_tokens to fit and retry, instead of failing outright. A
+      // short / strict banner often still fits in the reduced budget.
+      const affordMatch = /can only afford\s+(\d+)/i.exec(e?.message || "");
+      if (affordMatch) {
+        const affordable = parseInt(affordMatch[1], 10);
+        const reduced = affordable - 64; // margin for upstream rounding
+        // Below ~1.5k output tokens a banner simply can't be produced —
+        // fail fast with the credit reason rather than burning retries.
+        if (Number.isFinite(reduced) && reduced >= 1500 && reduced < maxTokens) {
+          affordableCeiling = reduced;
+          maxTokens = reduced;
+          continue;
+        }
+        break; // genuinely out of credits for a banner-sized request
+      }
+
+      // Config errors (bad key, bad model id) won't fix themselves on a
+      // retry — bail immediately. Transient errors (rate limit, 5xx,
+      // timeout, network blip) are worth another go.
+      const status = e?.status;
+      const retryable = status == null || status === 408 || status === 429 || status >= 500;
+      if (!retryable) break;
+    }
+  }
+
+  // Tag the failure so callers (and the admin telemetry path) can tell a
+  // credit / billing problem apart from a generic generation failure.
+  const creditIssue = /credit|can only afford|payment required|insufficient/i.test(lastReason || "");
+
+  // Flag the model on /admin/models so the team can see the credit issue
+  // and top up or switch the default model.
+  if (creditIssue) {
+    await recordModelCreditStatus(adminClient, textModel.id, "insufficient", lastReason);
+  }
+
+  return {
+    ...styled,
+    generator: "fallback",
+    reason: lastReason,
+    creditIssue,
+    styleRow,
+  };
 }

@@ -208,8 +208,25 @@ export default function AdminModels() {
         </header>
 
         {error && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
             {error}
+          </div>
+        )}
+
+        {/* Credit-health alert — raised by the banner generation pipeline
+            when a model's provider account runs out of credits and a
+            user's banner fell back to the static template. */}
+        {(models || []).some((m) => m.creditStatus === "insufficient") && (
+          <div className="flex items-start gap-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <div className="font-semibold">Some models are out of credits</div>
+              <div className="opacity-90">
+                A recent banner generation fell back to a default template because the
+                provider account ran out of credits. Top up credits with the provider or
+                switch the default model — affected models are flagged below.
+              </div>
+            </div>
           </div>
         )}
 
@@ -379,6 +396,24 @@ function ModelGroup({
                     </dd>
                   </div>
                 </dl>
+
+                {m.creditStatus === "insufficient" && (
+                  <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-[11px] text-red-800 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200">
+                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-semibold">Provider account out of credits</div>
+                      <div className="mt-0.5 wrap-break-word opacity-90">
+                        {m.creditDetail ||
+                          "A recent banner generation fell back because this model's provider account has insufficient credits."}
+                      </div>
+                      {m.creditCheckedAt && (
+                        <div className="mt-1 opacity-70">
+                          Detected {new Date(m.creditCheckedAt).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {kind === "image" && (
                   <div className="mt-5">

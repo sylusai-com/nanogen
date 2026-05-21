@@ -26,6 +26,7 @@ export default function PromptForm({
   initialModel = "auto",
   initialReference = null,
   initialSubject = null,
+  initialExtras = false,
   submitLabel = "Generate banner",
   busyLabel = "Generating",
 }) {
@@ -45,6 +46,10 @@ export default function PromptForm({
   // server as `subjectImage`; lands as the bg_image so the user's photo
   // / product / person actually appears IN the rendered banner.
   const [subject, setSubject] = useState(initialSubject);
+  // Opt-in for decorative "extra elements". OFF by default → the banner
+  // is generated strictly from the prompt. The user flips it on in the
+  // composer toolbar when they want the model to add richer decoration.
+  const [allowExtras, setAllowExtras] = useState(initialExtras);
 
   // Catalogs change rarely (admins toggle them through /admin). 30 min
   // TTL + sessionStorage persistence means a returning user hydrates
@@ -91,6 +96,7 @@ export default function PromptForm({
       model: modelSlug && modelSlug !== "auto" ? modelSlug : null,
       referenceImage: reference?.dataUrl || null,
       subjectImage: subject?.dataUrl || null,
+      allowExtras,
     });
   };
 
@@ -114,6 +120,8 @@ export default function PromptForm({
         style={style}
         onStyleChange={setStyle}
         catalogLoading={catalogLoading}
+        allowExtras={allowExtras}
+        onAllowExtrasChange={setAllowExtras}
       />
 
       {loadError && (

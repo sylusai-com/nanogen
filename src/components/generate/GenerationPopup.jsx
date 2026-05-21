@@ -9,6 +9,7 @@ import {
   Sparkles,
   X as XIcon,
   AlertTriangle,
+  ArrowRight,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -64,6 +65,9 @@ export default function GenerationPopup({
   error = null,
   onDismiss = null,
   onCancel = null,
+  // Called when the user clicks the finished popup — navigates to the
+  // generated banner's detail page. Only wired up once a banner exists.
+  onOpen = null,
   // Optional: a tiny title appended to the success state (e.g. the
   // banner's headline). Falls back to "Banner ready" alone when absent.
   successTitle = null,
@@ -132,9 +136,11 @@ export default function GenerationPopup({
           {/* Mini-preview. Skeleton while generating; the actual banner
               the instant the job completes and we have a renderable row.
               The render aspect tracks the saved banner's aspect (falls
-              back to the prop while we wait for the row to land). */}
-          <div className="relative border-b border-border bg-surface-2/60 p-3">
-            {done && banner?.html && banner?.css ? (
+              back to the prop while we wait for the row to land).
+              Once the job is done the preview doubles as the click target
+              that opens the banner's detail page. */}
+          {done && banner?.html && banner?.css ? (
+            <div className="relative border-b border-border bg-surface-2/60 p-3">
               <div className={cn(
                 aspectClass(banner.aspect || aspect),
                 "relative w-full overflow-hidden rounded-lg bg-surface-2",
@@ -143,8 +149,27 @@ export default function GenerationPopup({
                   banner={banner}
                   className="absolute inset-0 h-full w-full"
                 />
+                {/* Transparent overlay button — sits ABOVE the preview
+                    iframe so the whole thumbnail is the click target that
+                    opens the banner. An overlay (rather than wrapping the
+                    iframe in a <button>) avoids nesting interactive
+                    content, which is invalid HTML. */}
+                {onOpen && (
+                  <button
+                    type="button"
+                    onClick={onOpen}
+                    aria-label="Open generated banner"
+                    className="group/open absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/0 transition-colors duration-200 hover:bg-black/45"
+                  >
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black opacity-0 shadow-lg transition-opacity duration-200 group-hover/open:opacity-100">
+                      Open banner <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
+                  </button>
+                )}
               </div>
-            ) : (
+            </div>
+          ) : (
+            <div className="relative border-b border-border bg-surface-2/60 p-3">
               <div className={cn(
                 aspectClass(aspect),
                 "skeleton relative w-full overflow-hidden rounded-lg bg-surface-2",
@@ -164,8 +189,8 @@ export default function GenerationPopup({
                   <div className="h-3 w-1/2 rounded-md bg-foreground/10" />
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Header row */}
           <div className="flex items-start gap-3 px-4 pt-3.5 pb-2.5">
@@ -197,6 +222,12 @@ export default function GenerationPopup({
                   <>
                     <span aria-hidden="true">·</span>
                     <span className="truncate">{currentStep.name?.replace(/_/g, " ")}</span>
+                  </>
+                )}
+                {done && !error && onOpen && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-medium text-primary">Click to open</span>
                   </>
                 )}
               </div>

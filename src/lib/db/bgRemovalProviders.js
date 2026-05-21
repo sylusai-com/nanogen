@@ -91,6 +91,25 @@ async function blobToDataUri(blob) {
   return `data:${type};base64,${b64}`;
 }
 
+// Turn a provider HTTP response into a transparent-PNG data URI, or null.
+// Beyond the `res.ok` check, this guards against providers that answer
+// 200 with a JSON / text error body (rate-limit notice, "no subject
+// detected", quota message) instead of an image. Without the guard that
+// error payload would be wrapped as a data URI and treated as a valid
+// cutout — the subject would then render as a broken image and the
+// "background" would never actually be removed.
+async function imageResponseToDataUri(res) {
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  const type = (blob.type || res.headers.get("content-type") || "").toLowerCase();
+  // Reject an explicitly non-image body. An empty content-type is left
+  // to pass (some custom endpoints omit it) — the size check below still
+  // catches truncated / empty payloads.
+  if (type && !type.startsWith("image/")) return null;
+  if (blob.size < 128) return null;
+  return await blobToDataUri(blob);
+}
+
 // Provider-specific call. Returns a transparent PNG data URI on success,
 // or null on any failure (auth, rate limit, malformed response). The
 // caller owns "try the next provider, then fall back to local".
@@ -114,8 +133,7 @@ export async function fetchSubjectCutout(provider, imageUrlOrDataUri) {
         headers: { "X-Api-Key": apiKey },
         body: form,
       });
-      if (!res.ok) return null;
-      return await blobToDataUri(await res.blob());
+      return await imageResponseToDataUri(res);
     }
 
     if (provider.type === "clipdrop") {
@@ -128,8 +146,7 @@ export async function fetchSubjectCutout(provider, imageUrlOrDataUri) {
         headers: { "x-api-key": apiKey },
         body: form,
       });
-      if (!res.ok) return null;
-      return await blobToDataUri(await res.blob());
+      return await imageResponseToDataUri(res);
     }
 
     if (provider.type === "photoroom") {
@@ -142,8 +159,7 @@ export async function fetchSubjectCutout(provider, imageUrlOrDataUri) {
         headers: { "x-api-key": apiKey, Accept: "image/png" },
         body: form,
       });
-      if (!res.ok) return null;
-      return await blobToDataUri(await res.blob());
+      return await imageResponseToDataUri(res);
     }
 
     // Generic / custom: POST the bytes as multipart `image_file` and

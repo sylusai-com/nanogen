@@ -12,6 +12,15 @@
   --color-primary: var(--primary);
   --color-primary-fg: var(--primary-fg);
   --color-ring: var(--ring);
+  /* Status surfaces for alert / warning / error banners. The underlying
+     --warning-* / --danger-* vars flip with [data-theme] below, so these
+     utilities read correctly in BOTH light and dark themes. */
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-border: var(--warning-border);
+  --color-warning-text: var(--warning-text);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-border: var(--danger-border);
+  --color-danger-text: var(--danger-text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -29,6 +38,12 @@
   --primary: #a78bfa;
   --primary-fg: #0a0a0b;
   --ring: rgba(167, 139, 250, 0.45);
+  --warning-surface: rgba(245, 158, 11, 0.13);
+  --warning-border: rgba(245, 158, 11, 0.34);
+  --warning-text: #fcd34d;
+  --danger-surface: rgba(239, 68, 68, 0.13);
+  --danger-border: rgba(239, 68, 68, 0.34);
+  --danger-text: #fca5a5;
   color-scheme: dark;
 }
 
@@ -44,6 +59,12 @@
   --primary: #7c3aed;
   --primary-fg: #ffffff;
   --ring: rgba(124, 58, 237, 0.4);
+  --warning-surface: #fef3c7;
+  --warning-border: #f59e0b;
+  --warning-text: #78350f;
+  --danger-surface: #fee2e2;
+  --danger-border: #ef4444;
+  --danger-text: #991b1b;
   color-scheme: light;
 }
 

@@ -10,7 +10,6 @@ import {
   ImageIcon,
   Loader2,
   PenTool,
-  RefreshCcw,
   Share2,
   Star,
   Trash2,
@@ -25,7 +24,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import DownloadMenu from "@/components/banner/DownloadMenu";
 import ReferencePanel from "@/components/banner/ReferencePanel";
-import RegenerateDialog from "@/components/banner/RegenerateDialog";
+import RegeneratePanel from "@/components/banner/RegeneratePanel";
 import BannerPreview from "@/components/banner/BannerPreview";
 import { cn } from "@/lib/cn";
 import { deleteBanner, getBanner, toggleFavourite, updateBanner } from "@/lib/db/banners";
@@ -46,7 +45,6 @@ export default function BannerDetail({ params }) {
   const [busy, setBusy] = useState(false);
   const [bgSaving, setBgSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [regenerateOpen, setRegenerateOpen] = useState(false);
   // Toggle for the photographic bg layer that the bg-image provider
   // generated alongside the HTML/CSS banner. The truth lives on the
   // banner row's `fields[bg_image_enabled]`, which is also what the
@@ -260,7 +258,8 @@ export default function BannerDetail({ params }) {
         </Link>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-          {/* Preview */}
+          {/* Preview + inline regeneration composer */}
+          <div className="space-y-6">
           <Card elevated className="p-3">
             {hasTemplate ? (
               <div className="space-y-3">
@@ -315,6 +314,11 @@ export default function BannerDetail({ params }) {
               </div>
             )}
           </Card>
+
+          {/* Inline regeneration — replaces the old modal dialog so the
+              prompt box lives right on this page. */}
+          <RegeneratePanel banner={banner} />
+          </div>
 
           <div className="space-y-4">
             {/* Meta */}
@@ -373,15 +377,6 @@ export default function BannerDetail({ params }) {
                 <Button
                   variant="secondary"
                   className="w-full"
-                  onClick={() => setRegenerateOpen(true)}
-                  leftIcon={<RefreshCcw className="h-3.5 w-3.5" />}
-                >
-                  Regenerate with new prompt
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  className="w-full"
                   onClick={onToggleFavourite}
                   disabled={busy}
                   leftIcon={
@@ -423,12 +418,6 @@ export default function BannerDetail({ params }) {
           </div>
         </div>
       </div>
-
-      <RegenerateDialog
-        banner={banner}
-        open={regenerateOpen}
-        onClose={() => setRegenerateOpen(false)}
-      />
 
       <ConfirmDialog
         open={deleteOpen}

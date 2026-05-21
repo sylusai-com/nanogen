@@ -43,6 +43,19 @@ function normalizeModelId(modelId, url) {
   return id;
 }
 
+// OpenAI's `response_format: { type: "json_object" }` is NOT universally
+// supported. Anthropic / Claude models in particular do not accept it —
+// sending it makes the upstream (or OpenRouter, on Claude's behalf)
+// reject the request. That is exactly why Claude banners silently fell
+// back to the static template while Gemini / OpenAI ones generated fine:
+// the banner call sets jsonMode, and json_object mode is invalid for
+// Claude. For those models we omit the parameter and rely on the prompt
+// ("Output ONLY JSON, no prose, no markdown fences") plus extractJson(),
+// which already strips the markdown fences Claude occasionally adds.
+function supportsJsonResponseFormat(modelId) {
+  return !/claude|anthropic/i.test(modelId || "");
+}
+
 // Pretty-print upstream errors so admins can fix configuration without
 // reading the raw provider envelope.
 function explainUpstreamError(status, text, url) {
@@ -111,7 +124,11 @@ export async function callOpenRouter({
       messages,
       max_tokens:  maxTokens,
       temperature,
-      ...(jsonMode && { response_format: { type: "json_object" } }),
+      // Only attach response_format for models that actually support
+      // json_object mode — sending it to Claude breaks the request.
+      ...(jsonMode && supportsJsonResponseFormat(normalizedModel) && {
+        response_format: { type: "json_object" },
+      }),
     }),
   });
 
@@ -125,7 +142,12 @@ export async function callOpenRouter({
 
   const data    = await res.json();
   const content = data?.choices?.[0]?.message?.content || "";
-  return { content, raw: data };
+  // `finish_reason` tells callers WHY generation stopped. "length" means
+  // the model hit max_tokens mid-output — the response is truncated and
+  // any JSON in it is incomplete. Callers use this to escalate the token
+  // budget on a retry instead of blindly treating it as malformed.
+  const finishReason = data?.choices?.[0]?.finish_reason || null;
+  return { content, finishReason, raw: data };
 }
 
 // Strips ```json ... ``` fences and trailing prose so JSON.parse succeeds.

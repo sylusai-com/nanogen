@@ -64,13 +64,51 @@ export default function GenerationProvider({ children }) {
   const activeJobRef = useRef(null);
 
   const pollGeneration = useCallback(async (jobId, maxAttempts = 240) => {
+    // The job is created synchronously inside POST /api/banners *before*
+    // it returns the jobId, so a 404 from the status endpoint is never a
+    // genuine "job gone" right after a generation starts — it's a
+    // transient race: Next.js compiling the status route on its first
+    // use (dev), or a momentary gap between the POST resolving and the
+    // status route seeing the shared job queue. Failing the whole
+    // generation on the first such 404 produced the intermittent
+    // "Job not found" error. We instead tolerate a short streak of 404s
+    // (and network blips) before giving up.
+    let notFoundStreak = 0;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const res = await fetch(`/api/generation-status/${jobId}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
+      let res;
+      try {
+        res = await fetch(`/api/generation-status/${jobId}`);
+      } catch {
+        // Network blip (backgrounded tab throttling fetch, connection
+        // hiccup) — wait and retry rather than killing the job.
+        await new Promise((r) => setTimeout(r, 800));
+        continue;
+      }
       // Drop updates for stale jobs — happens when the user starts a
       // second generation before the first one finishes polling.
-      if (activeJobRef.current !== jobId) return data;
+      if (activeJobRef.current !== jobId) return undefined;
+
+      if (res.status === 404) {
+        notFoundStreak += 1;
+        // ~15 × 800ms ≈ 12s of grace, comfortably longer than a cold
+        // route compile. Only a job that's genuinely gone stays 404.
+        if (notFoundStreak > 15) {
+          throw new Error("Generation job could not be found — please try generating again.");
+        }
+        await new Promise((r) => setTimeout(r, 800));
+        continue;
+      }
+      notFoundStreak = 0;
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON body (e.g. a transient HTML error page) — retry.
+        await new Promise((r) => setTimeout(r, 800));
+        continue;
+      }
+      if (!res.ok) throw new Error(data.error || `Status request failed (${res.status})`);
       setGen((s) => ({
         ...s,
         currentStep: data.currentStep || s.currentStep,
@@ -123,6 +161,14 @@ export default function GenerationProvider({ children }) {
       const banner = generation?.banner;
       const usedFallback = generation?.results?.usedFallback === true;
       const jobModelErrors = generation?.results?.modelErrors || [];
+      // The concrete reason the banner fell back (malformed JSON, an
+      // upstream error, a hit token limit, …). Surfaced in the warning
+      // for everyone — the user explicitly wants to know WHY.
+      const fallbackReason = jobModelErrors.find((m) => m?.reason)?.reason || null;
+      // A credit / billing failure needs a different call to action than a
+      // transient glitch — "try regenerating" won't help an empty account.
+      const creditFallback =
+        usedFallback && /credit|can only afford|payment required/i.test(fallbackReason || "");
 
       setGen((s) => ({
         ...s,
@@ -131,14 +177,17 @@ export default function GenerationProvider({ children }) {
         stepsCompleted: Array.isArray(generation?.stepsCompleted) ? generation.stepsCompleted : s.stepsCompleted,
         stepsSkipped: Array.isArray(generation?.stepsSkipped) ? generation.stepsSkipped : s.stepsSkipped,
         successTitle: banner?.title || null,
-        // `redirectTo` overrides the per-banner edit URL — used by the
-        // regenerate flow to land on the gallery instead of the editor.
-        targetUrl: redirectTo || (banner?.id ? `/dashboard/banners/${banner.id}/edit` : null),
+        // Clicking the finished popup opens the banner's detail page. The
+        // explicit `redirectTo` still wins when a caller needs a
+        // different destination.
+        targetUrl: redirectTo || (banner?.id ? `/dashboard/banners/${banner.id}` : null),
         modelErrors: isAdmin && Array.isArray(jobModelErrors) ? jobModelErrors : [],
         warning: usedFallback
-          ? (isAdmin
-              ? "Banner saved using the static fallback template — every configured model errored or returned malformed output. Fix in Admin → Models."
-              : "We couldn't reach the AI model just now, so we saved a default banner you can edit.")
+          ? (creditFallback
+              ? "Your banner used a default template because the selected AI model's provider account is out of credits. Add credits with the provider — or pick a different model — then regenerate."
+              : isAdmin
+                ? `Banner saved using the static fallback template — ${fallbackReason || "the model errored or returned malformed/invalid output on every retry"}. Check the model errors below or in Admin → Models.`
+                : `The banner didn't generate cleanly this time, so we saved an editable draft.${fallbackReason ? ` (${fallbackReason})` : ""} Try regenerating — it usually works on another attempt.`)
           : null,
         banner: banner || null,
       }));
@@ -161,7 +210,16 @@ export default function GenerationProvider({ children }) {
     setGen(INITIAL);
   }, []);
 
+  // Dismiss just closes the popup — it no longer navigates. Navigation is
+  // now an explicit action: clicking the popup itself (`openBanner`).
   const dismiss = useCallback(() => {
+    activeJobRef.current = null;
+    setGen(INITIAL);
+  }, []);
+
+  // Clicking the finished popup opens the freshly generated banner's
+  // detail page (/dashboard/banners/[id]).
+  const openBanner = useCallback(() => {
     const target = gen.targetUrl;
     activeJobRef.current = null;
     setGen(INITIAL);
@@ -183,6 +241,7 @@ export default function GenerationProvider({ children }) {
         banner={gen.banner}
         onCancel={cancel}
         onDismiss={dismiss}
+        onOpen={gen.targetUrl ? openBanner : null}
       />
     </Ctx.Provider>
   );

@@ -271,7 +271,7 @@ export default function BannersHub() {
         </section>
 
         {gen.done && gen.warning && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-400/70 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="flex items-start gap-3 rounded-xl border border-warning-border bg-warning-surface px-4 py-3 text-sm text-warning-text">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <div className="font-semibold">Heads up</div>
@@ -281,7 +281,7 @@ export default function BannersHub() {
         )}
 
         {gen.done && gen.modelErrors.length > 0 && (
-          <div className="rounded-xl border border-amber-400/70 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="rounded-xl border border-warning-border bg-warning-surface px-4 py-3 text-xs text-warning-text">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <div className="min-w-0">

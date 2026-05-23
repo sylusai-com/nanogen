@@ -250,7 +250,6 @@ export async function POST(req) {
 
 // Background generation worker - runs in parallel without blocking response
 async function performBannerGeneration(job, userId, payload) {
-  const supabase = await createClient();
   const adminClient = createAdminClient();
   const {
     prompt, style, aspect, referenceImage, subjectImage, modelRef,
@@ -478,7 +477,7 @@ async function performBannerGeneration(job, userId, payload) {
     const settled = await Promise.allSettled(
       plan.map(({ model, variantSeed }) =>
         generateBannerTemplate({
-          supabase,
+          supabase: adminClient,
           prompt: enhancedBrief,
           style,
           aspect,
@@ -538,7 +537,7 @@ async function performBannerGeneration(job, userId, payload) {
     const scored = await Promise.all(
       usableVariants.map(async (t) => {
         const s = await scoreBannerTemplate({
-          supabase,
+          supabase: adminClient,
           prompt,
           style,
           aspect,
@@ -720,7 +719,7 @@ async function performBannerGeneration(job, userId, payload) {
     job.setStep(GenerationJobSteps.SAVE_BANNER);
 
     const modelsForRun = plan.map((p) => p.model?.modelId).filter(Boolean);
-    const { data: runRow, error: runErr } = await supabase
+    const { data: runRow, error: runErr } = await adminClient
       .from("generation_runs")
       .insert({
         user_id: userId,
@@ -761,7 +760,7 @@ async function performBannerGeneration(job, userId, payload) {
       };
     });
 
-    const { data: savedResults, error: resultsErr } = await supabase
+    const { data: savedResults, error: resultsErr } = await adminClient
       .from("generation_results")
       .insert(resultRowsInput)
       .select("id, model_id, model_label, score, is_winner");
@@ -817,7 +816,7 @@ async function performBannerGeneration(job, userId, payload) {
     // /aspect) so the floating GenerationPopup can show the actual
     // generated banner in place of the skeleton the moment the job
     // completes — rather than waiting for the dashboard to refetch.
-    const { data: savedBanners, error: bannersErr } = await supabase
+    const { data: savedBanners, error: bannersErr } = await adminClient
       .from("banners")
       .insert(bannerRows)
       .select("id, title, model_label, score, html, css, fields, alignment, aspect, preview_gradient, image_url, subject_image_url");

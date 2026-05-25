@@ -80,7 +80,7 @@ export default function AdminLayout({ children }) {
       title: "Workspace",
       items: [
         {
-          href: "/dashboard",
+          href: "/dashboard/banners",
           label: "Back to studio",
           icon: <Boxes className={iconCls} />,
         },

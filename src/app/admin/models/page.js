@@ -5,11 +5,17 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Cpu,
   Edit3,
+  Eye,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
+  Workflow,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
@@ -21,6 +27,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import EmptyData from "@/components/ui/EmptyData";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ModelFormModal from "@/components/admin/ModelFormModal";
+import Select from "@/components/ui/Select";
 import { invalidateTags } from "@/lib/cache";
 import { useApiCache } from "@/lib/useApiCache";
 
@@ -247,7 +254,7 @@ export default function AdminModels() {
               busyId={busyId}
               onEdit={(m) => setModal({ open: true, model: m })}
               onToggleEnabled={onToggleEnabled}
-              onDelete={onDelete}
+              onDelete={setDeleteTarget}
             />
             <ModelGroup
               kind="text"
@@ -259,8 +266,9 @@ export default function AdminModels() {
               onEdit={(m) => setModal({ open: true, model: m })}
               onToggleEnabled={onToggleEnabled}
               onMakeDefault={onMakeDefault}
-              onDelete={onDelete}
+              onDelete={setDeleteTarget}
             />
+            <WorkflowStages />
           </>
         )}
       </div>
@@ -451,7 +459,7 @@ function ModelGroup({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setDeleteTarget(m)}
+                      onClick={() => onDelete(m)}
                       disabled={busyId === m.id}
                       className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors"
                     >
@@ -463,6 +471,248 @@ function ModelGroup({
             );
           })}
         </div>
+      )}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Workflow Stage Models — per-stage model assignment
+// ─────────────────────────────────────────────────────────────────────
+
+const TIER_STYLES = {
+  lightweight: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-400",
+    border: "border-emerald-500/20",
+    label: "Lightweight",
+    icon: Zap,
+  },
+  standard: {
+    bg: "bg-amber-500/10",
+    text: "text-amber-400",
+    border: "border-amber-500/20",
+    label: "Standard",
+    icon: Sparkles,
+  },
+};
+
+function WorkflowStages() {
+  const [stagesData, setStagesData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busyStage, setBusyStage] = useState(null);
+  const [expanded, setExpanded] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadStages = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/admin/models/stages", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+      const data = await res.json();
+      setStagesData(data);
+      setError(null);
+    } catch (e) {
+      setError(e.message || "Failed to load workflow stages");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStages();
+  }, []);
+
+  const onAssign = async (stageId, modelId) => {
+    setBusyStage(stageId);
+    try {
+      const res = await fetch("/api/admin/models/stages", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stageId, modelId: modelId || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `Request failed (${res.status})`);
+      }
+      await loadStages();
+    } catch (e) {
+      setError(e.message || "Failed to update stage model");
+    } finally {
+      setBusyStage(null);
+    }
+  };
+
+  const stages = stagesData?.stages || [];
+  const availableModels = stagesData?.availableModels || [];
+  const defaultModel = stagesData?.defaultModel;
+
+  const lightweightCount = stages.filter(
+    (s) => s.stage.tier === "lightweight" && s.model,
+  ).length;
+  const totalLightweight = stages.filter(
+    (s) => s.stage.tier === "lightweight",
+  ).length;
+
+  return (
+    <section className="space-y-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 text-left group"
+      >
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+            <Workflow className="h-4 w-4 text-primary" />
+            Workflow stage models
+          </h2>
+          <p className="text-[11px] text-muted">
+            Assign different models to each pipeline stage for cost optimization.
+            Unassigned stages use the default text model{defaultModel ? ` (${defaultModel.label})` : ""}.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-lg p-1.5 text-muted group-hover:bg-surface-2 group-hover:text-foreground transition-colors">
+          {expanded ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </span>
+      </button>
+
+      {expanded && (
+        <>
+          {error && (
+            <div className="rounded-xl border border-danger-border bg-danger-surface px-4 py-3 text-sm text-danger-text">
+              {error}
+            </div>
+          )}
+
+          {/* Cost optimization summary */}
+          {stages.length > 0 && (
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-1 px-4 py-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                <Zap className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-medium text-foreground">
+                  Cost optimization
+                </div>
+                <div className="text-[11px] text-muted">
+                  {lightweightCount} of {totalLightweight} lightweight stages assigned to cheaper models.
+                  {lightweightCount === 0 && " Assign lightweight models below to reduce costs."}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="grid gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {stages.map(({ stage, modelId, model }) => {
+                const tier = TIER_STYLES[stage.tier] || TIER_STYLES.standard;
+                const TierIcon = tier.icon;
+                const isOverridden = !!model;
+                const isBusy = busyStage === stage.id;
+
+                return (
+                  <Card key={stage.id} className="p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      {/* Stage info */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">
+                            {stage.label}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tier.bg} ${tier.text} ${tier.border}`}
+                          >
+                            <TierIcon className="h-2.5 w-2.5" />
+                            {tier.label}
+                          </span>
+                          {stage.requiresVision && (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400"
+                              title="This stage sends images to the model — requires a vision-capable model."
+                            >
+                              <Eye className="h-2.5 w-2.5" />
+                              Vision
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-muted leading-relaxed">
+                          {stage.description}
+                        </p>
+                      </div>
+
+                      {/* Model selector */}
+                      <div className="flex items-center gap-2 sm:min-w-[260px]">
+                        <div className="flex-1">
+                          <Select
+                            value={modelId || ""}
+                            disabled={isBusy}
+                            onChange={(e) => onAssign(stage.id, e.target.value)}
+                            className="text-xs"
+                          >
+                            <option value="">
+                              Default{defaultModel ? ` — ${defaultModel.label}` : ""}
+                            </option>
+                            {availableModels.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.label} ({m.provider})
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        {isOverridden && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => onAssign(stage.id, "")}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-muted hover:bg-surface-2 hover:text-foreground transition-colors"
+                            title="Reset to default model"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Currently assigned model info */}
+                    {isOverridden && model && (
+                      <div className="mt-2 flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-[11px]">
+                        <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
+                        <span className="text-muted">
+                          Using{" "}
+                          <span className="font-medium text-foreground">
+                            {model.label}
+                          </span>{" "}
+                          <span className="text-muted">
+                            ({model.provider} · {model.modelId})
+                          </span>
+                        </span>
+                        {!model.enabled && (
+                          <span className="ml-auto rounded-full border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-400">
+                            Disabled
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

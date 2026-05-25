@@ -51,6 +51,7 @@ import {
   enhancePrompt,
   detectCategoryAndStyle,
 } from "@/lib/bannerGeneration";
+import { prefetchStageModels } from "@/lib/db/stageModels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -260,6 +261,11 @@ async function performBannerGeneration(job, userId, payload) {
   } = payload;
 
   try {
+    // Pre-fetch all stage→model assignments in one bulk DB call so each
+    // pipeline stage below gets its resolved model without hitting the DB
+    // individually. Saves ~5 round-trips per generation.
+    const stageModels = await prefetchStageModels(adminClient);
+
     // Step 1: Validate images exist and are accessible
     job.setStep(GenerationJobSteps.UPLOAD_IMAGES);
     // (Image URLs are already validated in POST handler)
@@ -343,12 +349,12 @@ async function performBannerGeneration(job, userId, payload) {
       reuseReference
         ? Promise.resolve(priorReferenceContext)
         : refImageUrl
-          ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl })
+          ? extractReferenceImageContext({ adminClient, imageUrl: refImageUrl, modelOverride: stageModels.get("reference_analysis") })
           : Promise.resolve(null),
       reuseSubjectContext
         ? Promise.resolve(priorSubjectContext)
         : subjImageUrl
-          ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl })
+          ? extractSubjectImageContext({ adminClient, imageUrl: subjImageUrl, modelOverride: stageModels.get("subject_analysis") })
           : Promise.resolve(null),
       reuseSubjectCutout
         ? Promise.resolve({ dataUrl: priorSubjectCutoutUrl, reused: true })
@@ -378,6 +384,7 @@ async function performBannerGeneration(job, userId, payload) {
       style,
       referenceContext,
       subjectContext,
+      modelOverride: stageModels.get("prompt_enhancement"),
     });
     const enhancedBrief = enhancement.brief || prompt;
     const placedSubjectContext = subjectContext
@@ -543,6 +550,7 @@ async function performBannerGeneration(job, userId, payload) {
           aspect,
           html: t.html || "",
           css: t.css || "",
+          modelOverride: stageModels.get("banner_scoring"),
         });
         return {
           template: t,
@@ -575,6 +583,7 @@ async function performBannerGeneration(job, userId, payload) {
       referenceContext,
       subjectContext: placedSubjectContext,
       sampleBanner: { html: template.html, css: template.css },
+      modelOverride: stageModels.get("category_detection"),
     });
 
     // Step 6c: Fetch a photographic background NOW (after the model has
@@ -604,6 +613,7 @@ async function performBannerGeneration(job, userId, payload) {
           brief: enhancedBrief,
           referenceContext,
           subjectContext: placedSubjectContext,
+          modelOverride: stageModels.get("bg_query"),
         }).then((q) => ({
           ...q,
           // Prefer the detector's category over the bg-query LLM's guess —

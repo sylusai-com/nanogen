@@ -7,7 +7,7 @@
 // call and fall back to a heuristic when the model isn't reachable.
 
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
-import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
+import { getModelForStage } from "@/lib/db/stageModels";
 import { pickApiKey, pickEndpoint } from "@/lib/bannerTemplate";
 
 const SYSTEM_PROMPT = `You translate marketing briefs into a stock-photo search query. The query will be sent verbatim to Unsplash / Pexels / Pixabay search APIs.
@@ -59,11 +59,12 @@ export async function buildBackgroundQuery({
   brief,
   referenceContext,
   subjectContext,
+  modelOverride = null,
 }) {
   const fallback = fallbackQuery({ brief, referenceContext, subjectContext });
 
   let model;
-  try { model = await getDefaultTextModelWithSecrets(adminClient); } catch { model = null; }
+  try { model = modelOverride || await getModelForStage(adminClient, "bg_query"); } catch { model = null; }
   if (!model) return fallback;
 
   const apiKey = pickApiKey(model);

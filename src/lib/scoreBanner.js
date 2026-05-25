@@ -14,7 +14,7 @@
 // bannerTemplate.js is the floor — even on model failure, we don't fall
 // off a cliff.
 
-import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
+import { getModelForStage } from "@/lib/db/stageModels";
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -67,10 +67,11 @@ export async function scoreBannerTemplate({
   aspect = "",
   html = "",
   css = "",
+  modelOverride = null,
 }) {
   const heuristic = heuristicScore({ html, css, prompt });
 
-  const model = await getDefaultTextModelWithSecrets(createAdminClient());
+  const model = modelOverride || await getModelForStage(createAdminClient(), "banner_scoring");
   if (!model) {
     return {
       score:    heuristic,
@@ -156,12 +157,12 @@ export async function scoreBannerTemplate({
 // Score a generated image (URL). Uses a vision-capable text model when
 // available; falls back to a neutral mid-range score otherwise. The /api/score
 // endpoint accepts both shapes — image or html — and dispatches accordingly.
-export async function scoreBannerImage({ supabase, prompt = "", imageUrl }) {
+export async function scoreBannerImage({ supabase, prompt = "", imageUrl, modelOverride = null }) {
   if (!imageUrl) {
     return { score: 0, source: "heuristic", reason: "imageUrl is required" };
   }
 
-  const model = await getDefaultTextModelWithSecrets(createAdminClient());
+  const model = modelOverride || await getModelForStage(createAdminClient(), "banner_scoring");
   const apiKey = model ? pickApiKey(model) : null;
   const endpoint = model ? pickEndpoint(model) : null;
 

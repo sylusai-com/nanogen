@@ -28,7 +28,7 @@ import {
   formatSubjectContextForPrompt,
 } from "@/lib/referenceImage";
 import { pickApiKey, pickEndpoint } from "@/lib/bannerTemplate";
-import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
+import { getModelForStage } from "@/lib/db/stageModels";
 
 export { GenerationJobSteps as GenerationSteps };
 
@@ -77,6 +77,7 @@ export async function enhancePrompt({
   style,
   referenceContext,
   subjectContext,
+  modelOverride = null,
 }) {
   const fallback = {
     brief: userPrompt,
@@ -86,7 +87,7 @@ export async function enhancePrompt({
     reasoning: "fallback heuristic — LLM unavailable",
   };
 
-  const model = await getDefaultTextModelWithSecrets(adminClient).catch(() => null);
+  const model = modelOverride || await getModelForStage(adminClient, "prompt_enhancement").catch(() => null);
   if (!model) return fallback;
   const apiKey = pickApiKey(model);
   const endpoint = pickEndpoint(model);
@@ -167,6 +168,7 @@ export async function detectCategoryAndStyle({
   referenceContext,
   subjectContext,
   sampleBanner,
+  modelOverride = null,
 }) {
   const fallback = {
     category: referenceContext?.category || "other",
@@ -176,7 +178,7 @@ export async function detectCategoryAndStyle({
     needsExternalBackground: false,
   };
 
-  const model = await getDefaultTextModelWithSecrets(adminClient).catch(() => null);
+  const model = modelOverride || await getModelForStage(adminClient, "category_detection").catch(() => null);
   if (!model) return fallback;
   const apiKey = pickApiKey(model);
   const endpoint = pickEndpoint(model);

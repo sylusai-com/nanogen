@@ -21,7 +21,7 @@
 // of the pipeline continues unaffected.
 
 import { callOpenRouter, extractJson } from "@/lib/openrouter";
-import { getDefaultTextModelWithSecrets } from "@/lib/db/models";
+import { getModelForStage } from "@/lib/db/stageModels";
 import { pickApiKey, pickEndpoint } from "@/lib/bannerTemplate";
 
 const SYSTEM_PROMPT = `You are an expert visual designer. The user uploaded a reference image and wants a marketing banner inspired by it. Look at the image and extract structured design context.
@@ -45,10 +45,11 @@ Be concise and specific. Hex colors must be valid 6-digit codes. Do not invent d
 export async function extractReferenceImageContext({
   adminClient,
   imageUrl,
+  modelOverride = null,
 }) {
   if (!imageUrl) return null;
 
-  const model = await getDefaultTextModelWithSecrets(adminClient);
+  const model = modelOverride || await getModelForStage(adminClient, "reference_analysis");
   if (!model) return null;
 
   const apiKey   = pickApiKey(model);
@@ -165,10 +166,10 @@ Return ONLY a JSON object matching this exact schema:
 
 Be concise and specific. Hex colors must be valid 6-digit codes. Return ONLY the JSON.`;
 
-export async function extractSubjectImageContext({ adminClient, imageUrl }) {
+export async function extractSubjectImageContext({ adminClient, imageUrl, modelOverride = null }) {
   if (!imageUrl) return null;
 
-  const model = await getDefaultTextModelWithSecrets(adminClient);
+  const model = modelOverride || await getModelForStage(adminClient, "subject_analysis");
   if (!model) return null;
 
   const apiKey   = pickApiKey(model);

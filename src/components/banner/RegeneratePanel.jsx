@@ -160,7 +160,7 @@ export default function RegeneratePanel({ banner }) {
   );
 }
 
-// Toggle for decorative "extra elements". OFF → strict regeneration from
+// Toggle for decorative "magic prompt". OFF → strict regeneration from
 // the change request; ON → the model may add richer ornamentation.
 function ExtrasToggle({ value, onChange }) {
   return (
@@ -170,8 +170,8 @@ function ExtrasToggle({ value, onChange }) {
       aria-pressed={value}
       title={
         value
-          ? "Extra elements ON — the model may add decorative orbs, badges, patterns and other ornamentation."
-          : "Extra elements OFF — the banner is regenerated strictly from your request, with no extra decoration."
+          ? "Magic prompt ON — the model may add decorative orbs, badges, patterns and other ornamentation."
+          : "Magic prompt OFF — the banner is regenerated strictly from your request, with no extra decoration."
       }
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-colors",
@@ -181,7 +181,7 @@ function ExtrasToggle({ value, onChange }) {
       )}
     >
       <Shapes className="h-3 w-3" />
-      <span>{value ? "Extra elements ✓" : "Extra elements"}</span>
+      <span>{value ? "Magic prompt ✓" : "Magic prompt"}</span>
     </button>
   );
 }

@@ -150,10 +150,12 @@ const DETECT_SYSTEM = `You are a brand strategist classifying a generated market
   "theme":  string,
   "style":  string,
   "mood":   string[],
-  "needsExternalBackground": boolean
+  "needsExternalBackground": boolean,
+  "textBrightness": "dark" | "light"
 }
 
-needsExternalBackground=true ONLY when a photographic background image would meaningfully improve the banner (e.g. a real-world scene). If the HTML/CSS already shows a strong gradient/SVG composition, set it to false.`;
+needsExternalBackground=true ONLY when a photographic background image would meaningfully improve the banner (e.g. a real-world scene). If the HTML/CSS already shows a strong gradient/SVG composition, set it to false.
+For textBrightness, analyze the CSS colors of the primary text (headers/paragraphs). If the text is mostly dark colors (e.g. black, dark grey, #333), return "dark". If the text is mostly light colors (e.g. white, light grey, #FFF), return "light".`;
 
 const VALID_CATEGORIES = new Set([
   "gaming", "luxury", "tech", "fashion", "sports", "minimal", "futuristic",
@@ -176,6 +178,7 @@ export async function detectCategoryAndStyle({
     style: "",
     mood: Array.isArray(referenceContext?.mood) ? referenceContext.mood.slice(0, 4) : [],
     needsExternalBackground: false,
+    textBrightness: "light", // Default to light text (needs dark bg)
   };
 
   const model = modelOverride || await getModelForStage(adminClient, "category_detection").catch(() => null);
@@ -219,6 +222,9 @@ export async function detectCategoryAndStyle({
         ? parsed.mood.filter((s) => typeof s === "string").map((s) => s.trim()).filter(Boolean).slice(0, 6)
         : [],
       needsExternalBackground: !!parsed.needsExternalBackground,
+      textBrightness: typeof parsed.textBrightness === "string" && ["dark", "light"].includes(parsed.textBrightness.trim().toLowerCase()) 
+        ? parsed.textBrightness.trim().toLowerCase() 
+        : fallback.textBrightness,
     };
   } catch {
     return fallback;

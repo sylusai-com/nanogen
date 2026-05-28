@@ -613,6 +613,7 @@ async function performBannerGeneration(job, userId, payload) {
           brief: enhancedBrief,
           referenceContext,
           subjectContext: placedSubjectContext,
+          textBrightness: detection.textBrightness,
           modelOverride: stageModels.get("bg_query"),
         }).then((q) => ({
           ...q,

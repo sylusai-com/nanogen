@@ -18,10 +18,11 @@ Rules:
 - NO marketing words ("launch", "new", "best", "premium")
 - NO brand names, NO people's names
 - Pick a single category from: tech, food, travel, fashion, fitness, business, nature, art, lifestyle, product, abstract, other
+- If TEXT BRIGHTNESS is provided, ensure the query asks for a contrasting background (e.g. if text is "dark", the query must include terms like "light background" or "bright". If text is "light", include terms like "dark background").
 
 Return ONLY a JSON object: { "query": string, "category": string }.`;
 
-function fallbackQuery({ brief, referenceContext, subjectContext }) {
+function fallbackQuery({ brief, referenceContext, subjectContext, textBrightness }) {
   const candidates = [
     referenceContext?.subject,
     subjectContext?.shortDescription,
@@ -30,7 +31,15 @@ function fallbackQuery({ brief, referenceContext, subjectContext }) {
   ]
     .map((s) => String(s || "").trim())
     .filter(Boolean);
-  const query = (candidates[0] || "abstract background").slice(0, 60);
+  
+  let baseQuery = candidates[0] || "abstract background";
+  if (textBrightness === "dark") {
+    baseQuery = `light ${baseQuery}`;
+  } else if (textBrightness === "light") {
+    baseQuery = `dark ${baseQuery}`;
+  }
+  
+  const query = baseQuery.slice(0, 60);
 
   const buckets = {
     tech: /\b(tech|software|app|ai|digital|saas|cloud|data|cyber)\b/i,
@@ -59,9 +68,10 @@ export async function buildBackgroundQuery({
   brief,
   referenceContext,
   subjectContext,
+  textBrightness = null,
   modelOverride = null,
 }) {
-  const fallback = fallbackQuery({ brief, referenceContext, subjectContext });
+  const fallback = fallbackQuery({ brief, referenceContext, subjectContext, textBrightness });
 
   let model;
   try { model = modelOverride || await getModelForStage(adminClient, "bg_query"); } catch { model = null; }
@@ -79,6 +89,7 @@ export async function buildBackgroundQuery({
     referenceContext?.mood?.length ? `MOOD: ${referenceContext.mood.join(", ")}` : "",
     subjectContext?.subjectType ? `SUBJECT TYPE: ${subjectContext.subjectType}` : "",
     subjectContext?.shortDescription ? `SUBJECT: ${subjectContext.shortDescription}` : "",
+    textBrightness ? `TEXT BRIGHTNESS: ${textBrightness} (You must generate a contrasting background query)` : "",
     "Return ONLY {\"query\": string, \"category\": string}.",
   ].filter(Boolean).join("\n");
 

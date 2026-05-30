@@ -1,18 +1,31 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getKpis, getDailyActivity, getModelShare, listAllBanners } from "@/lib/db/admin";
-import { validateAdminRole } from "@/lib/server/security";
+import {
+  validateAdminRole,
+  rateLimit,
+  clientKey,
+  errorResponse
+} from "@/lib/server/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req) {
   try {
-    await validateAdminRole();
+    const { user } = await validateAdminRole();
+
+    // Rate Limit (max 30 requests per minute on overview GET)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-overview-get:${key}`, max: 30, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
 
     const url = new URL(req.url);
     const page = Number(url.searchParams.get("page") || 1);
-    const pageSize = Number(url.searchParams.get("pageSize") || 5);
+    const requestedPageSize = Number(url.searchParams.get("pageSize") || 5);
+    const pageSize = Math.min(50, Math.max(1, requestedPageSize));
 
     const admin = createAdminClient();
 
@@ -33,7 +46,6 @@ export async function GET(req) {
     res.headers.set("Cache-Control", "private, max-age=15, stale-while-revalidate=60");
     return res;
   } catch (e) {
-    const status = e.status || 500;
-    return NextResponse.json({ error: e.message || String(e) }, { status });
+    return errorResponse(e);
   }
 }

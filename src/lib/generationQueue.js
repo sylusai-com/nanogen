@@ -128,7 +128,6 @@ export class GenerationJob {
       stepsCompleted: this.stepsCompleted,
       stepsSkipped: this.stepsSkipped,
       error: this.error,
-      errorDetails: this.errorDetails,
       results: this.results,
       banner: this.banner,
       runId: this.runId,

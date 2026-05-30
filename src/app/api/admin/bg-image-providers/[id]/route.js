@@ -2,7 +2,16 @@
 // Individual background image provider management
 
 import { NextResponse } from "next/server";
-import { validateAdminRole, validateString } from "@/lib/server/security";
+import {
+  validateAdminRole,
+  validateString,
+  readJson,
+  originAllowed,
+  rateLimit,
+  clientKey,
+  ValidationError,
+  errorResponse
+} from "@/lib/server/security";
 import { updateBgImageProvider, deleteBgImageProvider } from "@/lib/db/bgImageProviders";
 
 function sanitizeProvider(provider) {
@@ -16,7 +25,19 @@ function sanitizeProvider(provider) {
 
 export async function PATCH(req, { params }) {
   try {
-    const { supabase } = await validateAdminRole();
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
+
+    const { supabase, user } = await validateAdminRole();
+
+    // 2. Rate Limit (60 requests per minute)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-bg-image-providers-id-patch:${key}`, max: 60, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
 
     // Next.js 15+ delivers `params` as a Promise — destructuring it
     // synchronously yields `undefined` for `id` and silently fails the
@@ -24,8 +45,14 @@ export async function PATCH(req, { params }) {
     // (models/[id], bg-removal-providers/[id]); this route was the
     // outlier, which is why the disable toggle and delete button on
     // /admin/bg-image-providers stopped working under the new runtime.
-    const { id } = await params;
-    const body = await req.json();
+    const resolvedParams = await params;
+    const { id } = resolvedParams;
+    if (!id) {
+      throw new ValidationError("Provider ID is required", 400);
+    }
+
+    // 3. Capped JSON parse (max 32 KB for provider updates body data)
+    const body = await readJson(req, { maxBytes: 32 * 1024 });
     const updates = {};
 
     if (body.name !== undefined) updates.name = validateString(body.name, { name: "name", min: 1, max: 255 });
@@ -39,20 +66,35 @@ export async function PATCH(req, { params }) {
     const provider = await updateBgImageProvider(supabase, id, updates);
     return NextResponse.json({ provider: sanitizeProvider(provider) });
   } catch (error) {
-    const status = error.status || 400;
-    return NextResponse.json({ error: error.message }, { status });
+    return errorResponse(error);
   }
 }
 
 export async function DELETE(req, { params }) {
   try {
-    const { supabase } = await validateAdminRole();
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
 
-    const { id } = await params;
+    const { supabase, user } = await validateAdminRole();
+
+    // 2. Rate Limit (60 requests per minute)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-bg-image-providers-id-delete:${key}`, max: 60, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
+
+    const resolvedParams = await params;
+    const { id } = resolvedParams;
+    if (!id) {
+      throw new ValidationError("Provider ID is required", 400);
+    }
+
     await deleteBgImageProvider(supabase, id);
     return NextResponse.json({ message: "Provider deleted" });
   } catch (error) {
-    const status = error.status || 400;
-    return NextResponse.json({ error: error.message }, { status });
+    return errorResponse(error);
   }
 }

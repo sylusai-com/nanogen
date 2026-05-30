@@ -3,7 +3,15 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { validateAdminRole } from "@/lib/server/security";
+import {
+  readJson,
+  originAllowed,
+  rateLimit,
+  clientKey,
+  ValidationError,
+  errorResponse,
+  validateAdminRole
+} from "@/lib/server/security";
 import {
   getEnabledTextModelByRefWithSecrets,
   listEnabledTextModelsWithSecrets,
@@ -52,19 +60,25 @@ function sanitizeProvider(provider) {
 }
 
 function summarizeError(error) {
+  if (error instanceof ValidationError) {
+    return {
+      ok: false,
+      message: error.message,
+    };
+  }
+  console.error("Connection diagnostics DB/fetch error:", error);
   return {
     ok: false,
-    message: error?.message || String(error),
-    status: error?.status || 500,
+    message: "Internal server error",
   };
 }
 
 async function testTextModel(model) {
   if (!model) {
-    throw new Error("Model not found or not enabled");
+    throw new ValidationError("Model not found or not enabled");
   }
   if (!model.config?.apiKey && !model.config?.api_key) {
-    throw new Error("Model is missing an API key");
+    throw new ValidationError("Model is missing an API key");
   }
 
   const apiKey = model.config.apiKey || model.config.api_key;
@@ -103,7 +117,7 @@ async function testImageModel(model) {
   });
 
   if (!result?.dataUrl) {
-    throw new Error(result?.error || "Image model failed");
+    throw new ValidationError(result?.error || "Image model failed");
   }
 
   return {
@@ -126,7 +140,7 @@ async function testBgProvider(adminClient, id) {
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  if (!provider) throw new Error("Provider not found");
+  if (!provider) throw new ValidationError("Provider not found");
 
   const result = await fetchBgImageFromProvider(provider, "business", "abstract banner background");
   return {
@@ -136,9 +150,17 @@ async function testBgProvider(adminClient, id) {
   };
 }
 
-export async function GET() {
+export async function GET(req) {
   try {
-    await validateAdminRole();
+    const { user } = await validateAdminRole();
+
+    // Rate Limit on diagnostics GET (max 20 per minute to prevent heavy diagnostic calls overloading system)
+    const rateLimitKey = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-connections-get:${rateLimitKey}`, max: 20, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
+
     const adminClient = createAdminClient();
 
     const [textModels, imageModels, providers] = await Promise.all([
@@ -168,9 +190,25 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await validateAdminRole();
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
+
+    const { user } = await validateAdminRole();
+
+    // 2. Rate Limit (max 10 heavy diagnostic updates per minute)
+    const rateLimitKey = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-connections-post:${rateLimitKey}`, max: 10, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
+
     const adminClient = createAdminClient();
-    const body = await req.json().catch(() => ({}));
+
+    // 3. Capped JSON parse (max 8 KB for connection diagnostic body)
+    const body = await readJson(req, { maxBytes: 8 * 1024 });
+
     const action = String(body.action || "").toLowerCase();
 
     if (action === "db") {
@@ -197,7 +235,7 @@ export async function POST(req) {
           model = (await listImageModelsWithSecrets(adminClient)).find((item) => item.id === ref || item.slug === ref || item.modelId === ref);
         }
       }
-      if (!model) throw new Error("Model not found or not enabled");
+      if (!model) throw new ValidationError("Model not found or not enabled", 404);
       const result = model.kind === "image" ? await testImageModel(model) : await testTextModel(model);
       return NextResponse.json({ ok: true, action, result });
     }
@@ -219,7 +257,7 @@ export async function POST(req) {
         return {
           ok: false,
           model,
-          error: entry.reason?.message || String(entry.reason),
+          error: entry.reason?.message || "Internal diagnostic failure",
         };
       });
       return NextResponse.json({
@@ -236,7 +274,7 @@ export async function POST(req) {
 
     if (action === "provider") {
       const id = String(body.providerId || "").trim();
-      if (!id) throw new Error("providerId is required");
+      if (!id) throw new ValidationError("providerId is required");
       const result = await testBgProvider(adminClient, id);
       return NextResponse.json({ ok: true, action, result });
     }
@@ -252,7 +290,7 @@ export async function POST(req) {
         return {
           ok: false,
           provider,
-          error: entry.reason?.message || String(entry.reason),
+          error: entry.reason?.message || "Internal diagnostic failure",
         };
       });
       return NextResponse.json({
@@ -281,7 +319,7 @@ export async function POST(req) {
           const results = settled.map((entry, index) => {
             const model = sanitizeModel(targets[index]);
             if (entry.status === "fulfilled") return entry.value;
-            return { ok: false, model, error: entry.reason?.message || String(entry.reason) };
+            return { ok: false, model, error: entry.reason?.message || "Internal diagnostic failure" };
           });
           return {
             total: results.length,
@@ -296,7 +334,7 @@ export async function POST(req) {
           const results = settled.map((entry, index) => {
             const provider = sanitizeProvider(providers[index]);
             if (entry.status === "fulfilled") return entry.value;
-            return { ok: false, provider, error: entry.reason?.message || String(entry.reason) };
+            return { ok: false, provider, error: entry.reason?.message || "Internal diagnostic failure" };
           });
           return {
             total: results.length,
@@ -309,7 +347,7 @@ export async function POST(req) {
       return NextResponse.json({ ok: true, action, result: { models: modelsResult, providers: providersResult } });
     }
 
-    throw new Error("Unknown action");
+    throw new ValidationError("Unknown action");
   } catch (error) {
     const status = error.status || 400;
     return NextResponse.json(summarizeError(error), { status });

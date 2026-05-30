@@ -185,8 +185,9 @@ export function errorResponse(e) {
   if (e instanceof ValidationError) {
     return NextResponse.json({ error: e.message }, { status: e.status });
   }
+  console.error("Internal Server Error caught in security helper:", e);
   return NextResponse.json(
-    { error: e?.message || "Internal error" },
+    { error: "Internal server error" },
     { status: 500 },
   );
 }

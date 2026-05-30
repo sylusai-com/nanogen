@@ -16,6 +16,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  readJson,
+  originAllowed,
+  rateLimit,
+  clientKey,
+  ValidationError,
+  errorResponse
+} from "@/lib/server/security";
 
 export const runtime = "nodejs";
 // Always evaluate per-request — never cached at the edge / by Next.js.
@@ -23,7 +31,8 @@ export const dynamic = "force-dynamic";
 
 function normalizePagination(url) {
   const page = Math.max(1, Number(url.searchParams.get("page") || 1));
-  const pageSize = Math.max(1, Number(url.searchParams.get("pageSize") || 20));
+  const requestedPageSize = Number(url.searchParams.get("pageSize") || 20);
+  const pageSize = Math.min(50, Math.max(1, requestedPageSize));
   return {
     page,
     pageSize,
@@ -79,34 +88,39 @@ function sanitizeModel(row) {
 }
 
 export async function GET(req) {
-  const gate = await requireAdmin();
-  if (gate.error) return gate.error;
+  try {
+    const gate = await requireAdmin();
+    if (gate.error) return gate.error;
 
-  const url = new URL(req.url);
-  const { page, pageSize, from, to } = normalizePagination(url);
+    const url = new URL(req.url);
+    const { page, pageSize, from, to } = normalizePagination(url);
 
-  const adminDb = createAdminClient();
-  const { data, error, count } = await adminDb
-    .from("models")
-    .select("*", { count: "exact" })
-    .order("kind", { ascending: true })
-    .order("sort_order", { ascending: true })
-    .range(from, to);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const adminDb = createAdminClient();
+    const { data, error, count } = await adminDb
+      .from("models")
+      .select("*", { count: "exact" })
+      .order("kind", { ascending: true })
+      .order("sort_order", { ascending: true })
+      .range(from, to);
+    if (error) {
+      console.error("Admin models GET error:", error);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
+
+    // Strip sensitive headers from cache layers.
+    const total = count ?? 0;
+    const res = NextResponse.json({
+      models: (data || []).map(sanitizeModel),
+      page,
+      pageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    });
+    res.headers.set("Cache-Control", "private, no-store");
+    return res;
+  } catch (e) {
+    return errorResponse(e);
   }
-
-  // Strip sensitive headers from cache layers.
-  const total = count ?? 0;
-  const res = NextResponse.json({
-    models: (data || []).map(sanitizeModel),
-    page,
-    pageSize,
-    total,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
-  });
-  res.headers.set("Cache-Control", "private, no-store");
-  return res;
 }
 
 const ALLOWED_KIND = new Set(["image", "text"]);
@@ -114,13 +128,13 @@ const SLUG_RE      = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const URL_RE       = /^https?:\/\/[^\s<>"'`]+$/i;
 
 function validateInsert(body) {
-  if (typeof body.slug !== "string" || !SLUG_RE.test(body.slug)) throw new Error("Invalid slug");
-  if (typeof body.label !== "string" || !body.label.trim() || body.label.length > 120) throw new Error("Invalid label");
-  if (!ALLOWED_KIND.has(body.kind)) throw new Error("Invalid kind");
-  if (typeof body.provider !== "string" || body.provider.length > 60) throw new Error("Invalid provider");
-  if (typeof body.modelId !== "string" || !body.modelId.trim() || body.modelId.length > 200) throw new Error("Invalid modelId");
-  if (body.config && (typeof body.config !== "object" || Array.isArray(body.config))) throw new Error("Invalid config");
-  if (body.config?.endpoint && !URL_RE.test(body.config.endpoint)) throw new Error("Invalid endpoint URL");
+  if (typeof body.slug !== "string" || !SLUG_RE.test(body.slug)) throw new ValidationError("Invalid slug");
+  if (typeof body.label !== "string" || !body.label.trim() || body.label.length > 120) throw new ValidationError("Invalid label");
+  if (!ALLOWED_KIND.has(body.kind)) throw new ValidationError("Invalid kind");
+  if (typeof body.provider !== "string" || body.provider.length > 60) throw new ValidationError("Invalid provider");
+  if (typeof body.modelId !== "string" || !body.modelId.trim() || body.modelId.length > 200) throw new ValidationError("Invalid modelId");
+  if (body.config && (typeof body.config !== "object" || Array.isArray(body.config))) throw new ValidationError("Invalid config");
+  if (body.config?.endpoint && !URL_RE.test(body.config.endpoint)) throw new ValidationError("Invalid endpoint URL");
   return {
     slug:      body.slug,
     label:     body.label.trim(),
@@ -136,24 +150,41 @@ function validateInsert(body) {
 }
 
 export async function POST(req) {
-  const gate = await requireAdmin();
-  if (gate.error) return gate.error;
+  try {
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
 
-  let body;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
+    const gate = await requireAdmin();
+    if (gate.error) return gate.error;
+    const { user } = gate;
 
-  let row;
-  try { row = validateInsert(body); }
-  catch (e) { return NextResponse.json({ error: e.message }, { status: 400 }); }
+    // 2. Rate Limit (admin config changes capped to 60 requests per minute)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-models-post:${key}`, max: 60, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
 
-  const adminDb = createAdminClient();
-  const { data, error } = await adminDb
-    .from("models")
-    .insert(row)
-    .select("*")
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    // 3. Capped JSON parse (max 64 KB for models body registry config)
+    const body = await readJson(req, { maxBytes: 64 * 1024 });
 
-  return NextResponse.json({ model: sanitizeModel(data) });
+    let row = validateInsert(body);
+
+    const adminDb = createAdminClient();
+    const { data, error } = await adminDb
+      .from("models")
+      .insert(row)
+      .select("*")
+      .single();
+    if (error) {
+      console.error("Admin models POST insert error:", error);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
+
+    return NextResponse.json({ model: sanitizeModel(data) });
+  } catch (e) {
+    return errorResponse(e);
+  }
 }

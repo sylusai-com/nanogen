@@ -237,7 +237,7 @@ export async function POST(req) {
     }
   ).catch((error) => {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
-    job.setError(error.message, error);
+    job.setError(error.message, null);
   });
 
   // Return immediately with job ID for polling
@@ -876,7 +876,7 @@ async function performBannerGeneration(job, userId, payload) {
     })));
   } catch (error) {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
-    job.setError(error.message, error.stack);
+    job.setError(error.message, null);
   }
 }
 

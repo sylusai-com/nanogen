@@ -27,7 +27,7 @@ export async function GET() {
   } catch (error) {
     console.error("Failed to list generation jobs:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to list jobs" },
+      { error: "Internal server error" },
       { status: 500 },
     );
   }

@@ -8,7 +8,8 @@ export async function GET(req) {
   try {
     const url = new URL(req.url);
     const page = Number(url.searchParams.get("page") || 1);
-    const pageSize = Number(url.searchParams.get("pageSize") || 8);
+    const requestedPageSize = Number(url.searchParams.get("pageSize") || 8);
+    const pageSize = Math.min(50, Math.max(1, requestedPageSize));
 
     const supabase = await createClient();
     const { data: session } = await supabase.auth.getUser();
@@ -74,6 +75,7 @@ export async function GET(req) {
     res.headers.set("Cache-Control", "private, max-age=10, stale-while-revalidate=60");
     return res;
   } catch (e) {
-    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
+    console.error("Dashboard stats error:", e);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

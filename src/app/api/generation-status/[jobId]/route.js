@@ -41,7 +41,7 @@ export async function GET(req, { params }) {
   } catch (error) {
     console.error("Error checking job status:", error);
     return Response.json(
-      { error: error.message },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

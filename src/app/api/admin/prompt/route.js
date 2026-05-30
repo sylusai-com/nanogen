@@ -21,6 +21,14 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  readJson,
+  originAllowed,
+  rateLimit,
+  clientKey,
+  ValidationError,
+  errorResponse
+} from "@/lib/server/security";
+import {
   PROMPTS,
   deletePromptOverride,
   getAdminPromptOverview,
@@ -74,49 +82,65 @@ function validateValueShape(meta, value) {
 }
 
 export async function GET() {
-  const gate = await requireAdmin();
-  if (gate.error) return gate.error;
+  try {
+    const gate = await requireAdmin();
+    if (gate.error) return gate.error;
 
-  const adminDb  = createAdminClient();
-  const overview = await getAdminPromptOverview(adminDb);
+    const adminDb  = createAdminClient();
+    const overview = await getAdminPromptOverview(adminDb);
 
-  const res = NextResponse.json({
-    keys: Object.fromEntries(
-      Object.entries(PROMPTS).map(([k, v]) => [k, v.dbKey]),
-    ),
-    prompts: overview,
-  });
-  res.headers.set("Cache-Control", "private, no-store");
-  return res;
+    const res = NextResponse.json({
+      keys: Object.fromEntries(
+        Object.entries(PROMPTS).map(([k, v]) => [k, v.dbKey]),
+      ),
+      prompts: overview,
+    });
+    res.headers.set("Cache-Control", "private, no-store");
+    return res;
+  } catch (e) {
+    return errorResponse(e);
+  }
 }
 
 export async function PUT(req) {
-  const gate = await requireAdmin();
-  if (gate.error) return gate.error;
-
-  let body;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
-
-  const key = body?.key;
-  if (typeof key !== "string" || !isValidPromptKey(key)) {
-    return NextResponse.json({ error: `Unknown prompt key: ${key}` }, { status: 400 });
-  }
-
-  const meta = PROMPTS[key];
-  const reason = validateValueShape(meta, body.value);
-  if (reason) {
-    return NextResponse.json({ error: reason }, { status: 400 });
-  }
-
   try {
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
+
+    const gate = await requireAdmin();
+    if (gate.error) return gate.error;
+    const { user } = gate;
+
+    // 2. Rate Limit (60 requests per minute)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-prompt-put:${key}`, max: 60, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
+
+    // 3. Capped JSON parse (max 64 KB for prompts body override config)
+    const body = await readJson(req, { maxBytes: 64 * 1024 });
+
+    const promptKey = body?.key;
+    if (typeof promptKey !== "string" || !isValidPromptKey(promptKey)) {
+      throw new ValidationError(`Unknown prompt key: ${promptKey}`, 400);
+    }
+
+    const meta = PROMPTS[promptKey];
+    const reason = validateValueShape(meta, body.value);
+    if (reason) {
+      throw new ValidationError(reason, 400);
+    }
+
     const row = await savePromptOverride(createAdminClient(), {
-      key,
+      key: promptKey,
       value:     body.value,
       updatedBy: gate.user.id,
     });
     return NextResponse.json({
-      key,
+      key: promptKey,
       dbKey:        row.key,
       value:        body.value,
       isCustomized: true,
@@ -124,37 +148,50 @@ export async function PUT(req) {
       updatedBy:    row.updated_by,
     });
   } catch (e) {
-    return NextResponse.json({ error: e?.message || "Failed to save prompt" }, { status: 500 });
+    return errorResponse(e);
   }
 }
 
 export async function DELETE(req) {
-  const gate = await requireAdmin();
-  if (gate.error) return gate.error;
-
-  // Accept the key from either the JSON body or the query string. The
-  // browser fetch wrapper sends DELETE with a body; curl users prefer
-  // a query param.
-  let key = null;
   try {
-    const body = await req.clone().json().catch(() => null);
-    key = body?.key || null;
-  } catch { /* ignore */ }
-  if (!key) {
-    key = new URL(req.url).searchParams.get("key");
-  }
-  if (typeof key !== "string" || !isValidPromptKey(key)) {
-    return NextResponse.json({ error: `Unknown prompt key: ${key}` }, { status: 400 });
-  }
+    // 1. CSRF check
+    if (!originAllowed(req)) {
+      throw new ValidationError("CSRF block: Origin or referer not allowed", 403);
+    }
 
-  try {
-    const defaultValue = await deletePromptOverride(createAdminClient(), key);
+    const gate = await requireAdmin();
+    if (gate.error) return gate.error;
+    const { user } = gate;
+
+    // 2. Rate Limit (60 requests per minute)
+    const key = clientKey(req, user.id);
+    const { ok, retryAfter } = rateLimit({ key: `admin-prompt-delete:${key}`, max: 60, windowMs: 60_000 });
+    if (!ok) {
+      return NextResponse.json({ error: `Too many requests. Retry after ${retryAfter} seconds.` }, { status: 429 });
+    }
+
+    // Accept the key from either the JSON body or the query string. The
+    // browser fetch wrapper sends DELETE with a body; curl users prefer
+    // a query param.
+    let promptKey = null;
+    try {
+      const body = await readJson(req.clone(), { maxBytes: 4096 }).catch(() => null);
+      promptKey = body?.key || null;
+    } catch { /* ignore */ }
+    if (!promptKey) {
+      promptKey = new URL(req.url).searchParams.get("key");
+    }
+    if (typeof promptKey !== "string" || !isValidPromptKey(promptKey)) {
+      throw new ValidationError(`Unknown prompt key: ${promptKey}`, 400);
+    }
+
+    const defaultValue = await deletePromptOverride(createAdminClient(), promptKey);
     return NextResponse.json({
-      key,
+      key: promptKey,
       value:        defaultValue,
       isCustomized: false,
     });
   } catch (e) {
-    return NextResponse.json({ error: e?.message || "Failed to revert prompt" }, { status: 500 });
+    return errorResponse(e);
   }
 }

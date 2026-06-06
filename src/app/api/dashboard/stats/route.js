@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getUserApiStats } from "@/lib/db/apiKeys";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export async function GET(req) {
     const page = Number(url.searchParams.get("page") || 1);
     const requestedPageSize = Number(url.searchParams.get("pageSize") || 8);
     const pageSize = Math.min(50, Math.max(1, requestedPageSize));
+    const includeApi = url.searchParams.get("type") === "api";
 
     const supabase = await createClient();
     const { data: session } = await supabase.auth.getUser();
@@ -67,7 +69,18 @@ export async function GET(req) {
     const total = allRes.count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / pageSize || 1));
 
-    const res = NextResponse.json({ banners: { rows: bannersRes.data || [], total, page, pageSize, totalPages }, stats });
+    const payload = { banners: { rows: bannersRes.data || [], total, page, pageSize, totalPages }, stats };
+
+    // Include API usage stats when requested
+    if (includeApi) {
+      try {
+        payload.apiStats = await getUserApiStats(supabase, user.id);
+      } catch {
+        payload.apiStats = null;
+      }
+    }
+
+    const res = NextResponse.json(payload);
     // Browser/CDN caching guidance — dashboard stats can serve a 30 s
     // stale response while we refresh in the background. The mutation
     // tag invalidates the client cache anyway, so users see fresh data
@@ -79,3 +92,4 @@ export async function GET(req) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+

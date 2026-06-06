@@ -5,7 +5,7 @@ import { ArrowRight, PlayCircle } from "lucide-react";
 import Container from "@/components/ui/Container";
 import Eyebrow from "@/components/ui/Eyebrow";
 import Button from "@/components/ui/Button";
-import HeroPreview from "./HeroPreview";
+// import HeroPreview from "./HeroPreview";
 
 const titleVariants = {
   hidden: { opacity: 0, y: 18 },
@@ -29,7 +29,7 @@ export default function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
-            <Eyebrow tone="primary">Phase 1 — Multi-model generation in beta</Eyebrow>
+            <Eyebrow tone="primary">Multi-model generation + Developer API</Eyebrow>
           </motion.div>
 
           <h1 className="mt-7 text-[40px] font-semibold leading-[1.05] tracking-tight md:text-[64px]">
@@ -61,6 +61,7 @@ export default function Hero() {
           >
             Describe what you want. Nanogen runs multiple image models in parallel,
             scores every output for visual quality, and returns the best one — in seconds.
+            Now available as a REST API for your apps.
           </motion.p>
 
           <motion.div
@@ -96,7 +97,7 @@ export default function Hero() {
           </motion.p>
         </div>
 
-        <HeroPreview />
+        {/* <HeroPreview /> */}
       </Container>
     </section>
   );

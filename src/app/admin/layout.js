@@ -1,7 +1,7 @@
 // src/app/admin/layout.js
 "use client";
 
-import { ArrowLeft, Boxes, Cpu, Image as ImageIcon, LayoutDashboard, LayoutTemplate, MessageSquareCode, Palette, Plug, Scissors, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Boxes, Code2, Cpu, Image as ImageIcon, LayoutDashboard, LayoutTemplate, MessageSquareCode, Palette, Plug, Scissors, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/layout/AuthProvider";
 import RouteGuard from "@/components/dashboard/RouteGuard";
@@ -58,6 +58,11 @@ export default function AdminLayout({ children }) {
           href: "/admin/connections",
           label: "Connections",
           icon: <Plug className={iconCls} />,
+        },
+        {
+          href: "/admin/api",
+          label: "API Usage",
+          icon: <Code2 className={iconCls} />,
         },
       ],
     },

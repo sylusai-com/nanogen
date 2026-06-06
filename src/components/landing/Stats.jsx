@@ -6,7 +6,7 @@ import Container from "@/components/ui/Container";
 const stats = [
   { value: "4×", label: "Models per prompt" },
   { value: "≥ 80", label: "Quality threshold" },
-  { value: "~80s", label: "Median time to result" },
+  { value: "~55s", label: "Median time to result" },
   { value: "100%", label: "Auto-evaluated outputs" },
 ];
 

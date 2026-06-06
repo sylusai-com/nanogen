@@ -14,6 +14,7 @@ const links = [
   { href: "/generate", label: "Try" },
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "Workflow" },
+  { href: "/#api", label: "API" },
   { href: "/#showcase", label: "Showcase" },
 ];
 

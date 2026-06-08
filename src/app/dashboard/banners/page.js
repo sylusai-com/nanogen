@@ -74,6 +74,7 @@ export default function BannersHub() {
   // doesn't appear twice.
   useEffect(() => {
     if (!userId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInitialLoading(false);
       return;
     }

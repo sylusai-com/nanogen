@@ -122,7 +122,7 @@ export default function LoginPage() {
       subtitle="Sign in to continue to your studio"
       footer={
         <>
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <Link href="/signup" className="text-foreground underline-offset-2 hover:underline">
             Sign up
           </Link>

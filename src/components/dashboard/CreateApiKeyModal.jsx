@@ -58,7 +58,7 @@ export default function CreateApiKeyModal({ open, onClose, onCreated }) {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
             <div className="text-xs text-amber-200/80 leading-relaxed">
               <strong className="text-amber-300">Copy your API key now.</strong> This is
-              the only time it will be displayed. You won't be able to see it
+              the only time it will be displayed. You won&apos;t be able to see it
               again after closing this dialog.
             </div>
           </div>

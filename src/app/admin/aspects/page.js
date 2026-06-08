@@ -62,13 +62,10 @@ export default function AdminAspects() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user) reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, page]);
-
-  useEffect(() => {
-    setPage(1);
-  }, []);
 
   const onCreate = async (form) => {
     await createAspectRatio(supabase, form);

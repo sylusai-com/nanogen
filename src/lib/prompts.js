@@ -368,7 +368,6 @@ export async function getActivePrompts(adminClient) {
   // Sequential is fine — the prompts table has at most a handful of rows,
   // and parallel SELECTs against the same key wouldn't help anyway.
   for (const key of Object.keys(PROMPTS)) {
-    // eslint-disable-next-line no-await-in-loop
     out[key] = await getActivePrompt(adminClient, key);
   }
   return out;
@@ -381,7 +380,6 @@ export async function getAdminPromptOverview(adminClient) {
   const overview = {};
   for (const key of Object.keys(PROMPTS)) {
     const meta = PROMPTS[key];
-    // eslint-disable-next-line no-await-in-loop
     const row = await getSetting(adminClient, meta.dbKey).catch(() => null);
     const stored = parseValue(meta.kind, row?.value);
     const defaultValue = DEFAULT_PROMPTS[key];

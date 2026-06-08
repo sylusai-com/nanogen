@@ -116,6 +116,7 @@ export default function AdminModels() {
   // Stable user.id key avoids re-firing reload() every time the auth
   // provider re-shapes the user object (token refresh on tab switch).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user?.id) reload(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, page]);
@@ -523,6 +524,7 @@ function WorkflowStages() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadStages();
   }, []);
 

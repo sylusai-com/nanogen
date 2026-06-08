@@ -312,7 +312,9 @@ export function useCachedQuery(key, fetcher, options = {}) {
   const tagsKey = tags.join("|");
 
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
 
   // Re-render when this specific key updates OR when the global tick fires
   // (covers tag-based invalidation + clearCache).
@@ -324,6 +326,7 @@ export function useCachedQuery(key, fetcher, options = {}) {
   }, [k, enabled]);
 
   const hit = cache.get(k);
+  // eslint-disable-next-line react-hooks/purity
   const fresh = !!hit && (!hit.expiresAt || hit.expiresAt >= Date.now());
   const data  = hit ? hit.value : undefined;
   const stale = !!hit && !fresh;

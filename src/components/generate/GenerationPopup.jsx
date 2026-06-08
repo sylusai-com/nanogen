@@ -92,6 +92,7 @@ export default function GenerationPopup({
   const ticking = open && !done && !error;
   useEffect(() => {
     if (!ticking) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setElapsed(0);
     const start = Date.now();
     const tick = setInterval(() => setElapsed(Math.round((Date.now() - start) / 1000)), 250);

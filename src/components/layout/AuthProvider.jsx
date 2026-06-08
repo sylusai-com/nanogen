@@ -51,9 +51,7 @@ function shapeUser(authUser, profile) {
 }
 
 export function AuthProvider({ children }) {
-  const supabaseRef = useRef(null);
-  if (!supabaseRef.current) supabaseRef.current = createClient();
-  const supabase = supabaseRef.current;
+  const [supabase] = useState(() => createClient());
 
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);

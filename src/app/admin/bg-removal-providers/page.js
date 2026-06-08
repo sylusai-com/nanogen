@@ -88,7 +88,10 @@ export default function AdminBgRemovalProviders() {
     }
   };
 
-  useEffect(() => { if (user?.id) reload(); /* eslint-disable-next-line */ }, [user?.id]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (user?.id) reload();
+  }, [user?.id]);
 
   const onCreate = async (form) => {
     await adminFetch("/api/admin/bg-removal-providers", { method: "POST", body: JSON.stringify(form) });

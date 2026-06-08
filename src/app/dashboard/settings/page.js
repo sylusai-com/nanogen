@@ -53,7 +53,7 @@ export default function SettingsPage() {
 
         <Card elevated className="p-6">
           <h2 className="text-base font-semibold tracking-tight">Notifications</h2>
-          <p className="mt-1 text-xs text-muted">What we'll email you about.</p>
+          <p className="mt-1 text-xs text-muted">What we&apos;ll email you about.</p>
 
           <ul className="mt-5 space-y-3">
             {[

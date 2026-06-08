@@ -14,6 +14,7 @@ export default function Sidebar({ sections, footer, className }) {
 
   // Close the drawer on route change.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileOpen(false);
   }, [pathname]);
 

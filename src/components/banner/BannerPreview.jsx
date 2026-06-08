@@ -164,12 +164,7 @@ export default function BannerPreview({
     });
   }, [
     visible,
-    banner?.html,
-    banner?.css,
-    banner?.alignment,
-    banner?.title,
-    banner?.canvas?.elements,
-    banner?.canvas?.background,
+    banner,
     resolvedFields,
     subjectImageUrl,
     aspect,

@@ -79,6 +79,9 @@ const nextConfig = {
     ];
   },
 
+  // Produce a minimal standalone server bundle for Docker/Cloud Run.
+  output: "standalone",
+
   // Be conservative with the React strict-mode default and do not leak
   // the framework signature in the X-Powered-By header.
   poweredByHeader: false,

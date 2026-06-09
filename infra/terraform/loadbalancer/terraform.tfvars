@@ -1,0 +1,5 @@
+project_id   = "nanogen-prod"
+region       = "asia-south2"
+service_name = "nanogen-app"
+domain       = "nanogen.sylusai.com"
+prefix       = "nanogen-app-lb"

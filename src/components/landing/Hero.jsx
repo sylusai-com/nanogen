@@ -5,7 +5,7 @@ import { ArrowRight, PlayCircle } from "lucide-react";
 import Container from "@/components/ui/Container";
 import Eyebrow from "@/components/ui/Eyebrow";
 import Button from "@/components/ui/Button";
-// import HeroPreview from "./HeroPreview";
+import HeroPreview from "./HeroPreview";
 
 const titleVariants = {
   hidden: { opacity: 0, y: 18 },
@@ -32,13 +32,13 @@ export default function Hero() {
             <Eyebrow tone="primary">Multi-model generation + Developer API</Eyebrow>
           </motion.div>
 
-          <h1 className="mt-7 text-[40px] font-semibold leading-[1.05] tracking-tight md:text-[64px]">
+          <h1 className="mt-7 text-[48px] font-bold leading-[1.05] tracking-tight md:text-[76px]">
             <motion.span
               variants={titleVariants}
               initial="hidden"
               animate="visible"
               custom={0}
-              className="block text-gradient"
+              className="block text-gradient pb-2"
             >
               AI banners that
             </motion.span>
@@ -47,7 +47,7 @@ export default function Hero() {
               initial="hidden"
               animate="visible"
               custom={1}
-              className="block text-primary-gradient"
+              className="block text-primary-gradient pb-2"
             >
               just look right.
             </motion.span>
@@ -74,6 +74,7 @@ export default function Hero() {
               href="/generate"
               size="lg"
               rightIcon={<ArrowRight className="h-4 w-4" strokeWidth={2.5} />}
+              className="shadow-[0_0_20px_color-mix(in_oklab,var(--primary)_40%,transparent)]"
             >
               Generate a banner
             </Button>
@@ -97,7 +98,7 @@ export default function Hero() {
           </motion.p>
         </div>
 
-        {/* <HeroPreview /> */}
+        <HeroPreview />
       </Container>
     </section>
   );

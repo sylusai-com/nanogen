@@ -7,7 +7,9 @@ import Section from "@/components/ui/Section";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
-const curlSnippet = `curl -X POST https://nanogen.app/api/v1/generate \\
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.app";
+
+const curlSnippet = `curl -X POST ${siteUrl}/api/v1/generate \\
   -H "Authorization: Bearer ngn_a1b2c3d4..." \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -22,7 +24,7 @@ const responseSnippet = `{
   "model": "flux-1-schnell",
   "prompt": "Modern SaaS product launch banner",
   "aspect": "16:9",
-  "imageUrl": "https://cdn.nanogen.app/gen/...",
+  "imageUrl": "${siteUrl}/gen/...",
   "score": 92,
   "latencyMs": 1840,
   "usage": {
@@ -34,7 +36,7 @@ const responseSnippet = `{
 const pythonSnippet = `import requests
 
 response = requests.post(
-    "https://nanogen.app/api/v1/generate",
+    "${siteUrl}/api/v1/generate",
     headers={"Authorization": "Bearer ngn_a1b2c3d4..."},
     json={
         "prompt": "Modern SaaS product launch banner",
@@ -46,7 +48,7 @@ response = requests.post(
 data = response.json()
 print(f"Score: {data['score']} | URL: {data['imageUrl']}")`;
 
-const jsSnippet = `const res = await fetch("https://nanogen.app/api/v1/generate", {
+const jsSnippet = `const res = await fetch("${siteUrl}/api/v1/generate", {
   method: "POST",
   headers: {
     "Authorization": "Bearer ngn_a1b2c3d4...",

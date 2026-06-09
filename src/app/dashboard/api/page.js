@@ -25,7 +25,9 @@ import CreateApiKeyModal from "@/components/dashboard/CreateApiKeyModal";
 import ApiUsageChart from "@/components/dashboard/ApiUsageChart";
 import { useApiCache } from "@/lib/useApiCache";
 
-const quickStartCode = `curl -X POST https://nanogen.app/api/v1/generate \\
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.app";
+
+const quickStartCode = `curl -X POST ${siteUrl}/api/v1/generate \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"prompt": "Modern tech banner", "model": "MODEL_SLUG"}'`;

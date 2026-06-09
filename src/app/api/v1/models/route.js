@@ -6,7 +6,7 @@
 
 import { NextResponse } from "next/server";
 import { validateApiKey, logApiUsage } from "@/lib/db/apiKeys";
-import { listImageModels } from "@/lib/db/models";
+import { listEnabledModels } from "@/lib/db/models";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -27,7 +27,7 @@ export async function GET(req) {
 
   try {
     const admin = createAdminClient();
-    const models = await listImageModels(admin);
+    const models = await listEnabledModels(admin);
 
     // If the key has scopes, filter to only those models
     let filtered = models;
@@ -38,6 +38,7 @@ export async function GET(req) {
     const result = filtered.map((m) => ({
       slug: m.slug,
       label: m.label,
+      kind: m.kind,
       provider: m.provider,
       modelId: m.modelId,
     }));

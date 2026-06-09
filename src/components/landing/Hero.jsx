@@ -19,11 +19,7 @@ const titleVariants = {
 export default function Hero() {
   return (
     <section className="relative overflow-hidden min-h-screen flex items-center pt-24 md:pt-32 pb-16 md:pb-24">
-      {/* Massive Glowing Orbs */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
-      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
-      <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-pink-500/15 rounded-full blur-[100px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
-      
+      {/* Background patterns */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
       <Container className="relative z-10 w-full">

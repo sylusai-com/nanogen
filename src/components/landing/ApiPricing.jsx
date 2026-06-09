@@ -90,16 +90,16 @@ export default function ApiPricing() {
               delay: i * 0.08,
               ease: [0.21, 0.47, 0.32, 0.98],
             }}
-            className={`relative overflow-hidden rounded-2xl border p-6 md:p-8 transition-all ${
+            className={`relative overflow-hidden rounded-3xl border p-6 md:p-8 transition-all duration-500 ${
               tier.highlight
-                ? "border-primary/50 bg-[color-mix(in_oklab,var(--primary)_4%,var(--surface))] ring-1 ring-primary/20 scale-[1.02]"
-                : "border-border bg-surface hover:border-border-strong"
+                ? "border-primary/60 bg-[color-mix(in_oklab,var(--primary)_5%,white)] dark:bg-[color-mix(in_oklab,var(--primary)_10%,#0a0a0b)] ring-2 ring-primary/40 scale-[1.05] shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_20%,transparent)] dark:shadow-[0_0_80px_color-mix(in_oklab,var(--primary)_30%,transparent)] z-10"
+                : "border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0a0a0b]/60 backdrop-blur-xl hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-100/50 dark:hover:bg-[#0a0a0b]/80"
             }`}
           >
             {/* Badge */}
             {tier.badge && (
               <div className="absolute right-4 top-4">
-                <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-semibold text-primary">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 dark:bg-primary/20 px-3 py-1 text-[11px] font-bold tracking-wide text-primary-700 dark:text-primary-300 shadow-[0_0_15px_var(--primary)]">
                   <Sparkles className="h-3 w-3" />
                   {tier.badge}
                 </span>
@@ -108,54 +108,49 @@ export default function ApiPricing() {
 
             {/* Glow for highlighted card */}
             {tier.highlight && (
-              <div className="absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-48 rounded-full bg-primary/20 blur-3xl pointer-events-none" />
+              <div className="absolute -top-32 left-1/2 -translate-x-1/2 h-64 w-64 rounded-full bg-primary/40 blur-[80px] pointer-events-none mix-blend-multiply dark:mix-blend-screen animate-pulse" />
             )}
 
-            <div className="relative">
-              <h3 className="text-lg font-semibold text-foreground">
+            <div className="relative z-10">
+              <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white drop-shadow-sm">
                 {tier.name}
               </h3>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-4xl font-bold tracking-tight text-foreground">
+              <div className="mt-4 flex items-baseline gap-1">
+                <span className={`text-5xl font-extrabold tracking-tighter drop-shadow-sm dark:drop-shadow-lg ${tier.highlight ? 'text-slate-900 dark:text-white' : 'text-slate-800 dark:text-white/90'}`}>
                   {tier.price}
                 </span>
                 {tier.period && (
-                  <span className="text-sm text-muted">{tier.period}</span>
+                  <span className="text-sm font-medium text-slate-500 dark:text-white/50">{tier.period}</span>
                 )}
               </div>
-              <p className="mt-2 text-sm text-muted">{tier.description}</p>
+              <p className="mt-3 text-[15px] text-slate-600 dark:text-white/60">{tier.description}</p>
 
-              <div className="divider-soft my-6" />
+              <div className="my-8 h-px w-full bg-gradient-to-r from-transparent via-slate-200 dark:via-white/10 to-transparent" />
 
-              <ul className="space-y-3">
+              <ul className="space-y-4">
                 {tier.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm">
-                    <Check
-                      className={`mt-0.5 h-4 w-4 shrink-0 ${
-                        tier.highlight ? "text-primary" : "text-muted"
-                      }`}
-                      strokeWidth={2.5}
-                    />
-                    <span className="text-muted-strong">{f}</span>
+                  <li key={f} className="flex items-start gap-3 text-sm">
+                    <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${tier.highlight ? 'bg-primary/20 text-primary-700 dark:text-primary-300 shadow-[0_0_10px_var(--primary)]' : 'bg-slate-200 dark:bg-white/5 text-slate-500 dark:text-white/40'}`}>
+                      <Check className="h-3 w-3" strokeWidth={3} />
+                    </div>
+                    <span className="text-slate-700 dark:text-white/80">{f}</span>
                   </li>
                 ))}
               </ul>
 
-              <div className="mt-8">
+              <div className="mt-10">
                 {tier.ctaHref ? (
                   <Button
                     href={tier.ctaHref}
-                    variant={tier.variant}
                     size="lg"
-                    className="w-full"
+                    className={`w-full h-14 text-base font-semibold ${tier.highlight ? 'shadow-[0_0_30px_color-mix(in_oklab,var(--primary)_50%,transparent)]' : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-900 dark:text-white hover:bg-slate-200 dark:hover:bg-white/10'}`}
                   >
                     {tier.cta}
                   </Button>
                 ) : (
                   <Button
-                    variant={tier.variant}
                     size="lg"
-                    className="w-full"
+                    className={`w-full h-14 text-base font-semibold ${tier.highlight ? 'shadow-[0_0_30px_color-mix(in_oklab,var(--primary)_50%,transparent)]' : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-900 dark:text-white'}`}
                     disabled={tier.cta === "Coming soon"}
                   >
                     {tier.cta}

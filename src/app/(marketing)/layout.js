@@ -3,9 +3,9 @@ import Footer from "@/components/layout/Footer";
 
 export default function MarketingLayout({ children }) {
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col selection:bg-primary/30">
       <Navbar />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 relative z-10">{children}</main>
       <Footer />
     </div>
   );

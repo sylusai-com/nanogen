@@ -153,11 +153,11 @@ export default function BannerShowcase() {
           <AnimatePresence mode="wait">
             <motion.div
               key={active}
-              initial={{ opacity: 0, scale: 1.01 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.99 }}
-              transition={{ duration: 0.45, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className={`relative overflow-hidden rounded-2xl border border-border bg-surface w-full ${
+              initial={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
+              transition={{ duration: 0.5, ease: [0.21, 0.47, 0.32, 0.98] }}
+              className={`relative overflow-hidden rounded-3xl border border-primary/30 bg-slate-50 dark:bg-[#0a0a0b] w-full shadow-[0_0_30px_color-mix(in_oklab,var(--primary)_20%,transparent)] dark:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_25%,transparent)] ${
                 isWide ? "aspect-[16/9]" : "aspect-square"
               }`}
             >

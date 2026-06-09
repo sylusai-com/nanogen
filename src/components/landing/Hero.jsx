@@ -18,27 +18,33 @@ const titleVariants = {
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden">
-      <div className="absolute inset-0 bg-ambient pointer-events-none" />
-      <div className="absolute inset-0 bg-grid pointer-events-none opacity-60" />
+    <section className="relative overflow-hidden min-h-screen flex items-center pt-24 md:pt-32 pb-16 md:pb-24">
+      {/* Massive Glowing Orbs */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
+      <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
+      <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-pink-500/15 rounded-full blur-[100px] pointer-events-none mix-blend-screen dark:mix-blend-screen mix-blend-multiply" />
+      
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
-      <Container className="relative pt-20 pb-12 md:pt-28 md:pb-20">
-        <div className="mx-auto max-w-3xl text-center">
+      <Container className="relative z-10 w-full">
+        <div className="mx-auto max-w-4xl text-center">
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 backdrop-blur-md mb-8 shadow-[0_0_20px_color-mix(in_oklab,var(--primary)_20%,transparent)]"
           >
-            <Eyebrow tone="primary">Multi-model generation + Developer API</Eyebrow>
+            <span className="flex h-2 w-2 rounded-full bg-primary shadow-[0_0_8px_var(--primary)] animate-pulse" />
+            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-700 dark:text-primary-300 drop-shadow-sm dark:drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]">Multi-model generation + Developer API</span>
           </motion.div>
 
-          <h1 className="mt-7 text-[48px] font-bold leading-[1.05] tracking-tight md:text-[76px]">
+          <h1 className="text-[56px] font-extrabold leading-[0.95] tracking-tighter md:text-[96px] text-slate-900 dark:text-white drop-shadow-sm dark:drop-shadow-2xl">
             <motion.span
               variants={titleVariants}
               initial="hidden"
               animate="visible"
               custom={0}
-              className="block text-gradient pb-2"
+              className="block pb-2"
             >
               AI banners that
             </motion.span>
@@ -47,17 +53,17 @@ export default function Hero() {
               initial="hidden"
               animate="visible"
               custom={1}
-              className="block text-primary-gradient pb-2"
+              className="block text-primary-gradient pb-4 drop-shadow-md dark:drop-shadow-[0_0_30px_rgba(167,139,250,0.4)]"
             >
               just look right.
             </motion.span>
           </h1>
 
           <motion.p
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted md:text-lg"
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-white/70 md:text-xl font-light"
           >
             Describe what you want. Nanogen runs multiple image models in parallel,
             scores every output for visual quality, and returns the best one — in seconds.
@@ -65,24 +71,25 @@ export default function Hero() {
           </motion.p>
 
           <motion.div
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.35 }}
-            className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
+            transition={{ duration: 0.6, delay: 0.4 }}
+            className="mt-12 flex flex-col items-center justify-center gap-4 sm:flex-row"
           >
             <Button
               href="/generate"
               size="lg"
-              rightIcon={<ArrowRight className="h-4 w-4" strokeWidth={2.5} />}
-              className="shadow-[0_0_20px_color-mix(in_oklab,var(--primary)_40%,transparent)]"
+              rightIcon={<ArrowRight className="h-5 w-5" strokeWidth={2.5} />}
+              className="h-14 px-8 text-base shadow-[0_0_20px_color-mix(in_oklab,var(--primary)_30%,transparent)] dark:shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_50%,transparent)] hover:shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_50%,transparent)] dark:hover:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_70%,transparent)] transition-shadow duration-300"
             >
-              Generate a banner
+              Start Generating
             </Button>
             <Button
               href="#how-it-works"
               size="lg"
               variant="secondary"
-              leftIcon={<PlayCircle className="h-4 w-4" />}
+              leftIcon={<PlayCircle className="h-5 w-5" />}
+              className="h-14 px-8 text-base border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-800 dark:text-white backdrop-blur-md"
             >
               See how it works
             </Button>
@@ -91,14 +98,16 @@ export default function Hero() {
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.55 }}
-            className="mt-6 text-xs text-muted"
+            transition={{ duration: 0.8, delay: 0.6 }}
+            className="mt-8 text-sm text-slate-400 dark:text-white/40 uppercase tracking-widest font-mono"
           >
             No credit card · Free during beta
           </motion.p>
         </div>
 
-        <HeroPreview />
+        <div className="mt-20">
+          <HeroPreview />
+        </div>
       </Container>
     </section>
   );

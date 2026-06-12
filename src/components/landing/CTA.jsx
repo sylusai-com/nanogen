@@ -14,12 +14,8 @@ export default function CTA() {
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.6, ease: "easeOut" }}
-          className="relative mx-auto max-w-4xl overflow-hidden rounded-[2.5rem] border border-slate-200 dark:border-white/10 bg-gradient-to-b from-slate-50/90 dark:from-[#0a0a0b]/90 to-slate-50/60 dark:to-[#0a0a0b]/60 p-12 backdrop-blur-3xl md:p-20 shadow-[0_30px_100px_color-mix(in_oklab,var(--primary)_30%,transparent)]"
+          className="relative mx-auto max-w-4xl overflow-hidden rounded-[2.5rem] border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#0a0a0b] p-12 md:p-20 shadow-[0_30px_100px_color-mix(in_oklab,var(--primary)_15%,transparent)]"
         >
-          {/* Animated Background Orbs */}
-          <div className="absolute -left-1/4 -top-1/4 h-[500px] w-[500px] rounded-full bg-primary/30 blur-[100px] mix-blend-multiply dark:mix-blend-screen animate-pulse" />
-          <div className="absolute -right-1/4 -bottom-1/4 h-[500px] w-[500px] rounded-full bg-emerald-500/10 blur-[100px] mix-blend-multiply dark:mix-blend-screen animate-pulse" style={{ animationDelay: "2s" }} />
-
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.03)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
 
           <div className="relative mx-auto max-w-2xl text-center z-10">

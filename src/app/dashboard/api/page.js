@@ -41,7 +41,7 @@ export default function ApiDashboard() {
   const {
     data: keysData,
     isLoading: keysLoading,
-    refetch: refetchKeys,
+    refresh: refetchKeys,
   } = useApiCache("/api/keys", {
     ttlMs: 30_000,
     tags: ["api-keys"],

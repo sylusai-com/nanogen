@@ -1,7 +1,7 @@
 // src/app/dashboard/docs/page.js
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   BookOpen,
   Copy,
@@ -197,7 +197,7 @@ function CopyButton({ text }) {
       className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[10px] text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
     >
       {copied ? (
-        <Check className="h-3 w-3 text-emerald-400" />
+        <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
       ) : (
         <Copy className="h-3 w-3" />
       )}
@@ -229,9 +229,9 @@ function CodeBlock({ code, language = "bash", title }) {
 
 function EndpointCard({ method, path, description, children }) {
   const methodColors = {
-    GET: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-    POST: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-    DELETE: "bg-red-500/15 text-red-400 border-red-500/20",
+    GET: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
+    POST: "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20",
+    DELETE: "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20",
   };
 
   return (
@@ -271,7 +271,7 @@ function ParamTable({ params }) {
               <td className="px-3 py-2 text-muted">{p.type}</td>
               <td className="px-3 py-2">
                 {p.required ? (
-                  <span className="text-amber-400">Yes</span>
+                  <span className="text-amber-600 dark:text-amber-400">Yes</span>
                 ) : (
                   <span className="text-muted">No</span>
                 )}
@@ -306,7 +306,6 @@ const NAV = [
   { id: "chat-completions", label: "Chat Completions", icon: MessageSquare },
   { id: "image-generation", label: "Image Generation", icon: Image },
   { id: "openai-sdk", label: "OpenAI SDK", icon: Code2 },
-  { id: "streaming", label: "Streaming", icon: Terminal },
   { id: "errors", label: "Error Handling", icon: AlertCircle },
   { id: "rate-limits", label: "Rate Limits", icon: Zap },
 ];
@@ -315,6 +314,24 @@ const NAV = [
 
 export default function ApiDocsPage() {
   const [activeSection, setActiveSection] = useState("getting-started");
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: "-20% 0px -80% 0px" }
+    );
+
+    const sections = document.querySelectorAll("section[id]");
+    sections.forEach((section) => observer.observe(section));
+
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <>
@@ -433,11 +450,11 @@ export default function ApiDocsPage() {
               </Link>.
             </p>
 
-            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <div className="rounded-xl border border-amber-500/30 dark:border-amber-500/20 bg-amber-500/10 dark:bg-amber-500/5 p-4">
               <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-                <div className="text-xs text-amber-200/80">
-                  <strong className="text-amber-300">Security:</strong> Your API key is shown only once at creation.
+                <AlertCircle className="h-4 w-4 text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="text-xs text-amber-900 dark:text-amber-200/80">
+                  <strong className="text-amber-800 dark:text-amber-300">Security:</strong> Your API key is shown only once at creation.
                   Store it securely. Never expose it in client-side code or commit it to version control.
                 </div>
               </div>
@@ -543,17 +560,17 @@ export default function ApiDocsPage() {
                 />
               </div>
 
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+              <div className="rounded-xl border border-blue-500/30 dark:border-blue-500/20 bg-blue-500/10 dark:bg-blue-500/5 p-4">
                 <div className="flex items-start gap-2">
-                  <Zap className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
-                  <div className="text-xs text-blue-200/80">
-                    <strong className="text-blue-300">Tip:</strong> Use the{" "}
-                    <code className="rounded bg-blue-900/30 px-1 text-[11px]">model</code> field from{" "}
-                    <code className="rounded bg-blue-900/30 px-1 text-[11px]">/v1/models</code>{" "}
+                  <Zap className="h-4 w-4 text-blue-700 dark:text-blue-400 mt-0.5 shrink-0" />
+                  <div className="text-xs text-blue-900 dark:text-blue-200/80">
+                    <strong className="text-blue-800 dark:text-blue-300">Tip:</strong> Use the{" "}
+                    <code className="rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[11px]">model</code> field from{" "}
+                    <code className="rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[11px]">/v1/models</code>{" "}
                     to find the correct model identifier. Popular models include{" "}
-                    <code className="rounded bg-blue-900/30 px-1 text-[11px]">google/gemini-2.0-flash-001</code>,{" "}
-                    <code className="rounded bg-blue-900/30 px-1 text-[11px]">anthropic/claude-sonnet-4</code>, and{" "}
-                    <code className="rounded bg-blue-900/30 px-1 text-[11px]">openai/gpt-4o</code>.
+                    <code className="rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[11px]">google/gemini-2.0-flash-001</code>,{" "}
+                    <code className="rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[11px]">anthropic/claude-sonnet-4</code>, and{" "}
+                    <code className="rounded bg-blue-100 dark:bg-blue-900/30 px-1 text-[11px]">openai/gpt-4o</code>.
                   </div>
                 </div>
               </div>
@@ -599,33 +616,18 @@ export default function ApiDocsPage() {
 
             <CodeBlock code={openaiCompatible} title="Python (OpenAI SDK)" />
 
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div className="rounded-xl border border-emerald-500/30 dark:border-emerald-500/20 bg-emerald-500/10 dark:bg-emerald-500/5 p-4">
               <div className="flex items-start gap-2">
-                <Check className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
-                <div className="text-xs text-emerald-200/80">
-                  <strong className="text-emerald-300">Works with:</strong> OpenAI Python SDK, OpenAI Node.js SDK,
+                <Check className="h-4 w-4 text-emerald-700 dark:text-emerald-400 mt-0.5 shrink-0" />
+                <div className="text-xs text-emerald-900 dark:text-emerald-200/80">
+                  <strong className="text-emerald-800 dark:text-emerald-300">Works with:</strong> OpenAI Python SDK, OpenAI Node.js SDK,
                   LangChain, LlamaIndex, Vercel AI SDK, and any other library that supports custom base URLs.
                 </div>
               </div>
             </div>
           </section>
 
-          {/* ── Streaming ────────────────────────────────────────── */}
-          <section id="streaming" className="space-y-4">
-            <SectionHeading icon={Terminal} id="streaming-heading">
-              Streaming
-            </SectionHeading>
-            <p className="text-sm text-muted leading-relaxed">
-              Set <code className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-foreground">stream: true</code>{" "}
-              to receive responses as Server-Sent Events (SSE). Each event contains a JSON chunk
-              with partial content in <code className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-foreground">choices[0].delta.content</code>.
-            </p>
 
-            <div className="space-y-3">
-              <CodeBlock code={curlChatStream} title="cURL (streaming)" />
-              <CodeBlock code={jsStream} title="JavaScript (streaming)" />
-            </div>
-          </section>
 
           {/* ── Error Handling ────────────────────────────────────── */}
           <section id="errors" className="space-y-4">
@@ -668,7 +670,7 @@ export default function ApiDocsPage() {
                     <tr key={i} className="border-b border-border last:border-0">
                       <td className="px-4 py-2.5">
                         <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-bold ${
-                          e.status.startsWith("4") ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400"
+                          e.status.startsWith("4") ? "bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-400" : "bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-400"
                         }`}>
                           {e.status}
                         </span>

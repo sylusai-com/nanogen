@@ -150,26 +150,30 @@ export default function BannerShowcase() {
             isWide ? "lg:w-[66%]" : "lg:w-[45%]"
           }`}
         >
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={active}
-              initial={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
-              transition={{ duration: 0.5, ease: [0.21, 0.47, 0.32, 0.98] }}
-              className={`relative overflow-hidden rounded-3xl border border-primary/30 bg-slate-50 dark:bg-[#0a0a0b] w-full shadow-[0_0_30px_color-mix(in_oklab,var(--primary)_20%,transparent)] dark:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_25%,transparent)] ${
-                isWide ? "aspect-[16/9]" : "aspect-square"
-              }`}
-            >
-              <BannerImage
-                banner={current}
-                idx={active}
-                imgErrors={imgErrors}
-                onError={handleImgError}
-              />
-              <Overlay banner={current} size="lg" />
-            </motion.div>
-          </AnimatePresence>
+          <div
+            className={`relative overflow-hidden rounded-3xl border border-primary/30 bg-slate-50 dark:bg-[#0a0a0b] w-full shadow-[0_0_30px_color-mix(in_oklab,var(--primary)_20%,transparent)] dark:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_25%,transparent)] transition-all duration-500 ease-[cubic-bezier(0.21,0.47,0.32,0.98)] ${
+              isWide ? "aspect-[16/9]" : "aspect-square"
+            }`}
+          >
+            <AnimatePresence mode="popLayout">
+              <motion.div
+                key={active}
+                initial={{ opacity: 0, scale: 0.98, filter: "blur(4px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ opacity: 0, scale: 1.02, filter: "blur(4px)" }}
+                transition={{ duration: 0.4, ease: [0.21, 0.47, 0.32, 0.98] }}
+                className="absolute inset-0 h-full w-full"
+              >
+                <BannerImage
+                  banner={current}
+                  idx={active}
+                  imgErrors={imgErrors}
+                  onError={handleImgError}
+                />
+                <Overlay banner={current} size="lg" />
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
           {/* Navigation arrows */}
           <button

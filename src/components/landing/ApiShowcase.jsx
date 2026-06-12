@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "motion/react";
-import { Copy, Check, Terminal, Code2, Zap, Shield, BarChart3 } from "lucide-react";
+import { Copy, Check, Terminal, Code2, Zap, Shield, BarChart3, Webhook } from "lucide-react";
 import Section from "@/components/ui/Section";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -84,6 +84,11 @@ const features = [
     icon: <BarChart3 className="h-4 w-4" />,
     title: "Usage tracking",
     body: "Real-time usage dashboard with per-key analytics. Know exactly how your integration performs.",
+  },
+  {
+    icon: <Webhook className="h-4 w-4" />,
+    title: "Async Webhooks",
+    body: "Receive instant HTTP callbacks when your generation tasks complete. No continuous polling required.",
   },
 ];
 

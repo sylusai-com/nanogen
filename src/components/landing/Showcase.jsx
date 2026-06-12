@@ -54,7 +54,7 @@ export default function Showcase() {
             <Card elevated className="flex h-full flex-col p-6 transition-all hover:border-primary/30 hover:ring-1 hover:ring-primary/20">
               <StarRating />
               <p className="flex-1 text-sm leading-relaxed text-muted">
-                "{t.content}"
+                &quot;{t.content}&quot;
               </p>
               <div className="mt-8 flex items-center gap-3 border-t border-border/50 pt-4">
                 <Avatar name={t.name} size={36} />

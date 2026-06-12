@@ -1,7 +1,7 @@
 // src/app/dashboard/layout.js
 "use client";
 
-import { Home, Sparkles, Settings, Shield, Code2 } from "lucide-react";
+import { Home, Sparkles, Settings, Shield, Code2, BookOpen } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import RouteGuard from "@/components/dashboard/RouteGuard";
 import Sidebar from "@/components/dashboard/Sidebar";
@@ -25,6 +25,7 @@ export default function DashboardLayout({ children }) {
         // "browse what I've made". Overview (stats / status) sits beneath.
         { href: "/dashboard/banners", label: "Create banner", icon: <Sparkles className={iconCls} /> },
         { href: "/dashboard/api", label: "API", icon: <Code2 className={iconCls} /> },
+        { href: "/dashboard/docs", label: "Docs", icon: <BookOpen className={iconCls} /> },
         { href: "/dashboard", label: "Overview", icon: <Home className={iconCls} />, exact: true },
       ],
     },

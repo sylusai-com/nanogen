@@ -1,16 +1,44 @@
 // src/app/api/v1/models/route.js
 //
-// Public API — list available image models.
+// Public API — list available models from OpenRouter.
 // Authenticated via Bearer token (ngn_xxx API key).
-// Returns enabled image models without any secrets.
+// Returns all OpenRouter models in an OpenAI-compatible format.
+//
+// This endpoint fetches from OpenRouter's model listing and caches
+// the result for 5 minutes to avoid excessive upstream calls.
 
 import { NextResponse } from "next/server";
 import { validateApiKey, logApiUsage } from "@/lib/db/apiKeys";
-import { listEnabledModels } from "@/lib/db/models";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// ── In-memory cache for OpenRouter models ──────────────────────────
+let cachedModels = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+async function fetchOpenRouterModels() {
+  const now = Date.now();
+  if (cachedModels && now - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedModels;
+  }
+
+  const res = await fetch("https://openrouter.ai/api/v1/models", {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`OpenRouter models API returned ${res.status}`);
+  }
+
+  const json = await res.json();
+  cachedModels = json.data || [];
+  cacheTimestamp = now;
+  return cachedModels;
+}
 
 export async function GET(req) {
   const start = Date.now();
@@ -20,31 +48,39 @@ export async function GET(req) {
   const keyRow = await validateApiKey(rawKey);
   if (!keyRow) {
     return NextResponse.json(
-      { error: "Invalid or expired API key" },
+      {
+        error: {
+          message: "Invalid or expired API key",
+          type: "authentication_error",
+          code: "invalid_api_key",
+        },
+      },
       { status: 401 },
     );
   }
 
   try {
-    const admin = createAdminClient();
-    const models = await listEnabledModels(admin);
+    const models = await fetchOpenRouterModels();
 
-    // If the key has scopes, filter to only those models
-    let filtered = models;
-    if (keyRow.scopes && keyRow.scopes.length > 0) {
-      filtered = models.filter((m) => keyRow.scopes.includes(m.slug));
-    }
-
-    const result = filtered.map((m) => ({
-      slug: m.slug,
-      label: m.label,
-      kind: m.kind,
-      provider: m.provider,
-      modelId: m.modelId,
+    // Transform to OpenAI-compatible format
+    const result = models.map((m) => ({
+      id: m.id,
+      object: "model",
+      created: m.created || Math.floor(Date.now() / 1000),
+      owned_by: m.id?.split("/")[0] || "openrouter",
+      name: m.name || m.id,
+      description: m.description || null,
+      context_length: m.context_length || null,
+      pricing: m.pricing || null,
+      top_provider: m.top_provider || null,
+      architecture: m.architecture || null,
     }));
 
     // Log usage (best-effort)
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "";
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      "";
     logApiUsage({
       keyId: keyRow.id,
       userId: keyRow.user_id,
@@ -54,12 +90,21 @@ export async function GET(req) {
       ip,
     });
 
-    return NextResponse.json({ models: result });
+    return NextResponse.json({
+      object: "list",
+      data: result,
+    });
   } catch (e) {
     console.error("API v1/models error:", e);
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
+      {
+        error: {
+          message: "Failed to fetch models from provider",
+          type: "server_error",
+          code: "upstream_error",
+        },
+      },
+      { status: 502 },
     );
   }
 }

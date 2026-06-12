@@ -25,12 +25,12 @@ import CreateApiKeyModal from "@/components/dashboard/CreateApiKeyModal";
 import ApiUsageChart from "@/components/dashboard/ApiUsageChart";
 import { useApiCache } from "@/lib/useApiCache";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.sylusai.com";
 
-const quickStartCode = `curl -X POST ${siteUrl}/api/v1/generate \\
+const quickStartCode = `curl -X POST ${siteUrl}/api/v1/chat/completions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"prompt": "Modern tech banner", "model": "MODEL_SLUG"}'`;
+  -d '{"model": "google/gemini-2.0-flash-001", "messages": [{"role": "user", "content": "Hello!"}]}'`;
 
 export default function ApiDashboard() {
   const { user } = useAuth();
@@ -192,14 +192,27 @@ export default function ApiDashboard() {
               </p>
               <ul className="ml-4 space-y-1 list-disc">
                 <li>
-                  <code className="text-[11px]">POST /v1/generate</code> —
-                  Generate an image
+                  <code className="text-[11px]">POST /v1/chat/completions</code> —
+                  Chat completions
                 </li>
                 <li>
                   <code className="text-[11px]">GET /v1/models</code> — List
                   available models
                 </li>
+                <li>
+                  <code className="text-[11px]">POST /v1/generate</code> —
+                  Generate an image
+                </li>
               </ul>
+              <p className="mt-3">
+                <a
+                  href="/dashboard/docs"
+                  className="inline-flex items-center gap-1 text-[11px] text-[var(--primary)] hover:underline"
+                >
+                  View full documentation
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </p>
             </div>
           </Card>
         </section>

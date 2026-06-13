@@ -3,8 +3,8 @@
 
 import { useState } from "react";
 import {
+  Check,
   ChevronDown,
-  Code2,
   Download,
   FileImage,
   FileText,
@@ -16,7 +16,6 @@ import Dropdown, {
   DropdownSection,
 } from "@/components/ui/Dropdown";
 import {
-  buildCompositeStandaloneHtml,
   buildSvgString,
   exportSize,
   rasterize,
@@ -33,7 +32,8 @@ const DEFAULT_BUTTON_CLASS =
 //
 // `banner` must contain { title, html, css, fields, alignment, aspect }.
 export default function DownloadMenu({ banner, className, buttonClassName }) {
-  const [busy, setBusy] = useState(null); // null | "html" | "png" | "jpeg" | "svg" | "pdf"
+  const [busy, setBusy] = useState(null); // null | "png" | "jpeg" | "svg" | "pdf"
+  const [scale, setScale] = useState(2);
 
   if (!banner?.html || !banner?.css) {
     return (
@@ -66,27 +66,6 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
     canvasBackground: banner.canvas?.background || "#0c0c10",
   });
 
-  const onHtml = async () => {
-    setBusy("html");
-    try {
-      const payload = exportPayload();
-      const doc = buildCompositeStandaloneHtml({
-        html:       payload.html,
-        css:        payload.css,
-        fields:     payload.fields,
-        alignment:  payload.alignment,
-        subjectImageUrl: payload.subjectImageUrl,
-        elements:   payload.elements,
-        background: payload.canvasBackground,
-        aspect:     payload.aspect,
-        title:      banner.title,
-      });
-      triggerDownload(`${baseName}.html`, doc, "text/html");
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const onSvg = async () => {
     setBusy("svg");
     try {
@@ -101,7 +80,7 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
   const onPng = async () => {
     setBusy("png");
     try {
-      const data = await rasterize({ ...exportPayload(), format: "image/png", scale: 2 });
+      const data = await rasterize({ ...exportPayload(), format: "image/png", scale });
       triggerDownload(`${baseName}.png`, data);
     } catch (e) {
       alert(e?.message || "PNG export failed");
@@ -113,7 +92,7 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
   const onJpeg = async () => {
     setBusy("jpeg");
     try {
-      const data = await rasterize({ ...exportPayload(), format: "image/jpeg", scale: 2 });
+      const data = await rasterize({ ...exportPayload(), format: "image/jpeg", scale });
       triggerDownload(`${baseName}.jpg`, data);
     } catch (e) {
       alert(e?.message || "JPEG export failed");
@@ -155,27 +134,45 @@ export default function DownloadMenu({ banner, className, buttonClassName }) {
         </button>
       }
     >
-      <DropdownSection label="Source">
-        <DropdownItem leftIcon={<Code2 className="h-4 w-4" />} onClick={onHtml}>
-          HTML <span className="ml-auto text-[10px] text-muted">.html</span>
+      <DropdownSection label="Image">
+        <DropdownItem leftIcon={<ImageIcon className="h-4 w-4" />} onClick={onPng}>
+          PNG <span className="ml-auto text-[10px] text-muted">.png</span>
         </DropdownItem>
-        <DropdownItem leftIcon={<FileImage className="h-4 w-4" />} onClick={onSvg}>
-          SVG (scalable) <span className="ml-auto text-[10px] text-muted">.svg</span>
+        <DropdownItem leftIcon={<ImageIcon className="h-4 w-4" />} onClick={onJpeg}>
+          JPEG <span className="ml-auto text-[10px] text-muted">.jpg</span>
         </DropdownItem>
       </DropdownSection>
 
-      <DropdownSection label="Image">
-        <DropdownItem leftIcon={<ImageIcon className="h-4 w-4" />} onClick={onPng}>
-          PNG (2×) <span className="ml-auto text-[10px] text-muted">.png</span>
-        </DropdownItem>
-        <DropdownItem leftIcon={<ImageIcon className="h-4 w-4" />} onClick={onJpeg}>
-          JPEG (2×) <span className="ml-auto text-[10px] text-muted">.jpg</span>
+      <DropdownSection label="Source">
+        <DropdownItem leftIcon={<FileImage className="h-4 w-4" />} onClick={onSvg}>
+          SVG (scalable) <span className="ml-auto text-[10px] text-muted">.svg</span>
         </DropdownItem>
       </DropdownSection>
 
       <DropdownSection label="Document">
         <DropdownItem leftIcon={<FileText className="h-4 w-4" />} onClick={onPdf}>
           PDF <span className="ml-auto text-[10px] text-muted">.pdf</span>
+        </DropdownItem>
+      </DropdownSection>
+
+      <DropdownSection label="Quality / Scale">
+        <DropdownItem 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setScale(1); }} 
+          leftIcon={scale === 1 ? <Check className="h-4 w-4 text-primary" /> : <div className="h-4 w-4" />}
+        >
+          1× (Standard)
+        </DropdownItem>
+        <DropdownItem 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setScale(2); }} 
+          leftIcon={scale === 2 ? <Check className="h-4 w-4 text-primary" /> : <div className="h-4 w-4" />}
+        >
+          2× (Retina)
+        </DropdownItem>
+        <DropdownItem 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setScale(3); }} 
+          leftIcon={scale === 3 ? <Check className="h-4 w-4 text-primary" /> : <div className="h-4 w-4" />}
+        >
+          3× (High Res)
         </DropdownItem>
       </DropdownSection>
     </Dropdown>

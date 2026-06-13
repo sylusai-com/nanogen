@@ -8,6 +8,7 @@ import { motion } from "motion/react";
 import { Star } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { setCached, getCached } from "@/lib/cache";
+import { useAuth } from "@/components/layout/AuthProvider";
 import BannerPreview from "@/components/banner/BannerPreview";
 
 // Each tile renders the REAL banner via BannerPreview (an iframe) so the
@@ -48,6 +49,7 @@ export default function BannerThumb({
   index = 0,
 }) {
   const router = useRouter();
+  const { isAdmin } = useAuth();
   const link = href || `/dashboard/banners/${banner.id}`;
   const isTopScore = banner.score != null && banner.score >= 80;
 
@@ -141,7 +143,7 @@ export default function BannerThumb({
             </span>
           )}
 
-          {banner.score != null && (
+          {isAdmin && banner.score != null && (
             <span
               className={cn(
                 "absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] backdrop-blur",

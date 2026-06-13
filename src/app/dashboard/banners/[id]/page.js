@@ -39,7 +39,7 @@ function aspectClass(a) {
 
 export default function BannerDetail({ params }) {
   const { id } = use(params);
-  const { user, supabase } = useAuth();
+  const { user, supabase, isAdmin } = useAuth();
   const router = useRouter();
   const userId = user?.id;
   const [busy, setBusy] = useState(false);
@@ -98,6 +98,15 @@ export default function BannerDetail({ params }) {
       patchBanner(next);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      alert("Link copied to clipboard!");
+    } catch (err) {
+      console.error("Failed to copy link:", err);
     }
   };
 
@@ -325,7 +334,7 @@ export default function BannerDetail({ params }) {
             <Card elevated className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <h1 className="text-lg font-semibold tracking-tight">{banner.title}</h1>
-                {banner.score != null && (
+                {isAdmin && banner.score != null && (
                   <Badge tone={banner.score >= 80 ? "success" : "warning"} dot>
                     Score {banner.score}
                   </Badge>
@@ -368,6 +377,7 @@ export default function BannerDetail({ params }) {
                   />
                   <Button
                     variant="secondary"
+                    onClick={handleShare}
                     leftIcon={<Share2 className="h-3.5 w-3.5" />}
                   >
                     Share

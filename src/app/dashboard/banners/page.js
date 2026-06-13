@@ -319,6 +319,7 @@ export default function BannersHub() {
             view={view}
             onView={setView}
             total={totals}
+            isAdmin={isAdmin}
           />
         </section>
 

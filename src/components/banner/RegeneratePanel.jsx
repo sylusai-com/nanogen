@@ -101,7 +101,7 @@ export default function RegeneratePanel({ banner }) {
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value.slice(0, 500))}
-              rows={4}
+              rows={2}
               placeholder="e.g. swap to warm earthy palette, replace the headline with 'Made for everyday', simplify decoration."
               className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-3 text-sm leading-relaxed placeholder:text-muted/60 outline-none"
             />

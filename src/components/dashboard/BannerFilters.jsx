@@ -4,12 +4,14 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import Tabs from "@/components/ui/Tabs";
 
-export default function BannerFilters({ query, onQuery, view, onView, total }) {
+export default function BannerFilters({ query, onQuery, view, onView, total, isAdmin }) {
   const tabs = [
     { id: "all", label: `All · ${total.all}` },
     { id: "favourites", label: `Favourites · ${total.favs}` },
-    { id: "passed", label: `Passed · ${total.passed}` },
   ];
+  if (isAdmin) {
+    tabs.push({ id: "passed", label: `Passed · ${total.passed}` });
+  }
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

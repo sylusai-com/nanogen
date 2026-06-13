@@ -110,6 +110,7 @@ export async function POST(req) {
   let priorReferenceContext = null;
   let priorSubjectContext = null;
   let priorSubjectCutoutUrl = null;
+  let priorBgImageUrl = null;
   try {
     prompt = validateString(body.prompt, {
       name: "prompt",
@@ -178,6 +179,18 @@ export async function POST(req) {
         }
         const changeRequest = prompt;
         const originalBrief = String(prior.prompt || "").trim();
+
+        // Extract previous background image URL to avoid re-fetching
+        const bgField = Array.isArray(prior.fields)
+          ? prior.fields.find((f) => f?.id === "bg_image")
+          : null;
+        const rawBg = String(bgField?.value || prior.image_url || "").trim();
+        const mBg = rawBg.match(/^url\(\s*["']?(.*?)["']?\s*\)$/i);
+        const innerBg = (mBg ? mBg[1] : rawBg).trim();
+        if (/^(?:https?:\/\/|data:image\/)/i.test(innerBg)) {
+          priorBgImageUrl = innerBg;
+        }
+
         if (originalBrief) {
           // Strip any prior regeneration framing from the saved brief so
           // it doesn't compound across regenerations (chains of
@@ -195,7 +208,7 @@ export async function POST(req) {
           // change, so the per-aspect guidance in the system prompt
           // ("inner content fills nearly the full width") still kicks
           // in and the canvas is filled.
-          prompt = `${cleanOriginal}\n\nUPDATED DIRECTION (apply these and produce a complete, fresh banner that fills the full ${aspect} canvas): ${changeRequest}`.slice(0, 4000);
+          prompt = `${cleanOriginal}\n\nUPDATED DIRECTION (apply these and produce a complete, fresh banner that fills the full ${aspect} canvas. Strictly maintain the structure, layout, and background of the previous banner unless explicitly requested to change them): ${changeRequest}`.slice(0, 4000);
         }
       }
     }
@@ -230,10 +243,10 @@ export async function POST(req) {
       subjectImage,
       modelRef,
       allowExtras,
-      // Regenerate-only short-circuits — null on a fresh create.
       priorReferenceContext,
       priorSubjectContext,
       priorSubjectCutoutUrl,
+      priorBgImageUrl,
     }
   ).catch((error) => {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
@@ -258,6 +271,7 @@ async function performBannerGeneration(job, userId, payload) {
     priorReferenceContext = null,
     priorSubjectContext = null,
     priorSubjectCutoutUrl = null,
+    priorBgImageUrl = null,
   } = payload;
 
   try {
@@ -429,8 +443,8 @@ async function performBannerGeneration(job, userId, payload) {
     // style do we query admin-configured providers and (if they fail) the
     // AI image model. If neither produces a usable image, the banner
     // ships with the model's own CSS design intact.
-    let aiBackgroundImage = null;
-    let storedBackgroundImage = null;
+    let aiBackgroundImage = priorBgImageUrl || null;
+    let storedBackgroundImage = priorBgImageUrl || null;
     let aiBackgroundError = null;
     let aiBackgroundModel = null;
 
@@ -602,7 +616,7 @@ async function performBannerGeneration(job, userId, payload) {
     // background was not removed — the subject already carries its own
     // scene and a stock photo behind it would clash.
     const subjectIsCutout = !!cleanedSubjectStoredUrl;
-    const shouldFetchBg = !subjectImage || subjectIsCutout;
+    const shouldFetchBg = (!subjectImage || subjectIsCutout) && !priorBgImageUrl;
 
     if (shouldFetchBg) {
       job.setStep(GenerationJobSteps.FETCH_BG_IMAGE);
@@ -700,6 +714,11 @@ async function performBannerGeneration(job, userId, payload) {
           });
         }
       }
+    } else if (priorBgImageUrl) {
+      job.markStepSkipped(
+        GenerationJobSteps.FETCH_BG_IMAGE,
+        "reused from previous generation"
+      );
     } else {
       job.markStepSkipped(
         GenerationJobSteps.FETCH_BG_IMAGE,

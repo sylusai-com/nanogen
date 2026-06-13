@@ -10,7 +10,10 @@ import CTA from "@/components/landing/CTA";
 
 export default function HomePage() {
   return (
-    <>
+    <div className="relative overflow-hidden">
+      {/* Ambient background glow — sits behind all sections */}
+      <div className="pointer-events-none absolute inset-0 bg-ambient" />
+
       <Hero />
       <Stats />
       <BannerShowcase />
@@ -20,6 +23,6 @@ export default function HomePage() {
       <ApiPricing />
       <Showcase />
       <CTA />
-    </>
+    </div>
   );
 }

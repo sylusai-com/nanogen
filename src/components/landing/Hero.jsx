@@ -61,8 +61,8 @@ export default function Hero() {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-white/70 md:text-xl font-light"
           >
-            Describe what you want. Nanogen runs multiple image models in parallel,
-            scores every output for visual quality, and returns the best one — in seconds.
+            Describe what you want. Choose from multiple AI image models,
+            get every output scored for visual quality, and receive the best one — in seconds.
             Now available as a REST API for your apps.
           </motion.p>
 

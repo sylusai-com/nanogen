@@ -128,16 +128,16 @@ export default function ApiShowcase() {
       id="api"
       eyebrow="Developer API"
       title="Image generation via API"
-      description="Integrate Nanogen's multi-model pipeline into your product. One endpoint, any model, scored outputs — all through a simple REST API."
+      description="Integrate Nanogen's banner generation into your product. One endpoint, multiple models to choose from, quality-scored outputs — all through a simple REST API."
     >
-      <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         {/* Code panel */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
           transition={{ duration: 0.5 }}
-          className="relative overflow-hidden rounded-2xl border border-border bg-[#0d0d12]"
+          className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-[#0c0c14] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)]"
         >
           {/* Tab bar */}
           <div className="flex items-center justify-between border-b border-white/10 px-4">
@@ -194,7 +194,7 @@ export default function ApiShowcase() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-60px" }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex flex-col gap-5"
+          className="flex flex-col gap-4"
         >
           {features.map((f, i) => (
             <motion.div

@@ -19,8 +19,8 @@ const features = [
   },
   {
     icon: <Layers className={iconCls} strokeWidth={2} />,
-    title: "Multi-model pipeline",
-    body: "Every prompt fans out to several state-of-the-art models — SDXL, Imagen, Flux, and more — running in parallel.",
+    title: "Multi-model selection",
+    body: "Choose from several state-of-the-art image models — SDXL, Imagen, Flux, and more — and pick the one that fits your creative vision.",
   },
   {
     icon: <Gauge className={iconCls} strokeWidth={2} />,
@@ -49,10 +49,10 @@ export default function Features() {
     <Section
       id="features"
       eyebrow="Capabilities"
-      title="Everything you need for consistent banners"
-      description="Phase 1 ships the core generation pipeline. Editor and admin land in the next milestones."
+      title="Everything you need to create stunning banners"
+      description="A complete banner generation platform — from prompt to polished output, with built-in quality scoring and multi-model flexibility."
     >
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {features.map((f, i) => (
           <FeatureCard key={f.title} {...f} delay={i * 0.05} />
         ))}

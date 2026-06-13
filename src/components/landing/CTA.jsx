@@ -7,7 +7,7 @@ import Button from "@/components/ui/Button";
 
 export default function CTA() {
   return (
-    <section className="relative py-24 md:py-32">
+    <section className="relative py-28 md:py-36">
       <Container>
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}

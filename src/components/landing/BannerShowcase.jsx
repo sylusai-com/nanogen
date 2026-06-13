@@ -140,7 +140,7 @@ export default function BannerShowcase() {
       id="banner-showcase"
       eyebrow="Generated banners"
       title="Stunning banners, generated in seconds"
-      description="Real outputs from the Nanogen pipeline — every one scored, ranked, and ready to ship. Wide 16:9 hero banners and square 1:1 social creatives."
+      description="Real outputs from the Nanozen pipeline — every one scored, ranked, and ready to ship. Wide 16:9 hero banners and square 1:1 social creatives."
     >
       {/* ── Adaptive Layout ────────────────────────────────────── */}
       <div className="flex flex-col lg:flex-row gap-3">

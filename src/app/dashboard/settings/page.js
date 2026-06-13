@@ -25,7 +25,7 @@ export default function SettingsPage() {
       <div className="mx-auto w-full max-w-3xl space-y-6 px-5 py-8 md:px-8 md:py-10">
         <Card elevated className="p-6">
           <h2 className="text-base font-semibold tracking-tight">Profile</h2>
-          <p className="mt-1 text-xs text-muted">Update how you appear inside Nanogen.</p>
+          <p className="mt-1 text-xs text-muted">Update how you appear inside Nanozen.</p>
 
           <div className="mt-6 flex items-center gap-4">
             <Avatar name={user?.name || ""} size={64} />

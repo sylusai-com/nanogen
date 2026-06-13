@@ -29,7 +29,7 @@ export default function EmptyState() {
       </h3>
       <p className="mt-2 max-w-sm text-sm text-muted">
         Write a prompt on the left and pick the models you want to run.
-        Nanogen will fan out your request and rank the results for you.
+        Nanozen will fan out your request and rank the results for you.
       </p>
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-2">

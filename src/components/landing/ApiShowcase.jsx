@@ -7,7 +7,7 @@ import Section from "@/components/ui/Section";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanozen.app";
 
 const curlSnippet = `curl -X POST ${siteUrl}/api/v1/generate \\
   -H "Authorization: Bearer ngn_a1b2c3d4..." \\
@@ -128,7 +128,7 @@ export default function ApiShowcase() {
       id="api"
       eyebrow="Developer API"
       title="Image generation via API"
-      description="Integrate Nanogen's banner generation into your product. One endpoint, multiple models to choose from, quality-scored outputs — all through a simple REST API."
+      description="Integrate Nanozen's banner generation into your product. One endpoint, multiple models to choose from, quality-scored outputs — all through a simple REST API."
     >
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         {/* Code panel */}

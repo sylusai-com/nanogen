@@ -17,7 +17,7 @@ export default function Logo({ href = "/", showWordmark = true, size = 32, class
       >
         <Image
           src="/logo.png"
-          alt="Nanogen logo"
+          alt="Nanozen logo"
           width={size}
           height={size}
           priority
@@ -25,7 +25,7 @@ export default function Logo({ href = "/", showWordmark = true, size = 32, class
         />
       </span>
       {showWordmark && (
-        <span className="text-[15px] font-semibold tracking-tight">Nanogen</span>
+        <span className="text-[15px] font-semibold tracking-tight">Nanozen</span>
       )}
     </Link>
   );

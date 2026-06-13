@@ -11,7 +11,7 @@
 // flows because they touch more components (RegenerateDialog +
 // GenerationPopup + BannerPreview) and so trigger a recompile more
 // readily than the simple create flow.
-const jobQueue = globalThis.__nanogen_jobQueue || (globalThis.__nanogen_jobQueue = new Map());
+const jobQueue = globalThis.__nanozen_jobQueue || (globalThis.__nanozen_jobQueue = new Map());
 
 // Generation workflow steps.
 //
@@ -178,8 +178,8 @@ const JOB_RETENTION_MS = 10 * 60 * 1000; // Keep for 10 minutes
 // Guard against double-registering the interval across hot reloads — the
 // queue itself is on globalThis so each reload would otherwise stack
 // another timer on top of the previous one.
-if (!globalThis.__nanogen_jobQueueCleanup) {
-  globalThis.__nanogen_jobQueueCleanup = setInterval(() => {
+if (!globalThis.__nanozen_jobQueueCleanup) {
+  globalThis.__nanozen_jobQueueCleanup = setInterval(() => {
     const now = Date.now();
     const toDelete = [];
 

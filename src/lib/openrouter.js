@@ -117,7 +117,7 @@ export async function callOpenRouter({
       // other OpenAI-compatible providers.
       "HTTP-Referer":
         process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      "X-Title": "Nanogen",
+      "X-Title": "Nanozen",
     },
     body: JSON.stringify({
       model: normalizedModel,

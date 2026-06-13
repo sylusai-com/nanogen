@@ -167,7 +167,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="mt-6 flex flex-col items-start justify-between gap-4 text-xs text-muted md:flex-row md:items-center">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-            <span>© {new Date().getFullYear()} Nanogen. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} Nanozen (GemAI Pvt. Ltd.). All rights reserved.</span>
             <span className="hidden sm:inline text-border-strong">·</span>
             <span className="text-muted/60">AI Banner Generation Platform</span>
           </div>

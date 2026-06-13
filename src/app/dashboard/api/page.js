@@ -25,7 +25,7 @@ import CreateApiKeyModal from "@/components/dashboard/CreateApiKeyModal";
 import ApiUsageChart from "@/components/dashboard/ApiUsageChart";
 import { useApiCache } from "@/lib/useApiCache";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.sylusai.com";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanozen.sylusai.com";
 
 const quickStartCode = `curl -X POST ${siteUrl}/api/v1/chat/completions \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
@@ -281,7 +281,7 @@ export default function ApiDashboard() {
             <EmptyData
               icon={<Key className="h-5 w-5" />}
               title="No API keys yet"
-              body={canCreateKeys ? "Create your first API key to start using the Nanogen API programmatically." : "API key generation is currently locked."}
+              body={canCreateKeys ? "Create your first API key to start using the Nanozen API programmatically." : "API key generation is currently locked."}
               action={
                 <Button
                   onClick={() => setModalOpen(true)}

@@ -34,6 +34,8 @@ const COLUMNS = `
   referenceContext:reference_context,
   subjectImageUrl:subject_image_url,
   subjectContext:subject_context,
+  feedbackRating:feedback_rating,
+  feedbackText:feedback_text,
   createdAt:created_at,
   updatedAt:updated_at
 `;
@@ -72,6 +74,8 @@ const LIST_COLUMNS = `
   html,
   css,
   fields,
+  feedbackRating:feedback_rating,
+  feedbackText:feedback_text,
   createdAt:created_at
 `;
 

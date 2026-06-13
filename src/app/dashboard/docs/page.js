@@ -22,7 +22,7 @@ import Link from "next/link";
 import TopBar from "@/components/dashboard/TopBar";
 import Button from "@/components/ui/Button";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.sylusai.com";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://nanozen.sylusai.com";
 
 // ── Code snippets ──────────────────────────────────────────────────
 
@@ -391,7 +391,7 @@ export default function ApiDocsPage() {
               Getting Started
             </SectionHeading>
             <p className="text-sm text-muted leading-relaxed">
-              The Nanogen API provides OpenAI-compatible endpoints for accessing hundreds of AI models
+              The Nanozen API provides OpenAI-compatible endpoints for accessing hundreds of AI models
               through a single API key. You can use it for chat completions, text generation, and
               image generation — all via the same interface you already know from OpenAI.
             </p>
@@ -586,13 +586,13 @@ export default function ApiDocsPage() {
             <EndpointCard
               method="POST"
               path="/v1/generate"
-              description="Generate a banner image using a Nanogen image model. Model slugs are admin-configured — this endpoint is separate from chat completions."
+              description="Generate a banner image using a Nanozen image model. Model slugs are admin-configured — this endpoint is separate from chat completions."
             >
               <h4 className="text-xs font-semibold text-foreground">Request body</h4>
               <ParamTable
                 params={[
                   { name: "prompt", type: "string", required: true, description: "Image generation prompt (3-4000 chars)" },
-                  { name: "model", type: "string", required: true, description: "Model slug from the Nanogen image models" },
+                  { name: "model", type: "string", required: true, description: "Model slug from the Nanozen image models" },
                   { name: "aspect", type: "string", required: false, description: "Aspect ratio: \"1:1\", \"4:5\", \"9:16\", \"16:9\" (default)" },
                   { name: "style", type: "string", required: false, description: "Style hint (max 60 chars). Default: \"Modern\"" },
                 ]}
@@ -608,10 +608,10 @@ export default function ApiDocsPage() {
               OpenAI SDK Compatible
             </SectionHeading>
             <p className="text-sm text-muted leading-relaxed">
-              The Nanogen API is fully compatible with the OpenAI SDK. Simply change the{" "}
+              The Nanozen API is fully compatible with the OpenAI SDK. Simply change the{" "}
               <code className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-foreground">base_url</code>{" "}
               and <code className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-foreground">api_key</code>{" "}
-              to use any OpenAI SDK with Nanogen.
+              to use any OpenAI SDK with Nanozen.
             </p>
 
             <CodeBlock code={openaiCompatible} title="Python (OpenAI SDK)" />

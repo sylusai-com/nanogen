@@ -1,6 +1,6 @@
 -- ============================================================================
 -- 0001_initial_schema.sql
--- Initial schema for Nanogen: profiles, generations, banners, RLS, triggers.
+-- Initial schema for Nanozen: profiles, generations, banners, RLS, triggers.
 -- Apply by pasting into Supabase Dashboard → SQL editor → Run.
 -- ============================================================================
 

@@ -57,6 +57,8 @@ export async function listAllBanners(supabase, options = {}) {
         preview_gradient,
         score,
         favourite,
+        feedback_rating,
+        feedback_text,
         created_at,
         profiles ( name, email, avatar_url )
       `
@@ -77,6 +79,8 @@ export async function listAllBanners(supabase, options = {}) {
         css,
         fields,
         alignment,
+        feedback_rating,
+        feedback_text,
         created_at,
         profiles ( name, email, avatar_url )
       `;

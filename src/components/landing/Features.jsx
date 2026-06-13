@@ -30,7 +30,7 @@ const features = [
   {
     icon: <Trophy className={iconCls} strokeWidth={2} />,
     title: "Best-output selection",
-    body: "Nanogen picks the winning banner automatically. Runners-up stay one click away when you want to compare.",
+    body: "Nanozen picks the winning banner automatically. Runners-up stay one click away when you want to compare.",
   },
   {
     icon: <PaintBucket className={iconCls} strokeWidth={2} />,

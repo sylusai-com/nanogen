@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 
 const ThemeContext = createContext({ theme: "dark", toggle: () => {}, setTheme: () => {} });
 
-const STORAGE_KEY = "nanogen-theme";
+const STORAGE_KEY = "nanozen-theme";
 
 export function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState("dark");

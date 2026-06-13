@@ -9,7 +9,7 @@ export async function GET(request) {
 
   const siteUrl =
     process.env.NEXT_PUBLIC_SITE_URL ||
-    "https://nanogen-app-758484459646.asia-south2.run.app";
+    "https://nanozen-app-758484459646.asia-south2.run.app";
 
   const providerError =
     searchParams.get("error_description") || searchParams.get("error");

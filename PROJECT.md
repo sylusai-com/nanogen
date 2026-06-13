@@ -1,6 +1,6 @@
-# Nanogen — Project Reference
+# Nanozen — Project Reference
 
-A complete, end-to-end reference for the Nanogen banner-generation platform.
+A complete, end-to-end reference for the Nanozen banner-generation platform.
 Covers the tech stack, every directory and file of substance, the data model,
 the runtime flows for each feature, the provider/scoring/threshold pipeline,
 and the operational notes you need to run, extend, or audit the system.
@@ -9,9 +9,9 @@ If `README.md` is the elevator pitch, this is the floor plan.
 
 ---
 
-## 1. What Nanogen does
+## 1. What Nanozen does
 
-Nanogen turns a short text brief into a production-grade marketing banner.
+Nanozen turns a short text brief into a production-grade marketing banner.
 The product surface is split into two complementary flows:
 
 1. **Banner studio (`/dashboard/create` → `/api/banners`)**
@@ -56,7 +56,7 @@ goes through one HTTP shape: `POST {endpoint}` with `Authorization: Bearer
 ## 3. Repository layout
 
 ```
-nanogen/
+nanozen/
 ├── README.md                       # short overview + quickstart
 ├── PROJECT.md                      # this file
 ├── package.json
@@ -567,7 +567,7 @@ lets you swap providers without redeploying.
 
 ```bash
 git clone <this-repo>
-cd nanogen
+cd nanozen
 npm install
 cp .env.example .env.local         # fill Supabase URL + keys
 # apply Supabase migrations: supabase/README.md, options A or B

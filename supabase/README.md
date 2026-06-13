@@ -1,6 +1,6 @@
 # Supabase
 
-Database schema, migrations, and operational notes for Nanogen.
+Database schema, migrations, and operational notes for Nanozen.
 
 ## Migrations
 

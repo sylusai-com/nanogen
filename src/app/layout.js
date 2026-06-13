@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Nanogen — AI Banner Generation Platform",
+  title: "Nanozen — AI Banner Generation Platform",
   description:
     "Generate high-quality banners from a prompt. Multi-model pipeline, automated scoring, best-output selection.",
   metadataBase: new URL("http://localhost:3000"),
@@ -24,7 +24,7 @@ export const metadata = {
     apple: "/logo.png",
   },
   openGraph: {
-    title: "Nanogen — AI Banner Generation Platform",
+    title: "Nanozen — AI Banner Generation Platform",
     description:
       "Generate high-quality banners from a prompt. Multi-model pipeline, automated scoring, best-output selection.",
     type: "website",
@@ -35,7 +35,7 @@ export const metadata = {
 const themeBootstrap = `
 (function() {
   try {
-    var t = localStorage.getItem('nanogen-theme');
+    var t = localStorage.getItem('nanozen-theme');
     if (t !== 'light' && t !== 'dark') t = 'dark';
     document.documentElement.setAttribute('data-theme', t);
   } catch (e) {

@@ -49,7 +49,7 @@ export default function GeneratePage() {
             Create a <span className="text-primary-gradient">banner</span>
           </h1>
           <p className="mt-3 text-muted">
-            Describe the banner. Nanogen fans your prompt out across multiple models,
+            Describe the banner. Nanozen fans your prompt out across multiple models,
             scores each result, and surfaces the best one.
           </p>
         </header>

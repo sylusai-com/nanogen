@@ -11,32 +11,32 @@ const testimonials = [
     name: "Sarah Chen",
     role: "Marketing Director, Launchpad",
     content:
-      "We used to spend 2–3 hours per campaign banner with our design team. Now I write a prompt, pick a model, and have a polished hero banner in under a minute. Nanogen has completely transformed our creative workflow.",
+      "We used to spend 2–3 hours per campaign banner with our design team. Now I write a prompt, pick a model, and have a polished hero banner in under a minute. Nanozen has completely transformed our creative workflow.",
     highlight: true,
   },
   {
     name: "Raj Patel",
     role: "Founder & CEO, PixelForge",
     content:
-      "As a bootstrapped startup, we couldn't afford a full-time designer. Nanogen lets us produce professional-quality banners for product launches, social ads, and landing pages — all from a single prompt.",
+      "As a bootstrapped startup, we couldn't afford a full-time designer. Nanozen lets us produce professional-quality banners for product launches, social ads, and landing pages — all from a single prompt.",
   },
   {
     name: "Emily Torres",
     role: "Growth Engineer, ScaleKit",
     content:
-      "We integrated the Nanogen API into our marketing automation pipeline. Being able to switch between SDXL, Flux, and Imagen with a single parameter gives us creative variety without any extra tooling.",
+      "We integrated the Nanozen API into our marketing automation pipeline. Being able to switch between SDXL, Flux, and Imagen with a single parameter gives us creative variety without any extra tooling.",
   },
   {
     name: "David Kim",
     role: "E-commerce Manager, NovaMart",
     content:
-      "Generating product banners at scale was our biggest bottleneck. Nanogen's quality scoring ensures every banner meets our brand standards before it goes live. We ship 10× more creatives now.",
+      "Generating product banners at scale was our biggest bottleneck. Nanozen's quality scoring ensures every banner meets our brand standards before it goes live. We ship 10× more creatives now.",
   },
   {
     name: "Maria Santos",
     role: "Creative Director, BrightWave",
     content:
-      "The automatic quality scoring is a game-changer. Instead of reviewing dozens of options manually, Nanogen surfaces only the best outputs. Our banner consistency has never been better.",
+      "The automatic quality scoring is a game-changer. Instead of reviewing dozens of options manually, Nanozen surfaces only the best outputs. Our banner consistency has never been better.",
   },
   {
     name: "Alex Rivera",
@@ -62,7 +62,7 @@ export default function Showcase() {
       id="showcase"
       eyebrow="Wall of love"
       title="Trusted by forward-thinking teams"
-      description="See how marketers, founders, and developers are using Nanogen to create stunning banners and streamline their creative workflows."
+      description="See how marketers, founders, and developers are using Nanozen to create stunning banners and streamline their creative workflows."
     >
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
         {testimonials.map((t, i) => (

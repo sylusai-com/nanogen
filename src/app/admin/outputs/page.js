@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ImageIcon, Search, User } from "lucide-react";
+import { ImageIcon, Search, User, ThumbsUp, ThumbsDown } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import Avatar from "@/components/ui/Avatar";
@@ -134,6 +134,26 @@ function BannerCell({ banner }) {
             </div>
           </div>
         </div>
+
+        {/* Feedback indicator if present */}
+        {(banner.feedback_rating || banner.feedback_text) && (
+          <div className="flex flex-col gap-1 rounded-md bg-surface p-2 text-[10px] border border-border">
+            {banner.feedback_rating && (
+              <div className="flex items-center gap-1 font-medium text-foreground">
+                {banner.feedback_rating === "good" ? (
+                  <><ThumbsUp className="h-3 w-3 text-emerald-500" /> Positive Feedback</>
+                ) : (
+                  <><ThumbsDown className="h-3 w-3 text-red-500" /> Negative Feedback</>
+                )}
+              </div>
+            )}
+            {banner.feedback_text && (
+              <div className="text-muted line-clamp-2" title={banner.feedback_text}>
+                "{banner.feedback_text}"
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center justify-between text-[10px] text-muted">
           <span className="truncate">

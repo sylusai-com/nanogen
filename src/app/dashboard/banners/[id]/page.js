@@ -27,6 +27,7 @@ import DownloadMenu from "@/components/banner/DownloadMenu";
 import ReferencePanel from "@/components/banner/ReferencePanel";
 import RegeneratePanel from "@/components/banner/RegeneratePanel";
 import BannerPreview from "@/components/banner/BannerPreview";
+import FeedbackPanel from "@/components/banner/FeedbackPanel";
 import { cn } from "@/lib/cn";
 import { deleteBanner, getBanner, toggleFavourite, updateBanner } from "@/lib/db/banners";
 import { useCachedQuery } from "@/lib/cache";
@@ -450,6 +451,9 @@ export default function BannerDetail({ params }) {
               subjectImageUrl={banner.subjectImageUrl}
               subjectContext={banner.subjectContext}
             />
+
+            {/* User Feedback */}
+            <FeedbackPanel banner={banner} onUpdate={patchBanner} />
           </div>
         </div>
       </div>

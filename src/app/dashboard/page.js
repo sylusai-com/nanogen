@@ -133,7 +133,7 @@ export default function DashboardOverview() {
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               {[
-                { title: "From a brief", body: "Paste a marketing brief and let Nanogen extract a prompt." },
+                { title: "From a brief", body: "Paste a marketing brief and let Nanozen extract a prompt." },
                 { title: "From a screenshot", body: "Drop in a reference and we'll match its style." },
                 { title: "From a template", body: "Pick a starting point and tweak from there." },
               ].map((q) => (

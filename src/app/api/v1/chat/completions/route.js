@@ -169,8 +169,8 @@ export async function POST(req) {
       headers: {
         Authorization: `Bearer ${openrouterKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "https://nanogen.sylusai.com",
-        "X-Title": "Nanogen API",
+        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "https://nanozen.sylusai.com",
+        "X-Title": "Nanozen API",
       },
       body: JSON.stringify(upstreamBody),
     });

@@ -1,8 +1,8 @@
-# Nanogen
+# Nanozen
 
 **AI-powered banner generation and editing platform.** Generate production-ready marketing banners with AI, edit them visually, customize with a drag-and-drop builder, and manage your entire catalog via an admin dashboard.
 
-Nanogen automates the banner workflow: describe your banner → AI generates HTML/CSS → edit styling and content → publish. All banners are scored for quality, stored in a Postgres database, and support version history and regeneration workflows.
+Nanozen automates the banner workflow: describe your banner → AI generates HTML/CSS → edit styling and content → publish. All banners are scored for quality, stored in a Postgres database, and support version history and regeneration workflows.
 
 ## ✨ Features
 
@@ -51,8 +51,8 @@ Nanogen automates the banner workflow: describe your banner → AI generates HTM
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/sylus-ai/nanogen.git
-cd nanogen
+git clone https://github.com/sylus-ai/nanozen.git
+cd nanozen
 npm install
 
 # Set up environment variables
@@ -84,7 +84,7 @@ Open **<http://localhost:3000>** to see the landing page.
 ## Project Structure
 
 ```
-nanogen/
+nanozen/
 ├── src/
 │   ├── app/                          # Next.js App Router
 │   │   ├── (auth)/                   # Auth pages (login, signup)

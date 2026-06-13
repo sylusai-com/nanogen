@@ -1,7 +1,7 @@
 // src/app/api/v1/generate/route.js
 //
-// Public API — generate an image using a Nanogen image model.
-// OpenRouter-style: single endpoint, user picks a model slug, Nanogen
+// Public API — generate an image using a Nanozen image model.
+// OpenRouter-style: single endpoint, user picks a model slug, Nanozen
 // proxies through the admin-configured backend (key + endpoint from
 // the models table).
 //

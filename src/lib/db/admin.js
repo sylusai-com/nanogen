@@ -21,7 +21,7 @@ export async function listAllUsers(supabase, options = {}) {
   const paginated = pageSize != null;
   let query = supabase
     .from("profiles")
-    .select("id, name, email, role, plan, avatar_url, created_at", paginated ? { count: "exact" } : undefined)
+    .select("id, name, email, role, plan, avatar_url, created_at, api_access_allowed", paginated ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false });
   if (paginated) query = query.range(from, to);
   const { data, error, count } = await query;

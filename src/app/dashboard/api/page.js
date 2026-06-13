@@ -37,6 +37,8 @@ export default function ApiDashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const canCreateKeys = user?.role === "admin" || user?.apiAccessAllowed;
+
   // Fetch keys
   const {
     data: keysData,
@@ -123,6 +125,7 @@ export default function ApiDashboard() {
         action={
           <Button
             onClick={() => setModalOpen(true)}
+            disabled={!canCreateKeys}
             leftIcon={<Plus className="h-4 w-4" strokeWidth={2.5} />}
           >
             Create API key
@@ -131,6 +134,13 @@ export default function ApiDashboard() {
       />
 
       <div className="mx-auto w-full max-w-7xl space-y-8 px-5 py-8 md:px-8 md:py-10">
+        {!canCreateKeys && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-500/90 flex items-center gap-2">
+            <Key className="h-4 w-4 shrink-0" />
+            <p>API Key generation is currently locked. Please contact an admin to request access.</p>
+          </div>
+        )}
+
         {/* KPI cards */}
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {statCards.map((s, i) => (
@@ -228,6 +238,7 @@ export default function ApiDashboard() {
             </div>
             <Button
               onClick={() => setModalOpen(true)}
+              disabled={!canCreateKeys}
               size="sm"
               variant="secondary"
               leftIcon={<Plus className="h-3.5 w-3.5" />}
@@ -270,10 +281,11 @@ export default function ApiDashboard() {
             <EmptyData
               icon={<Key className="h-5 w-5" />}
               title="No API keys yet"
-              body="Create your first API key to start using the Nanogen API programmatically."
+              body={canCreateKeys ? "Create your first API key to start using the Nanogen API programmatically." : "API key generation is currently locked."}
               action={
                 <Button
                   onClick={() => setModalOpen(true)}
+                  disabled={!canCreateKeys}
                   leftIcon={<Plus className="h-3.5 w-3.5" />}
                 >
                   Create API key

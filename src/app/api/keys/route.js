@@ -56,6 +56,24 @@ export async function POST(req) {
     try { body = await readJson(req, { maxBytes: 4096 }); }
     catch (e) { return errorResponse(e); }
 
+    // Fetch user profile to check API access permission
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("role, api_access_allowed")
+      .eq("id", user.id)
+      .single();
+
+    if (profileErr) {
+      return NextResponse.json({ error: "Failed to fetch user profile" }, { status: 500 });
+    }
+
+    if (profile.role !== "admin" && !profile.api_access_allowed) {
+      return NextResponse.json(
+        { error: "API Key generation is locked. Please request access from an admin." },
+        { status: 403 }
+      );
+    }
+
     const name = validateString(body.name, { name: "name", max: 60 }) || "Untitled key";
 
     // Validate scopes — must be an array of strings (model slugs)

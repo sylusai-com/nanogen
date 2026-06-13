@@ -76,6 +76,19 @@ export default function AdminUsers() {
     }
   };
 
+  const toggleApiAccess = async (u) => {
+    const next = !u.api_access_allowed;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ api_access_allowed: next })
+      .eq("id", u.id);
+    if (error) {
+      alert(error.message);
+    } else {
+      reload();
+    }
+  };
+
   return (
     <>
       <TopBar title="Users" action={null} />
@@ -106,6 +119,7 @@ export default function AdminUsers() {
                 <TH>User</TH>
                 <TH>Plan</TH>
                 <TH>Role</TH>
+                <TH>API Access</TH>
                 <TH>Joined</TH>
                 <TH align="right">&nbsp;</TH>
               </TR>
@@ -133,6 +147,11 @@ export default function AdminUsers() {
                   <TD>
                     <span className="text-xs text-muted-strong capitalize">{u.role}</span>
                   </TD>
+                  <TD>
+                    <Badge tone={u.api_access_allowed ? "primary" : "neutral"}>
+                      {u.api_access_allowed ? "Allowed" : "Locked"}
+                    </Badge>
+                  </TD>
                   <TD className="text-xs text-muted">{fmtAgo(u.created_at)}</TD>
                   <TD align="right">
                     <Dropdown
@@ -150,6 +169,9 @@ export default function AdminUsers() {
                       <DropdownSection>
                         <DropdownItem onClick={() => promote(u)}>
                           {u.role === "admin" ? "Demote to user" : "Promote to admin"}
+                        </DropdownItem>
+                        <DropdownItem onClick={() => toggleApiAccess(u)}>
+                          {u.api_access_allowed ? "Revoke API access" : "Grant API access"}
                         </DropdownItem>
                       </DropdownSection>
                     </Dropdown>

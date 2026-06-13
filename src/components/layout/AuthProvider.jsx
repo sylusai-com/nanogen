@@ -47,6 +47,7 @@ function shapeUser(authUser, profile) {
     role: profile?.role || "user",
     plan: profile?.plan || "free",
     avatarUrl: profile?.avatar_url || null,
+    apiAccessAllowed: !!profile?.api_access_allowed,
   };
 }
 
@@ -72,7 +73,7 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await supabase
           .from("profiles")
-          .select("id, name, email, role, plan, avatar_url")
+          .select("id, name, email, role, plan, avatar_url, api_access_allowed")
           .eq("id", authUserId)
           .maybeSingle();
         setProfile(data || null);

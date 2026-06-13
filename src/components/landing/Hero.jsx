@@ -61,9 +61,7 @@ export default function Hero() {
             transition={{ duration: 0.6, delay: 0.3 }}
             className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-white/70 md:text-xl font-light"
           >
-            Describe what you want. Choose from multiple AI image models,
-            get every output scored for visual quality, and receive the best one — in seconds.
-            Now available as a REST API for your apps.
+            Generate banners with leading AI models, automatically rank results by visual quality, and get the best output delivered in seconds.
           </motion.p>
 
           <motion.div

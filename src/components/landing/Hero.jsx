@@ -18,7 +18,7 @@ const titleVariants = {
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden min-h-screen flex items-center pt-24 md:pt-28 pb-16 md:pb-24">
+    <section className="relative overflow-hidden min-h-screen flex items-center pt-24 md:pt-28 pb-12 md:pb-16">
       {/* Background patterns */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />
 
@@ -101,7 +101,7 @@ export default function Hero() {
           </motion.p>
         </div>
 
-        <div className="mt-20">
+        <div className="mt-14">
           <HeroPreview />
         </div>
       </Container>

@@ -8,13 +8,13 @@ import Button from "@/components/ui/Button";
 const tiers = [
   {
     name: "Free",
-    price: "$0",
+    price: "₹0",
     period: "forever",
     description: "Perfect for testing and prototyping",
     badge: null,
     features: [
-      "1,000 requests / day",
-      "60 requests / minute",
+      "1 requests / day",
+      "1 requests / minute",
       "All enabled image models",
       "Quality scoring on every output",
       "Usage dashboard",
@@ -27,17 +27,16 @@ const tiers = [
   },
   {
     name: "Pro",
-    price: "$29",
+    price: "₹2500",
     period: "/month",
     description: "For production apps and teams",
     badge: "Popular",
     features: [
-      "10,000 requests / day",
-      "300 requests / minute",
+      "25 requests / day",
+      "5 requests / minute",
       "Priority model access",
       "Quality scoring + breakdown",
       "Advanced analytics",
-      "Webhook notifications",
       "Priority support",
       "Custom rate limits",
     ],

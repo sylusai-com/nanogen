@@ -827,7 +827,10 @@ async function performBannerGeneration(job, userId, payload) {
         score: v.score,
         html: t.html,
         css: t.css,
-        fields: t.fields,
+        fields: [
+          ...(t.fields || []),
+          { id: "_magic_prompt", type: "hidden", value: allowExtras }
+        ],
         alignment: t.alignment,
         canvas: { background: bg, elements: [] },
         reference_image_url: refImageUrl || referenceImage || null,

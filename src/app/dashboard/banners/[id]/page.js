@@ -245,10 +245,14 @@ export default function BannerDetail({ params }) {
 
   const hasTemplate = Boolean(banner.html && banner.css);
 
+  const magicPromptField = (banner.fields || []).find((f) => f?.id === "_magic_prompt");
+  const usedMagicPrompt = magicPromptField ? (magicPromptField.value ? "Yes" : "No") : "—";
+
   const meta = [
     { label: "Model",   value: banner.modelLabel || "—" },
     { label: "Style",   value: banner.style       || "—" },
     { label: "Aspect",  value: banner.aspect       || "—" },
+    { label: "Magic Prompt", value: usedMagicPrompt },
     {
       label: "Created",
       value: banner.createdAt

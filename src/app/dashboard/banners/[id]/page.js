@@ -13,6 +13,7 @@ import {
   Share2,
   Star,
   Trash2,
+  ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
@@ -45,6 +46,7 @@ export default function BannerDetail({ params }) {
   const [busy, setBusy] = useState(false);
   const [bgSaving, setBgSaving] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [metaOpen, setMetaOpen] = useState(false);
   // Toggle for the photographic bg layer that the bg-image provider
   // generated alongside the HTML/CSS banner. The truth lives on the
   // banner row's `fields[bg_image_enabled]`, which is also what the
@@ -332,24 +334,43 @@ export default function BannerDetail({ params }) {
           <div className="space-y-4">
             {/* Meta */}
             <Card elevated className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <h1 className="text-lg font-semibold tracking-tight">{banner.title}</h1>
-                {isAdmin && banner.score != null && (
-                  <Badge tone={banner.score >= 80 ? "success" : "warning"} dot>
-                    Score {banner.score}
-                  </Badge>
-                )}
-              </div>
-              <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                {meta.map((m) => (
-                  <div key={m.label}>
-                    <dt className="text-[11px] uppercase tracking-widest text-muted">
-                      {m.label}
-                    </dt>
-                    <dd className="mt-0.5 text-foreground">{m.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <button
+                type="button"
+                onClick={() => setMetaOpen(!metaOpen)}
+                className="flex w-full items-start justify-between gap-3 text-left focus:outline-none"
+              >
+                <div>
+                  <h1 className="text-lg font-semibold tracking-tight">{banner.title}</h1>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isAdmin && banner.score != null && (
+                    <Badge tone={banner.score >= 80 ? "success" : "warning"} dot>
+                      Score {banner.score}
+                    </Badge>
+                  )}
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 text-muted transition-transform duration-200",
+                      metaOpen && "rotate-180"
+                    )}
+                  />
+                </div>
+              </button>
+              
+              {metaOpen && (
+                <div className="mt-4 border-t border-border pt-4">
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    {meta.map((m) => (
+                      <div key={m.label}>
+                        <dt className="text-[11px] uppercase tracking-widest text-muted">
+                          {m.label}
+                        </dt>
+                        <dd className="mt-0.5 text-foreground">{m.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
             </Card>
 
             {/* Actions */}

@@ -149,7 +149,7 @@ function BannerCell({ banner }) {
             )}
             {banner.feedback_text && (
               <div className="text-muted line-clamp-2" title={banner.feedback_text}>
-                "{banner.feedback_text}"
+                &quot;{banner.feedback_text}&quot;
               </div>
             )}
           </div>

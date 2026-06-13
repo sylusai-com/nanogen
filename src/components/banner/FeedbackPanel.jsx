@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ThumbsUp, ThumbsDown, Loader2 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -12,13 +12,6 @@ export default function FeedbackPanel({ banner, onUpdate }) {
   const [rating, setRating] = useState(banner?.feedbackRating || null);
   const [text, setText] = useState(banner?.feedbackText || "");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (banner) {
-      setRating(banner.feedbackRating || null);
-      setText(banner.feedbackText || "");
-    }
-  }, [banner]);
 
   const submitFeedback = async (newRating, newText) => {
     if (!banner || saving) return;

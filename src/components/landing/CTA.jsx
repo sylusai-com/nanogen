@@ -27,7 +27,7 @@ export default function CTA() {
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Button
-                href="/generate"
+                href="/dashboard/banners"
                 size="lg"
                 rightIcon={<ArrowRight className="h-5 w-5" strokeWidth={2.5} />}
                 className="h-14 px-8 text-base shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_60%,transparent)] hover:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_80%,transparent)] transition-all"

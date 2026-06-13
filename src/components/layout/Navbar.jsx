@@ -11,7 +11,7 @@ import Button from "@/components/ui/Button";
 import { useAuth } from "./AuthProvider";
 
 const links = [
-  { href: "/generate", label: "Try" },
+  { href: "/dashboard/banners", label: "Dashboard" },
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "Workflow" },
   { href: "/#api", label: "API" },

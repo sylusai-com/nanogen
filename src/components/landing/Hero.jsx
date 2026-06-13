@@ -73,7 +73,7 @@ export default function Hero() {
             className="mt-12 flex flex-col items-center justify-center gap-4 sm:flex-row"
           >
             <Button
-              href="/generate"
+              href="/dashboard/banners"
               size="lg"
               rightIcon={<ArrowRight className="h-5 w-5" strokeWidth={2.5} />}
               className="h-14 px-8 text-base shadow-[0_0_20px_color-mix(in_oklab,var(--primary)_30%,transparent)] dark:shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_50%,transparent)] hover:shadow-[0_0_40px_color-mix(in_oklab,var(--primary)_50%,transparent)] dark:hover:shadow-[0_0_60px_color-mix(in_oklab,var(--primary)_70%,transparent)] transition-shadow duration-300"

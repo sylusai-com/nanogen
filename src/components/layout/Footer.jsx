@@ -33,7 +33,7 @@ const sections = [
   {
     title: "Product",
     links: [
-      { label: "Generate", href: "/generate" },
+      { label: "Generate", href: "/dashboard/banners" },
       { label: "Features", href: "/#features" },
       { label: "How It Works", href: "/#how-it-works" },
       { label: "API", href: "/#api" },

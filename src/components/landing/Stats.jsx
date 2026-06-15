@@ -6,7 +6,7 @@ import Container from "@/components/ui/Container";
 const stats = [
   { value: "4+", label: "AI models available" },
   { value: "≥ 80", label: "Quality threshold" },
-  { value: "~55s", label: "Median time to result" },
+  { value: "~35s", label: "Median time to result" },
   { value: "100%", label: "Auto-evaluated outputs" },
 ];
 

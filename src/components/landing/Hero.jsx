@@ -12,7 +12,7 @@ const titleVariants = {
   visible: (i) => ({
     opacity: 1,
     y: 0,
-    transition: { duration: 0.55, delay: 0.05 * i, ease: [0.21, 0.47, 0.32, 0.98] },
+    transition: { duration: 0.35, delay: 0.05 * i, ease: [0.21, 0.47, 0.32, 0.98] },
   }),
 };
 

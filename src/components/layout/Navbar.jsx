@@ -115,6 +115,14 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+            {!user && (
+              <Link
+                href="/login"
+                className="rounded-lg px-3 py-2 text-sm text-muted-strong hover:bg-surface"
+              >
+                Sign in
+              </Link>
+            )}
             <Button href={ctaHref} size="md" className="mt-2 w-full">
               {ctaLabel}
             </Button>

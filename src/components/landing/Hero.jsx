@@ -34,7 +34,7 @@ export default function Hero() {
             <span className="text-xs font-semibold uppercase tracking-[0.15em] text-primary-700 dark:text-primary-300 drop-shadow-sm dark:drop-shadow-[0_0_8px_rgba(167,139,250,0.5)]">Multi-model generation + Developer API</span>
           </motion.div>
 
-          <h1 className="text-[56px] font-extrabold leading-[0.95] tracking-tighter md:text-[96px] text-slate-900 dark:text-white drop-shadow-sm dark:drop-shadow-2xl">
+          <h1 className="text-5xl font-extrabold leading-[0.95] tracking-tighter sm:text-[56px] md:text-[96px] text-slate-900 dark:text-white drop-shadow-sm dark:drop-shadow-2xl">
             <motion.span
               variants={titleVariants}
               initial="hidden"

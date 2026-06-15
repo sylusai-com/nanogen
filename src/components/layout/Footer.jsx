@@ -82,7 +82,7 @@ export default function Footer() {
 
       <Container className="relative z-10 pt-16 pb-8">
         {/* Main grid */}
-        <div className="grid gap-12 md:gap-8 md:grid-cols-[1.6fr_repeat(3,1fr)]">
+        <div className="grid gap-10 sm:grid-cols-2 md:gap-8 md:grid-cols-[1.6fr_repeat(3,1fr)]">
           {/* Brand column */}
           <div className="max-w-xs">
             <Logo />

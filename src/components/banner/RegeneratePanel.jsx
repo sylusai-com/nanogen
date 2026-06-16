@@ -38,9 +38,18 @@ export default function RegeneratePanel({ banner }) {
 
   const [prompt, setPrompt] = useState("");
   const [modelSlug, setModelSlug] = useState("auto");
-  // Opt-in for decorative extras — OFF by default so a regenerate stays
-  // strictly faithful to the change request.
-  const [allowExtras, setAllowExtras] = useState(false);
+  // Opt-in for decorative extras. If the previous banner was generated
+  // with it enabled, default to enabled for the regeneration.
+  const [allowExtras, setAllowExtras] = useState(() => 
+    banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true
+  );
+
+  // Sync state if the user navigates to a different banner without remounting
+  useEffect(() => {
+    if (banner) {
+      setAllowExtras(banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true);
+    }
+  }, [banner?.id, banner?.fields]);
 
   // A generation is mid-flight when the popup is open and not yet
   // done / errored. Disables the submit button so a second regenerate

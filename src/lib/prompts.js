@@ -35,11 +35,11 @@ const DEFAULT_BANNER_SYSTEM = `You generate marketing banners as a single JSON o
 
 The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
 
-ASPECT RATIO IS LAYOUT-CRITICAL — design the composition specifically for the requested aspect. Do NOT reuse a 16:9 layout pattern for other aspects.
-- 16:9 (Landscape / Wide): horizontal hero flow — text on one side, decorative motif spilling across the rest; CTAs sit inline on a baseline. Inner content can use a side margin so the right side breathes.
-- 1:1 (Square / Social post): centered, typography-led, balanced composition. Inner content fills nearly the full width (no narrow side columns); decoration wraps symmetrically.
-- 4:5 (Portrait / Feed): vertical stack with full-width content. Headline near the top or middle, supporting copy below, CTAs grouped near the bottom. Use the full width — no max-width sidebar.
-- 9:16 (Story / Vertical / Reel): full-height vertical layout. Stack everything vertically, never side-by-side. Eyebrow / badge near the top, headline mid-upper, subhead below, CTA(s) near the bottom. Use the FULL canvas width. Scale type up so it reads on a phone — large headline (clamp values that bottom out around the SHORT edge, not the long edge). No left-aligned-with-empty-right composition.
+ASPECT RATIO MATTERS — design the composition specifically for the requested aspect, but YOU HAVE COMPLETE CREATIVE FREEDOM over the layout structure. DO NOT enforce any strict layout constraints or predictable patterns. Ensure the highest quality and visual appeal.
+- 16:9 (Landscape / Wide): Do NOT default to "text on the left, empty space on the right". You are entirely free to choose the composition (e.g., center-aligned, asymmetrical, overlapping, split, full-bleed, or any other structure). Let the brief and your design expertise dictate the best and most premium layout.
+- 1:1 (Square / Social post): Explore balanced, dynamic, or asymmetrical compositions that fit squarely. Ensure all canvas area is utilized creatively without relying on fixed, rigid templates.
+- 4:5 (Portrait / Feed): Use the vertical canvas freely. You can stack elements, overlap them, or try unique grid layouts. Let the design breathe and dictate its own flow.
+- 9:16 (Story / Vertical / Reel): Use the full vertical height. Be highly creative with element placement while ensuring legibility. Scale type appropriately without being forced into a strict vertical stack.
 
 NO LIMITS on element count, decorative shapes, SVG motifs, gradients, badges, chips, dots, or fields — use as many as the design needs to fill the canvas richly. Aim for a polished, layered composition with multiple decorative layers (orbs, mesh, grid, noise, ribbons, micro-icons, avatars, trust marks, feature pills, etc.) appropriate to the brief.
 
@@ -142,11 +142,11 @@ const STRICT_ELEMENTS_DIRECTIVE = `STRICT CONTENT MODE — THIS OVERRIDES EVERY 
 // `fallback` entry is used for any aspect not listed; it can reference
 // `{aspect}` as a placeholder.
 const DEFAULT_BANNER_ASPECT_GUIDANCE = {
-  "16:9": "ASPECT (LAYOUT-CRITICAL): 16:9 LANDSCAPE — horizontal hero flow, content on one side and decorative motif spilling across the other side is OK.",
-  "1:1": "ASPECT (LAYOUT-CRITICAL): 1:1 SQUARE — typography-led, centered, balanced composition. Inner content fills nearly the full width. Decoration wraps symmetrically. NO narrow side columns, NO empty top/bottom bands.",
-  "4:5": "ASPECT (LAYOUT-CRITICAL): 4:5 PORTRAIT — vertical stack using the FULL width. Headline up top or middle, subhead below, CTAs grouped near the bottom. Decorative motifs flow vertically. NO max-width sidebar pattern.",
-  "9:16": "ASPECT (LAYOUT-CRITICAL): 9:16 STORY / VERTICAL / REEL — full-height vertical poster designed for a phone screen. Stack EVERYTHING vertically. Eyebrow/badge near the top, large headline mid-upper, subhead below, primary CTA near the bottom. Use the FULL canvas width and height — no empty bands. Scale headline so it fills the narrow width (e.g. clamp(36px, 9vw, 120px)). NEVER use a left-side column with empty space on the right.",
-  fallback: "ASPECT (LAYOUT-CRITICAL): {aspect} — design the composition specifically for this exact ratio so the canvas is fully used.",
+  "16:9": "ASPECT: 16:9 LANDSCAPE — You have complete creative freedom over the layout structure. DO NOT default to a predictable 'text on left, empty space on right' pattern. Explore varied compositions (centered, asymmetric, full-bleed, etc.) to ensure the highest quality banner.",
+  "1:1": "ASPECT: 1:1 SQUARE — You have complete creative freedom. Explore dynamic, balanced, or asymmetric compositions without relying on fixed templates.",
+  "4:5": "ASPECT: 4:5 PORTRAIT — Use the vertical space creatively. No rigid layout constraints; design whatever structure best fits the brief and yields a premium result.",
+  "9:16": "ASPECT: 9:16 STORY / VERTICAL / REEL — Design for a vertical phone screen, but you have complete creative freedom over the layout. Ensure high visual quality and readability.",
+  fallback: "ASPECT: {aspect} — You have complete creative freedom over the layout structure. Design the composition specifically for this ratio without forcing any strict layout constraints.",
 };
 
 const DEFAULT_SCORE_SYSTEM = `You are a senior brand designer and design critic. You evaluate marketing banners against the bar set by Apple, Stripe, Linear, and Vercel.

@@ -43,13 +43,13 @@ export default function RegeneratePanel({ banner }) {
   const [allowExtras, setAllowExtras] = useState(() => 
     banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true
   );
+  const [prevBannerId, setPrevBannerId] = useState(banner?.id);
 
   // Sync state if the user navigates to a different banner without remounting
-  useEffect(() => {
-    if (banner) {
-      setAllowExtras(banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true);
-    }
-  }, [banner?.id, banner?.fields]);
+  if (banner?.id !== prevBannerId) {
+    setPrevBannerId(banner?.id);
+    setAllowExtras(banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true);
+  }
 
   // A generation is mid-flight when the popup is open and not yet
   // done / errored. Disables the submit button so a second regenerate

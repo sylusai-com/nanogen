@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { Code2, Image as ImageIcon, Sparkles, Zap } from "lucide-react";
+import Image from "next/image";
 
 export default function AuthShowcase() {
   return (
@@ -68,18 +69,35 @@ export default function AuthShowcase() {
           <motion.div
             initial={{ opacity: 0, x: 40, y: 20 }}
             animate={{ opacity: 1, x: 0, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.5, type: "spring", bounce: 0.4 }}
+            transition={{
+              duration: 0.8,
+              delay: 0.5,
+              type: "spring",
+              bounce: 0.4,
+            }}
             className="absolute -right-8 -bottom-12 w-64 rounded-xl border border-white/10 bg-slate-800/90 dark:bg-black/80 shadow-2xl backdrop-blur-xl p-2 z-20"
           >
-            <div className="aspect-[1.91/1] rounded-lg bg-gradient-to-br from-primary/40 to-blue-600/40 border border-white/5 relative overflow-hidden flex items-center justify-center">
-              <div className="absolute inset-0 bg-ambient opacity-50" />
-              <ImageIcon className="w-8 h-8 text-white/50" />
+            <div className="aspect-[1.91/1] rounded-lg border border-white/5 relative overflow-hidden">
+              <Image
+                src="/banners/generated-banner.png"
+                alt="AI Generated Banner"
+                fill
+                className="object-cover"
+                priority
+              />
+
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
             </div>
+
             <div className="mt-3 flex items-center justify-between px-1">
               <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
-                <Zap className="w-3 h-3 text-primary" /> Generated
+                <Zap className="w-3 h-3 text-primary" />
+                Generated
               </span>
-              <span className="text-[10px] font-mono text-slate-500">120ms</span>
+
+              <span className="text-[10px] font-mono text-slate-500">
+                120ms
+              </span>
             </div>
           </motion.div>
         </div>

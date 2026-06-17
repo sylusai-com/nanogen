@@ -53,8 +53,8 @@ const sections = [
     links: [
       { label: "Showcase", href: "/#showcase" },
       { label: "Changelog", href: "/#features", soon: true },
-      { label: "Privacy Policy", href: "/#", soon: true },
-      { label: "Terms of Service", href: "/#", soon: true },
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms of Service", href: "/terms" },
     ],
   },
 ];

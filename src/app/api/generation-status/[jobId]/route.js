@@ -8,9 +8,13 @@ export async function GET(req, { params }) {
   try {
     const resolvedParams = await params;
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let user;
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data?.user;
+    } catch (e) {
+      user = null;
+    }
 
     if (!user) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });

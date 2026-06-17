@@ -195,17 +195,27 @@ export function errorResponse(e) {
 // Server-side auth helper for routes that must be signed in.
 export async function requireAuthenticatedUser() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+    }
+    return { supabase, user };
+  } catch (error) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
-  return { supabase, user };
 }
 
 // Server-side admin helper for route handlers.
 export async function validateAdminRole(supabase = null) {
   const client = supabase || (await createClient());
-  const { data: { user } } = await client.auth.getUser();
+  let user;
+  try {
+    const { data } = await client.auth.getUser();
+    user = data?.user;
+  } catch (error) {
+    user = null;
+  }
   if (!user) {
     throw new ValidationError("Unauthorized", 401);
   }

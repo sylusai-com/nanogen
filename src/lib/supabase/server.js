@@ -27,4 +27,17 @@ export async function createClient() {
       },
     },
   );
+
+  // Safely wrap getUser to catch AuthApiError thrown by invalid refresh tokens
+  // so it doesn't crash the Next.js API routes or middleware.
+  const originalGetUser = client.auth.getUser.bind(client.auth);
+  client.auth.getUser = async (...args) => {
+    try {
+      return await originalGetUser(...args);
+    } catch (error) {
+      return { data: { user: null }, error };
+    }
+  };
+
+  return client;
 }

@@ -11,9 +11,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    let user;
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data?.user;
+    } catch (e) {
+      user = null;
+    }
 
     if (!user) {
       return NextResponse.json({ jobs: [] }, { status: 401 });

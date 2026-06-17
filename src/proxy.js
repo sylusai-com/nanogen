@@ -34,7 +34,12 @@ export async function proxy(request) {
   );
 
   // Touching getUser() is what triggers the cookie refresh.
-  await supabase.auth.getUser();
+  try {
+    await supabase.auth.getUser();
+  } catch (error) {
+    // If the refresh token is invalid, getUser() throws AuthApiError.
+    // We can safely ignore it, as the user is simply unauthenticated.
+  }
 
   return response;
 }

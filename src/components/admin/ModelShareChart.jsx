@@ -18,14 +18,15 @@ export default function ModelShareChart({ data }) {
   return (
     <div className="h-64 w-full" style={{ minHeight: "256px" }}>
       <ResponsiveContainer width="100%" height={256} minHeight={0}>
-        <BarChart data={series} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <BarChart data={series} margin={{ top: 10, right: 10, left: -20, bottom: 40 }}>
           <XAxis
             dataKey="name"
             stroke="var(--muted)"
-            tick={{ fontSize: 11 }}
+            tick={{ fontSize: 11, angle: -45, textAnchor: "end", dy: 10 }}
             axisLine={false}
             tickLine={false}
             interval={0}
+            height={60}
           />
           <YAxis
             stroke="var(--muted)"

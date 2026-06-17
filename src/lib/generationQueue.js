@@ -2,16 +2,7 @@
 // Centralized banner generation job queue with step-by-step progress tracking
 // Sequential workflow: Image validation → Analysis → BG fetch → Parallel models → Scoring → Save
 
-// The queue lives on globalThis so it survives module re-imports during
-// dev hot-reload. Without this, editing any file that transitively
-// imports this module would replace `jobQueue = new Map()` with a fresh
-// empty Map — and any in-flight job created by POST /api/banners would
-// vanish before the next GET /api/generation-status poll could find it
-// ("Job not found"). The symptom showed up most often during regenerate
-// flows because they touch more components (RegenerateDialog +
-// GenerationPopup + BannerPreview) and so trigger a recompile more
-// readily than the simple create flow.
-const jobQueue = globalThis.__nanozen_jobQueue || (globalThis.__nanozen_jobQueue = new Map());
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // Generation workflow steps.
 //
@@ -34,48 +25,56 @@ export const GenerationJobSteps = {
 };
 
 export class GenerationJob {
-  constructor(jobId, userId, payload) {
-    this.jobId = jobId;
-    this.userId = userId;
-    this.payload = payload;
+  constructor(jobData, adminClient) {
+    this.jobId = jobData.job_id;
+    this.userId = jobData.user_id;
+    this.payload = jobData.payload;
     
     // Status lifecycle: pending → processing → completed or failed
-    this.status = "pending";
-    this.currentStep = GenerationJobSteps.UPLOAD_IMAGES;
-    this.progress = 0;
+    this.status = jobData.status || "pending";
+    this.currentStep = jobData.current_step || GenerationJobSteps.UPLOAD_IMAGES;
+    this.progress = jobData.progress || 0;
     
-    // Tracking. `stepsCompleted` records every step that actually ran; the
-    // UI ticks those. `stepsSkipped` records steps the pipeline decided to
-    // skip (e.g. analyze_reference when no reference image was uploaded,
-    // fetch_bg_image when no providers returned a result). The UI renders
-    // those as a struck-through cross so the user can see WHY the timeline
-    // skipped past them rather than wondering if it stalled.
-    this.stepsCompleted = [];
-    this.stepsSkipped = [];
-    this.error = null;
-    this.errorDetails = null;
-    this.results = {};
+    this.stepsCompleted = jobData.steps_completed || [];
+    this.stepsSkipped = jobData.steps_skipped || [];
+    this.error = jobData.error;
+    this.errorDetails = jobData.error_details;
+    this.results = jobData.results || {};
     
     // Results
-    this.banner = null;
-    this.runId = null;
-    this.banners = []; // All generated banners
-    this.variants = []; // Variant metadata
+    this.banner = jobData.banner;
+    this.runId = jobData.run_id;
+    this.banners = jobData.banners || [];
+    this.variants = jobData.variants || [];
     
     // Timing
-    this.createdAt = Date.now();
-    this.startedAt = null;
-    this.completedAt = null;
+    this.createdAt = jobData.created_at ? new Date(jobData.created_at).getTime() : Date.now();
+    this.startedAt = jobData.started_at ? new Date(jobData.started_at).getTime() : null;
+    this.completedAt = jobData.completed_at ? new Date(jobData.completed_at).getTime() : null;
+
+    this.adminClient = adminClient;
+  }
+
+  // Fire-and-forget sync to Supabase so we don't hold up the pipeline
+  _sync(updates) {
+    if (!this.adminClient) return;
+    this.adminClient.from("generation_jobs").update(updates).eq("job_id", this.jobId).then(({ error }) => {
+      if (error) console.error(`[Job ${this.jobId}] Sync error:`, error);
+    });
   }
 
   setStatus(status) {
     this.status = status;
+    const updates = { status };
     if (status === "processing" && !this.startedAt) {
       this.startedAt = Date.now();
+      updates.started_at = new Date(this.startedAt).toISOString();
     }
     if (status === "completed" || status === "failed") {
       this.completedAt = Date.now();
+      updates.completed_at = new Date(this.completedAt).toISOString();
     }
+    this._sync(updates);
   }
 
   setStep(step) {
@@ -85,6 +84,11 @@ export class GenerationJob {
       step: step.name,
       label: step.label,
       completedAt: Date.now(),
+    });
+    this._sync({
+      current_step: step,
+      progress: step.progress,
+      steps_completed: this.stepsCompleted
     });
   }
 
@@ -98,6 +102,9 @@ export class GenerationJob {
       reason: reason || null,
       skippedAt: Date.now(),
     });
+    this._sync({
+      steps_skipped: this.stepsSkipped
+    });
   }
 
   setError(error, details = null) {
@@ -105,6 +112,12 @@ export class GenerationJob {
     this.errorDetails = details;
     this.status = "failed";
     this.completedAt = Date.now();
+    this._sync({
+      error: error,
+      error_details: details,
+      status: "failed",
+      completed_at: new Date(this.completedAt).toISOString()
+    });
   }
 
   setBanner(banner, runId, banners = [], variants = []) {
@@ -116,6 +129,16 @@ export class GenerationJob {
     this.currentStep = GenerationJobSteps.SAVE_BANNER;
     this.progress = 100;
     this.completedAt = Date.now();
+    this._sync({
+      banner,
+      run_id: runId,
+      banners,
+      variants,
+      status: "completed",
+      current_step: GenerationJobSteps.SAVE_BANNER,
+      progress: 100,
+      completed_at: new Date(this.completedAt).toISOString()
+    });
   }
 
   toJSON() {
@@ -141,55 +164,73 @@ export class GenerationJob {
   }
 }
 
-export function createJob(userId, payload) {
+export async function createJob(userId, payload) {
   const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-  const job = new GenerationJob(jobId, userId, payload);
-  jobQueue.set(jobId, job);
-  return job;
+  const adminClient = createAdminClient();
+  
+  const { data, error } = await adminClient
+    .from("generation_jobs")
+    .insert({
+      job_id: jobId,
+      user_id: userId,
+      payload: payload,
+      status: "pending",
+      current_step: GenerationJobSteps.UPLOAD_IMAGES,
+      progress: 0,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create generation job: ${error.message}`);
+  }
+
+  return new GenerationJob(data, adminClient);
 }
 
-export function getJob(jobId) {
-  return jobQueue.get(jobId);
+export async function getJob(jobId) {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("generation_jobs")
+    .select()
+    .eq("job_id", jobId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return new GenerationJob(data, adminClient);
 }
 
-export function getAllJobs() {
-  return Array.from(jobQueue.values());
+export async function getAllJobs() {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient.from("generation_jobs").select();
+  if (error || !data) return [];
+  return data.map(d => new GenerationJob(d, adminClient));
 }
 
-export function getJobsByUser(userId) {
-  return Array.from(jobQueue.values()).filter(job => job.userId === userId);
+export async function getJobsByUser(userId) {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("generation_jobs")
+    .select()
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+    
+  if (error || !data) return [];
+  return data.map(d => new GenerationJob(d, adminClient));
 }
 
-export function getActiveJobs() {
-  return Array.from(jobQueue.values()).filter(job => 
-    job.status === "pending" || job.status === "processing"
-  );
+export async function getActiveJobs() {
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
+    .from("generation_jobs")
+    .select()
+    .in("status", ["pending", "processing"]);
+    
+  if (error || !data) return [];
+  return data.map(d => new GenerationJob(d, adminClient));
 }
 
-export function deleteJob(jobId) {
-  return jobQueue.delete(jobId);
-}
-
-// Auto-cleanup: Remove completed jobs after 10 minutes (MVP)
-// In production, use Redis TTL or Supabase job table
-const CLEANUP_INTERVAL = 5 * 60 * 1000; // Check every 5 minutes
-const JOB_RETENTION_MS = 10 * 60 * 1000; // Keep for 10 minutes
-
-// Guard against double-registering the interval across hot reloads — the
-// queue itself is on globalThis so each reload would otherwise stack
-// another timer on top of the previous one.
-if (!globalThis.__nanozen_jobQueueCleanup) {
-  globalThis.__nanozen_jobQueueCleanup = setInterval(() => {
-    const now = Date.now();
-    const toDelete = [];
-
-    for (const [jobId, job] of jobQueue.entries()) {
-      if ((job.status === "completed" || job.status === "failed") &&
-          now - job.completedAt > JOB_RETENTION_MS) {
-        toDelete.push(jobId);
-      }
-    }
-
-    toDelete.forEach(jobId => jobQueue.delete(jobId));
-  }, CLEANUP_INTERVAL);
+export async function deleteJob(jobId) {
+  const adminClient = createAdminClient();
+  await adminClient.from("generation_jobs").delete().eq("job_id", jobId);
 }

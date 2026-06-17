@@ -17,7 +17,7 @@ export async function GET(req, { params }) {
     }
 
     const { jobId } = resolvedParams;
-    const job = getJob(jobId);
+    const job = await getJob(jobId);
 
     if (!job) {
       return Response.json(

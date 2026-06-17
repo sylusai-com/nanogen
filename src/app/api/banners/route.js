@@ -217,16 +217,21 @@ export async function POST(req) {
   }
 
   // Create job and start background generation
-  const job = createJob(user.id, {
-    prompt,
-    style,
-    aspect,
-    referenceImage,
-    subjectImage,
-    modelRef,
-    regenerateFromId,
-    allowExtras,
-  });
+  let job;
+  try {
+    job = await createJob(user.id, {
+      prompt,
+      style,
+      aspect,
+      referenceImage,
+      subjectImage,
+      modelRef,
+      regenerateFromId,
+      allowExtras,
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
 
   job.setStatus("processing");
   job.setStep(GenerationJobSteps.UPLOAD_IMAGES);

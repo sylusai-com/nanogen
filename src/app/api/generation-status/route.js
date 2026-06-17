@@ -19,7 +19,8 @@ export async function GET() {
       return NextResponse.json({ jobs: [] }, { status: 401 });
     }
 
-    const jobs = getJobsByUser(user.id)
+    const userJobs = await getJobsByUser(user.id);
+    const jobs = userJobs
       .filter((job) => job.status === "pending" || job.status === "processing")
       .map((job) => job.toJSON());
 

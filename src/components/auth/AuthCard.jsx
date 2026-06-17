@@ -1,18 +1,15 @@
 import { cn } from "@/lib/cn";
-import Card from "@/components/ui/Card";
 
 export default function AuthCard({ title, subtitle, children, footer, className }) {
   return (
-    <div className={cn("w-full max-w-md", className)}>
-      <Card elevated className="p-7 md:p-8">
-        <div className="space-y-1.5 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
-        </div>
-        <div className="mt-7">{children}</div>
-      </Card>
+    <div className={cn("w-full", className)}>
+      <div className="space-y-2 mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        {subtitle && <p className="text-base text-muted">{subtitle}</p>}
+      </div>
+      <div className="mt-8">{children}</div>
       {footer && (
-        <p className="mt-5 text-center text-xs text-muted">{footer}</p>
+        <p className="mt-8 text-sm text-muted">{footer}</p>
       )}
     </div>
   );

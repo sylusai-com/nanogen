@@ -28,10 +28,6 @@ export default function SocialAuth({ disabled }) {
   const [error, setError] = useState(null);
 
   const onClick = async (provider) => {
-    // Forward ?next=… from the current URL through the OAuth round-trip
-    // so users land where they were trying to go. Read at click time
-    // (instead of useSearchParams) to avoid forcing a Suspense boundary
-    // around the parent — login already has one for its email form.
     const next =
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("next")
@@ -48,12 +44,12 @@ export default function SocialAuth({ disabled }) {
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
           onClick={() => onClick("google")}
           disabled={disabled || pending === "google"}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-surface text-sm font-medium text-foreground hover:border-border-strong hover:bg-surface-2 transition-all disabled:opacity-50 hover:shadow-sm"
         >
           <GoogleIcon className="h-4 w-4" />
           {pending === "google" ? "Opening…" : "Google"}
@@ -62,9 +58,9 @@ export default function SocialAuth({ disabled }) {
           type="button"
           onClick={() => onClick("github")}
           disabled={disabled || pending === "github"}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-background text-sm text-foreground hover:border-border-strong hover:bg-surface transition-colors disabled:opacity-50"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-surface text-sm font-medium text-foreground hover:border-border-strong hover:bg-surface-2 transition-all disabled:opacity-50 hover:shadow-sm"
         >
-          <GithubIcon className="h-4 w-4" />
+          <GithubIcon className="h-5 w-5" />
           {pending === "github" ? "Opening…" : "GitHub"}
         </button>
       </div>

@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from "react";
 import Link from "next/link";
+import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Mail, Lock, ArrowRight } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
@@ -117,29 +118,35 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <AuthCard
-      title="Welcome back"
-      subtitle="Sign in to continue to your studio"
-      footer={
-        <>
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-foreground underline-offset-2 hover:underline">
-            Sign up
-          </Link>
-        </>
-      }
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
     >
-      <SocialAuth />
+      <AuthCard
+        title="Welcome back"
+        subtitle="Sign in to continue to your studio"
+        footer={
+          <>
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="text-foreground font-medium underline-offset-4 hover:underline">
+              Sign up
+            </Link>
+          </>
+        }
+      >
+        <SocialAuth />
 
-      <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted">
-        <span className="h-px flex-1 bg-border" />
-        or with email
-        <span className="h-px flex-1 bg-border" />
-      </div>
+        <div className="my-8 flex items-center gap-3 text-[11px] uppercase tracking-[0.2em] text-muted font-medium">
+          <span className="h-px flex-1 bg-border" />
+          or with email
+          <span className="h-px flex-1 bg-border" />
+        </div>
 
-      <Suspense fallback={<div className="h-72" />}>
-        <LoginForm />
-      </Suspense>
-    </AuthCard>
+        <Suspense fallback={<div className="h-72" />}>
+          <LoginForm />
+        </Suspense>
+      </AuthCard>
+    </motion.div>
   );
 }

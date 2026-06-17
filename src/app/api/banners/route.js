@@ -476,7 +476,8 @@ async function performBannerGeneration(job, userId, payload) {
         usable = [best];
       } else {
         const allModels = await listEnabledTextModelsWithSecrets(adminClient);
-        usable = allModels.filter((m) => pickApiKey(m));
+        const validModels = allModels.filter((m) => pickApiKey(m));
+        usable = validModels.length > 0 ? [validModels[0]] : [];
       }
     }
 

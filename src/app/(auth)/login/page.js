@@ -125,7 +125,7 @@ export default function LoginPage() {
     >
       <AuthCard
         title="Welcome back"
-        subtitle="Sign in to continue to your studio"
+        subtitle="Sign in to start creating AI-powered banners"
         footer={
           <>
             Don&apos;t have an account?{" "}

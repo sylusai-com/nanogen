@@ -24,13 +24,13 @@ export default function AuthShowcase() {
         >
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 backdrop-blur-md mb-6">
             <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-xs font-medium tracking-wide text-foreground">Next-Gen API Platform</span>
+            <span className="text-xs font-medium tracking-wide text-foreground">AI Banner Generation Platform</span>
           </div>
           <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white drop-shadow-sm mb-4">
             Banners generated at the <span className="text-primary-gradient">speed of thought.</span>
           </h2>
           <p className="text-lg text-slate-600 dark:text-slate-400 max-w-md font-light">
-            Connect our API, define your brand, and watch multi-model AI craft the perfect visual assets in milliseconds.
+            Describe your vision, pick a style, and let AI generate stunning, production-ready banners in seconds.
           </p>
         </motion.div>
       </div>
@@ -106,20 +106,20 @@ export default function AuthShowcase() {
       {/* Bottom Stats / Trust markers */}
       <div className="relative z-10 flex items-center gap-8 border-t border-white/10 pt-8">
         <div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">99.9%</div>
-          <div className="text-sm text-slate-500 mt-1">Uptime SLA</div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white">2k+</div>
+          <div className="text-sm text-slate-500 mt-1">Banners Generated</div>
         </div>
         <div className="w-px h-10 bg-white/10" />
         <div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">~450ms</div>
-          <div className="text-sm text-slate-500 mt-1">Avg. Latency</div>
+          <div className="text-2xl font-bold text-slate-900 dark:text-white">~30s</div>
+          <div className="text-sm text-slate-500 mt-1">Avg. Generation</div>
         </div>
         <div className="w-px h-10 bg-white/10" />
         <div>
           <div className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-1">
              Multi <Code2 className="w-5 h-5 text-primary" />
           </div>
-          <div className="text-sm text-slate-500 mt-1">Model Routing</div>
+          <div className="text-sm text-slate-500 mt-1">AI Models</div>
         </div>
       </div>
     </div>

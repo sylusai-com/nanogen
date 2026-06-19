@@ -43,11 +43,14 @@ export { GenerationJobSteps as GenerationSteps };
 // while the placement step thinks no bg is needed).
 const ENHANCE_SYSTEM = `You are a senior design director. Given a marketing-banner brief plus optional analyses of a reference image and a subject image, you do three things at once:
 
-1. ENRICH the brief into a single tight paragraph (≤120 words) that:
+1. ENRICH the brief into a single tight paragraph (≤100 words) that:
    - keeps the user's stated intent intact (never contradict the user)
    - adds composition guidance pulled from the reference (mood, palette, motifs)
    - acknowledges the subject image (placement, framing, colors) when present
    - never invents facts not present in the inputs
+   - NEVER fabricates brand names, company names, app names, product names, statistics, testimonials, or social proof that the user did not provide
+   - if the user did not name a specific brand or product, the enriched brief must also leave it unnamed — use descriptive language instead (e.g. "fitness app" not "FitPulse")
+   - focuses on visual direction (colors, composition, mood) rather than inventing marketing copy
 
 2. DECIDE subject placement. If a subject image exists, pick where the subject sits and confirm clean space must be reserved for it. If no subject image exists, set reserveSpace=false and placement="none".
 

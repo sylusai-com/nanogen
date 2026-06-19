@@ -35,13 +35,33 @@ const DEFAULT_BANNER_SYSTEM = `You generate marketing banners as a single JSON o
 
 The user's brief is authoritative. Follow explicit preferences in the prompt exactly, including light/dark background, colors, mood, layout, and image preference. If the prompt is vague, choose a good design on your own. Do not force a fixed theme.
 
+CONTENT DISCIPLINE — CRITICAL:
+- Generate ONLY text and content that is directly stated in or clearly implied by the user's brief.
+- Do NOT invent or fabricate brand names, company names, app names, product names, or person names unless the brief explicitly provides them.
+- Do NOT add fake statistics, social proof, testimonials, user counts, star ratings, or trust markers (e.g. "Trusted by 10,000+ teams", "★★★★★", "4.9/5") unless the brief explicitly requests them.
+- Do NOT add placeholder copy such as "v2.0", "NEW", version tags, year badges, or generic filler text that the brief did not ask for.
+- The headline and any supporting text must be derived DIRECTLY from the brief. If the brief says "fitness app launch banner", the headline should be about a fitness app launch — do not invent a specific app name like "FitPulse" or "GymFlow".
+- If the brief names a specific brand, product, or company, use that name. If it does not, keep copy generic and on-topic (e.g. "Launch Your Fitness Journey" instead of inventing "FitPro 2.0").
+- When in doubt, use fewer text elements with strong, on-topic copy rather than many elements with fabricated content.
+
+VISUAL QUALITY PRIORITIES:
+- CLEAN TYPOGRAPHY: Use clear visual hierarchy with well-sized headline, optional subhead, and minimal supporting text. Avoid cramming many small text elements.
+- HARMONIOUS PALETTE: Choose colors that are cohesive and appropriate to the brief's subject matter. Every color should feel intentional.
+- INTENTIONAL COMPOSITION: Every element should serve a purpose. Decorative elements (gradients, shapes, patterns) should enhance the design, not fill space arbitrarily.
+- PROFESSIONAL FINISH: The banner should look like it was designed by a professional — polished spacing, consistent alignment, refined details.
+- FOCUS AND CLARITY: The viewer's eye should be drawn to the main message immediately. Avoid visual noise that competes with the headline.
+
 ASPECT RATIO MATTERS — design the composition specifically for the requested aspect, but YOU HAVE COMPLETE CREATIVE FREEDOM over the layout structure. DO NOT enforce any strict layout constraints or predictable patterns. Ensure the highest quality and visual appeal.
 - 16:9 (Landscape / Wide): Do NOT default to "text on the left, empty space on the right". You are entirely free to choose the composition (e.g., center-aligned, asymmetrical, overlapping, split, full-bleed, or any other structure). Let the brief and your design expertise dictate the best and most premium layout.
 - 1:1 (Square / Social post): Explore balanced, dynamic, or asymmetrical compositions that fit squarely. Ensure all canvas area is utilized creatively without relying on fixed, rigid templates.
 - 4:5 (Portrait / Feed): Use the vertical canvas freely. You can stack elements, overlap them, or try unique grid layouts. Let the design breathe and dictate its own flow.
 - 9:16 (Story / Vertical / Reel): Use the full vertical height. Be highly creative with element placement while ensuring legibility. Scale type appropriately without being forced into a strict vertical stack.
 
-NO LIMITS on element count, decorative shapes, SVG motifs, gradients, badges, chips, dots, or fields — use as many as the design needs to fill the canvas richly. Aim for a polished, layered composition with multiple decorative layers (orbs, mesh, grid, noise, ribbons, micro-icons, avatars, trust marks, feature pills, etc.) appropriate to the brief.
+DECORATION GUIDANCE:
+- Use decorative elements (gradients, orbs, mesh, patterns, SVG motifs) PURPOSEFULLY to support the design and the brief's subject matter.
+- Quality over quantity: a few well-placed decorative layers that reinforce the theme are far better than many random ones.
+- Decorative elements must be RELEVANT to the brief topic (e.g. geometric patterns for tech, organic shapes for nature, bold stripes for sport — not random decoration on every banner).
+- The canvas should feel complete and well-utilized, but NOT cluttered. Intentional whitespace is a valid and often premium design choice.
 
 LAYOUT MUST FILL THE CANVAS:
 - No large empty bands at top or bottom for tall aspects.
@@ -123,7 +143,10 @@ IMAGE INPUTS — IMPORTANT DISTINCTION:
 - Subject image placement must be controlled via CSS background-position / background-size on the bg-image layer (and optional --bg-position / --bg-zoom fields), not via centered hero <img> tags.
 - If neither image is present, design a CSS-only banner that looks great without any photographic background.
 The banner is HTML + CSS only — NO external image URLs. Build any background decoration using CSS gradients, color-mix, and inline SVG data: URIs that visually match the brief subject.
-There is NO upper limit on elements, decorative shapes, SVG patterns, fields, or layers — compose richly so the canvas is fully filled at the chosen aspect.
+CONTENT RULES:
+- Design a clean, focused banner that serves the brief. Use decoration purposefully to enhance the composition — avoid unnecessary clutter.
+- ALL text in the banner must be derived from the brief. Do NOT fabricate brand names, company names, statistics, testimonials, or placeholder copy.
+- If the brief does not specify a brand name, do NOT invent one — use a generic, on-topic headline instead.
 Return ONLY the JSON object.`;
 
 // Appended to the banner user message when the user has NOT opted into
@@ -134,8 +157,10 @@ Return ONLY the JSON object.`;
 const STRICT_ELEMENTS_DIRECTIVE = `STRICT CONTENT MODE — THIS OVERRIDES EVERY EARLIER INSTRUCTION THAT ENCOURAGES RICH, LAYERED, OR DECORATION-HEAVY COMPOSITIONS:
 - Render ONLY what the brief explicitly asks for. Do not invent extra content, copy, or decorative elements.
 - Do NOT add eyebrows, badges, pills, chips, version tags, trust lines, avatar stacks, feature lists, stat counters, secondary CTAs, decorative micro-icons, or any text the brief did not request.
+- Do NOT fabricate brand names, company names, statistics, user counts, testimonials, or any content not present in the brief.
 - Keep the background simple — a solid color or one clean gradient that suits the brief. NO decorative orbs, mesh, grids, noise textures, ribbons, scanlines, or busy SVG motif layers.
 - The composition must stay minimal and focused: the headline plus only the specific elements named in the brief, and nothing else.
+- The banner must still look polished and premium — clean typography, strong visual hierarchy, and professional spacing. Minimal does NOT mean bare or unfinished.
 - You MUST still emit the required fields (headline, bg, fg, accent) and the bg_image layer, and the banner must still fill the canvas for its aspect ratio — just without any extra ornamentation.`;
 
 // Per-aspect briefing. Keyed by the literal aspect ratio string. The

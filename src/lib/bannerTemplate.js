@@ -754,9 +754,11 @@ export async function generateBannerTemplate({
   // user-uploaded subjectImage is present — a real subject always wins,
   // because the user explicitly chose what should appear IN the banner.
   backgroundImage = null,
-  // When false, the model is told to render strictly what the brief asks
-  // for — no extra decorative elements. Defaults to true (rich output).
-  allowExtras = true,
+  // When true ("magic prompt" toggled ON), the model is told to add extra
+  // decorative complexity and premium weight beyond the baseline.
+  // Defaults to false — the baseline generation already produces a rich,
+  // decorated banner from the system prompt alone.
+  allowExtras = false,
 }) {
   // Layered images: the subject (transparent cutout when bg-removal ran)
   // sits on its own --subject-image variable so the photographic bg

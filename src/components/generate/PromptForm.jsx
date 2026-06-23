@@ -26,7 +26,7 @@ export default function PromptForm({
   initialModel = "auto",
   initialReference = null,
   initialSubject = null,
-  initialExtras = true,
+  initialExtras = false,
   submitLabel = "Generate banner",
   busyLabel = "Generating",
 }) {

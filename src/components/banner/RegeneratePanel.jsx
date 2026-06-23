@@ -40,15 +40,13 @@ export default function RegeneratePanel({ banner }) {
   const [modelSlug, setModelSlug] = useState("auto");
   // Opt-in for decorative extras. If the previous banner was generated
   // with it enabled, default to enabled for the regeneration.
-  const [allowExtras, setAllowExtras] = useState(() => 
-    banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true
-  );
+  const [allowExtras, setAllowExtras] = useState(false);
   const [prevBannerId, setPrevBannerId] = useState(banner?.id);
 
   // Sync state if the user navigates to a different banner without remounting
   if (banner?.id !== prevBannerId) {
     setPrevBannerId(banner?.id);
-    setAllowExtras(banner?.fields?.find((f) => f.id === "_magic_prompt")?.value === true);
+    setAllowExtras(false);
   }
 
   // A generation is mid-flight when the popup is open and not yet
@@ -169,8 +167,9 @@ export default function RegeneratePanel({ banner }) {
   );
 }
 
-// Toggle for decorative "magic prompt". OFF → strict regeneration from
-// the change request; ON → the model may add richer ornamentation.
+// Toggle for "magic prompt". OFF → regeneration uses the standard rich
+// composition. ON → the model adds extra decorative elements for
+// maximum visual complexity and premium weight.
 function ExtrasToggle({ value, onChange }) {
   return (
     <button
@@ -179,8 +178,8 @@ function ExtrasToggle({ value, onChange }) {
       aria-pressed={value}
       title={
         value
-          ? "Magic prompt ON — the model may add decorative orbs, badges, patterns and other ornamentation."
-          : "Magic prompt OFF — the banner is regenerated strictly from your request, with no extra decoration."
+          ? "Magic prompt ON — extra decorative elements will be added for maximum visual complexity and premium weight."
+          : "Magic prompt OFF — the banner is regenerated with a rich, polished design. Turn ON for extra decoration."
       }
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-colors",

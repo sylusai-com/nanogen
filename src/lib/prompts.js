@@ -149,19 +149,21 @@ CONTENT RULES:
 - If the brief does not specify a brand name, do NOT invent one — use a generic, on-topic headline instead.
 Return ONLY the JSON object.`;
 
-// Appended to the banner user message when the user has NOT opted into
-// "extra elements". It deliberately countermands the richness-heavy
-// guidance in the system prompt so the model produces a banner that is
-// strictly what the brief describes — nothing more. Placed last in the
-// message so it carries the most weight.
-const STRICT_ELEMENTS_DIRECTIVE = `STRICT CONTENT MODE — THIS OVERRIDES EVERY EARLIER INSTRUCTION THAT ENCOURAGES RICH, LAYERED, OR DECORATION-HEAVY COMPOSITIONS:
-- Render ONLY what the brief explicitly asks for. Do not invent extra content, copy, or decorative elements.
-- Do NOT add eyebrows, badges, pills, chips, version tags, trust lines, avatar stacks, feature lists, stat counters, secondary CTAs, decorative micro-icons, or any text the brief did not request.
-- Do NOT fabricate brand names, company names, statistics, user counts, testimonials, or any content not present in the brief.
-- Keep the background simple — a solid color or one clean gradient that suits the brief. NO decorative orbs, mesh, grids, noise textures, ribbons, scanlines, or busy SVG motif layers.
-- The composition must stay minimal and focused: the headline plus only the specific elements named in the brief, and nothing else.
-- The banner must still look polished and premium — clean typography, strong visual hierarchy, and professional spacing. Minimal does NOT mean bare or unfinished.
-- You MUST still emit the required fields (headline, bg, fg, accent) and the bg_image layer, and the banner must still fill the canvas for its aspect ratio — just without any extra ornamentation.`;
+// Appended to the banner user message when the user has OPTED INTO
+// "magic prompt" (extra elements). The baseline generation already
+// produces a solid, decorated banner from the system prompt. This
+// directive pushes the model to go FURTHER — adding richness,
+// complexity, and premium weight for users who want maximum visual
+// impact. Placed last in the message so it carries the most weight.
+const MAGIC_PROMPT_ENHANCEMENT = `MAGIC PROMPT MODE — ENHANCE THIS BANNER TO MAXIMUM VISUAL COMPLEXITY AND PREMIUM WEIGHT:
+- Go beyond the brief: add tasteful decorative elements that REINFORCE the banner's theme. Think floating orbs, glowing accent shapes, subtle mesh/noise textures, layered gradients, radial light bursts, geometric patterns, micro-badges, animated-looking embellishments (CSS only), and SVG motif overlays.
+- Add supporting visual elements: trust signals (badge icons, checkmark pills), secondary accent shapes, border glow effects, glassmorphism panels, depth layers with parallax-style stacking, subtle halftone or dot-grid patterns.
+- Layer multiple decorative backgrounds: combine 2-3 gradient layers with blend modes, add a noise/grain texture overlay, and include at least one SVG pattern layer relevant to the topic.
+- Increase typographic richness: add an eyebrow label above the headline, a subheadline or tagline below, and a CTA button or pill — all derived from the brief's topic (but do NOT fabricate specific brand names or statistics).
+- Make every square pixel count: the banner should feel dense, layered, and premium — like a flagship hero section from Apple, Stripe, or Linear. No empty corners, no plain flat areas.
+- Color harmony must remain cohesive despite the added complexity. Use color-mix(), oklch(), and subtle opacity layers to keep the palette unified.
+- The banner must still be readable and have clear visual hierarchy — richness does NOT mean cluttered or noisy. The headline must pop above everything.
+- You MUST still emit the required fields (headline, bg, fg, accent) and the bg_image layer, and the banner must still fill the canvas for its aspect ratio.`;
 
 // Per-aspect briefing. Keyed by the literal aspect ratio string. The
 // `fallback` entry is used for any aspect not listed; it can reference
@@ -500,10 +502,11 @@ export function composeBannerMessages({
   variantSeed = 0,
   referenceContextText = null,
   subjectContextText = null,
-  // When false, the strict-content directive is appended so the model
-  // renders only what the brief asks for (no extra decorative elements).
-  // Defaults to true so callers that don't opt in keep the rich output.
-  allowExtras = true,
+  // When true ("magic prompt" toggled ON), the enhancement directive is
+  // appended so the model adds extra decorative complexity and premium
+  // weight. Defaults to false — the baseline generation already produces
+  // a rich, decorated banner from the system prompt alone.
+  allowExtras = false,
 }) {
   const stylePreference =
     style && String(style).trim() ? `STYLE PREFERENCE: ${style}` : "";
@@ -524,8 +527,8 @@ export function composeBannerMessages({
     variantNote,
   });
 
-  if (!allowExtras) {
-    userContent = `${userContent}\n\n${STRICT_ELEMENTS_DIRECTIVE}`;
+  if (allowExtras) {
+    userContent = `${userContent}\n\n${MAGIC_PROMPT_ENHANCEMENT}`;
   }
 
   return [

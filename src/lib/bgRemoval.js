@@ -1,13 +1,17 @@
 // src/lib/bgRemoval.js
-// Background removal pipeline. Three layers, tried in order:
+// Background removal pipeline. Four layers, tried in order:
 //
 //   1. Configured admin providers (bg_removal_providers table) — tried
 //      in DB order until one succeeds. Covers remove.bg, ClipDrop,
 //      Photoroom, and arbitrary custom endpoints.
-//   2. Sharp-based "uniform background" cutout. Works only when the
+//   2. @imgly/background-removal-node — free, local AI-based removal
+//      using an ONNX segmentation model. Handles complex backgrounds
+//      (people, products, scenes). First call downloads ~40 MB of model
+//      weights which are cached on disk for subsequent runs.
+//   3. Sharp-based "uniform background" cutout. Works only when the
 //      photo's edges are nearly the same color (studio portraits, white
 //      product shots). Cheap, runs in-process, no external calls.
-//   3. Pass-through. The original image is returned unchanged so the
+//   4. Pass-through. The original image is returned unchanged so the
 //      banner generation never blocks waiting for a perfect cutout.
 //
 // The function shape is { dataUrl, source } on success, null otherwise,
@@ -140,6 +144,35 @@ async function localUniformBackgroundCutout(buffer) {
   }
 }
 
+// AI-based local background removal via @imgly/background-removal-node.
+// Runs an ONNX segmentation model in-process — no external API, no cost.
+// The first call downloads the model weights (~40 MB) which are then cached.
+// Returns a PNG data URI on success, null on failure.
+async function imglyBackgroundRemoval(imageUrlOrDataUri) {
+  try {
+    // Dynamic import so the ONNX runtime is only loaded when actually needed
+    // (keeps cold-starts fast when admin providers handle the work).
+    const { removeBackground } = await import("@imgly/background-removal-node");
+
+    // The library accepts a URL string, a Blob, or a Buffer.
+    // For data URIs we need to convert to a Blob first.
+    let input = imageUrlOrDataUri;
+    if (imageUrlOrDataUri.startsWith("data:")) {
+      const decoded = decodeDataUri(imageUrlOrDataUri);
+      if (!decoded) return null;
+      input = new Blob([decoded.bytes], { type: decoded.mime });
+    }
+
+    const resultBlob = await removeBackground(input);
+    const buf = Buffer.from(await resultBlob.arrayBuffer());
+    if (buf.length < 128) return null; // sanity check
+    return `data:image/png;base64,${buf.toString("base64")}`;
+  } catch (e) {
+    console.warn("[bgRemoval] @imgly/background-removal-node failed:", e?.message || e);
+    return null;
+  }
+}
+
 // Public entry point. `adminClient` is optional — when omitted we build
 // our own service-role client so the pipeline can call this from
 // background workers that don't pass auth context.
@@ -147,7 +180,7 @@ export async function removeSubjectBackground(imageUrlOrDataUri, { adminClient }
   if (!imageUrlOrDataUri) return null;
   const client = adminClient || createAdminClient();
 
-  // 1. Provider chain — first enabled provider wins.
+  // 1. Provider chain — first enabled admin provider wins.
   try {
     const providers = await listBgRemovalProviders(client);
     for (const provider of providers || []) {
@@ -161,7 +194,14 @@ export async function removeSubjectBackground(imageUrlOrDataUri, { adminClient }
     console.warn("[bgRemoval] provider list failed:", e?.message || e);
   }
 
-  // 2. Local Sharp fallback. Only useful for studio shots.
+  // 2. AI-based local removal (@imgly/background-removal-node).
+  //    Free, runs in-process, handles complex backgrounds well.
+  const imglyResult = await imglyBackgroundRemoval(imageUrlOrDataUri);
+  if (imglyResult) {
+    return { dataUrl: imglyResult, source: "imgly-local" };
+  }
+
+  // 3. Sharp heuristic fallback. Only useful for uniform-bg studio shots.
   const bytes = await fetchBytes(imageUrlOrDataUri);
   if (bytes) {
     const local = await localUniformBackgroundCutout(bytes);
@@ -170,6 +210,6 @@ export async function removeSubjectBackground(imageUrlOrDataUri, { adminClient }
     }
   }
 
-  // 3. Pass-through (no removal happened).
+  // 4. Pass-through (no removal happened).
   return null;
 }

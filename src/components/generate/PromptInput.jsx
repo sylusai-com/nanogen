@@ -275,9 +275,10 @@ function SubjectButton({ subject, onChange }) {
   );
 }
 
-// Toggle for decorative "magic prompt". OFF → the banner is generated
-// strictly from the prompt; ON → the model may add orbs, badges,
-// patterns, and other rich decoration.
+// Toggle for "magic prompt". OFF → the banner is generated with the
+// standard rich composition from the system prompt. ON → the model adds
+// extra decorative elements (orbs, badges, patterns, glassmorphism,
+// layered gradients) for maximum visual complexity and premium weight.
 function ExtrasToggle({ value, onChange }) {
   return (
     <button
@@ -286,8 +287,8 @@ function ExtrasToggle({ value, onChange }) {
       aria-pressed={value}
       title={
         value
-          ? "Magic prompt ON — the model may add decorative orbs, badges, patterns and other ornamentation."
-          : "Magic prompt OFF — the banner is generated strictly from your prompt, with no extra decoration."
+          ? "Magic prompt ON — extra decorative elements will be added for maximum visual complexity and premium weight."
+          : "Magic prompt OFF — the banner is generated with a rich, polished design. Turn ON for extra decoration."
       }
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium transition-colors",

@@ -52,6 +52,7 @@ import {
   detectCategoryAndStyle,
 } from "@/lib/bannerGeneration";
 import { prefetchStageModels } from "@/lib/db/stageModels";
+import { deductCredit, resetExpiredCredits, adjustCredits } from "@/lib/db/credits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -214,6 +215,19 @@ export async function POST(req) {
     }
   } catch (e) {
     return errorResponse(e);
+  }
+
+  const adminClient = createAdminClient();
+
+  // Credit system checks
+  await resetExpiredCredits(adminClient, user.id);
+  const creditRes = await deductCredit(adminClient, user.id, null);
+  
+  if (!creditRes.success) {
+    return NextResponse.json(
+      { error: "Out of credits. Please upgrade your plan or wait for the monthly reset." },
+      { status: 402 }
+    );
   }
 
   // Create job and start background generation
@@ -905,6 +919,8 @@ async function performBannerGeneration(job, userId, payload) {
   } catch (error) {
     console.error(`[Job ${job.jobId}] Generation failed:`, error);
     job.setError(error.message, null);
+    // Refund credit on failure
+    await adjustCredits(adminClient, userId, 1, "generation_failed");
   }
 }
 

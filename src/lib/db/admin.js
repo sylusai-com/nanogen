@@ -21,7 +21,7 @@ export async function listAllUsers(supabase, options = {}) {
   const paginated = pageSize != null;
   let query = supabase
     .from("profiles")
-    .select("id, name, email, role, plan, avatar_url, created_at, api_access_allowed", paginated ? { count: "exact" } : undefined)
+    .select("id, name, email, role, plan, avatar_url, created_at, api_access_allowed, user_credits(credits_remaining, credits_used, credit_plans(name))", paginated ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false });
   if (paginated) query = query.range(from, to);
   const { data, error, count } = await query;
@@ -98,17 +98,19 @@ export async function listAllBanners(supabase, options = {}) {
 }
 
 export async function getKpis(supabase) {
-  const [usersRes, bannersRes, resultsRes] = await Promise.all([
+  const [usersRes, bannersRes, resultsRes, creditsRes] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("banners").select("*", { count: "exact", head: true }),
     supabase
       .from("generation_results")
       .select("score, latency_ms")
       .not("score", "is", null),
+    supabase.from("user_credits").select("credits_used"),
   ]);
 
   const users     = usersRes.count ?? 0;
   const banners   = bannersRes.count ?? 0;
+  const creditsUsed = (creditsRes.data || []).reduce((acc, curr) => acc + curr.credits_used, 0);
   const scores    = (resultsRes.data || []).map((r) => r.score).filter((n) => n != null);
   const latencies = (resultsRes.data || [])
     .map((r) => r.latency_ms)
@@ -122,7 +124,7 @@ export async function getKpis(supabase) {
     ? latencies[Math.floor(latencies.length * 0.5)]
     : null;
 
-  return { users, banners, avgScore, p50ms: p50 };
+  return { users, banners, avgScore, p50ms: p50, creditsUsed };
 }
 
 // Daily generation counts for the last `days` days.

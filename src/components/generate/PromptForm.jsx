@@ -11,6 +11,7 @@ import { useCachedQuery } from "@/lib/cache";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import PromptInput from "./PromptInput";
+import CreditsBadge from "@/components/ui/CreditsBadge";
 
 // HTML banner studio. Pulls aspects + styles + enabled text models from DB
 // (with stale-while-revalidate caching so opening the page is instant
@@ -30,7 +31,7 @@ export default function PromptForm({
   submitLabel = "Generate banner",
   busyLabel = "Generating",
 }) {
-  const { supabase } = useAuth();
+  const { user, supabase } = useAuth();
 
   const [prompt, setPrompt] = useState(initialPrompt);
   const [aspect, setAspect] = useState(initialAspect);
@@ -83,8 +84,9 @@ export default function PromptForm({
   }, [aspect, aspects]);
 
   const ready = aspects && styles;
+  const hasCredits = user?.credits ? user.credits.remaining > 0 || user.credits.remaining === -1 || user.credits.is_admin : true;
   const canSubmit =
-    !isGenerating && prompt.trim() && aspect && ready;
+    !isGenerating && prompt.trim() && aspect && ready && hasCredits;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -133,13 +135,17 @@ export default function PromptForm({
       <div className="divider-soft" />
 
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] text-muted">
-          Saves directly to your banners. Edit further in the builder.
-        </p>
+        <div className="flex items-center gap-3">
+          <CreditsBadge credits={user?.credits} />
+          <p className="hidden text-[11px] text-muted sm:block">
+            Saves directly to your banners. Edit further in the builder.
+          </p>
+        </div>
         <Button
           type="submit"
           size="lg"
           disabled={!canSubmit}
+          title={!hasCredits ? "Out of credits" : ""}
           onClick={handleSubmit}
           rightIcon={
             isGenerating ? (

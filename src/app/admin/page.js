@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, BarChart3, Cpu, Image as ImageIcon, Users } from "lucide-react";
+import { Activity, BarChart3, Cpu, Image as ImageIcon, Users, Coins } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import StatCard from "@/components/dashboard/StatCard";
@@ -36,6 +36,7 @@ export default function AdminOverview() {
   const cards = kpis && [
     { id: "users", label: "Users", value: kpis.users, icon: <Users className="h-4 w-4" /> },
     { id: "banners", label: "Banners saved", value: kpis.banners, icon: <ImageIcon className="h-4 w-4" /> },
+    { id: "credits", label: "Credits consumed", value: kpis.creditsUsed ?? 0, icon: <Coins className="h-4 w-4" /> },
     { id: "score", label: "Avg quality score", value: kpis.avgScore ?? "—", icon: <BarChart3 className="h-4 w-4" /> },
     { id: "latency", label: "P50 latency", value: kpis.p50ms ? `${(kpis.p50ms / 1000).toFixed(2)}s` : "—", icon: <Activity className="h-4 w-4" /> },
   ];
@@ -51,9 +52,9 @@ export default function AdminOverview() {
           <p className="mt-1 text-sm text-muted">Last 14 days of generation activity.</p>
         </header>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
+            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)
           ) : cards ? (
             cards.map((c, i) => <StatCard key={c.id} {...c} delay={i * 0.05} />)
           ) : null}

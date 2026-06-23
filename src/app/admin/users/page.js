@@ -30,6 +30,11 @@ export default function AdminUsers() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+  const [plans, setPlans] = useState([]);
+
+  useEffect(() => {
+    fetch("/api/admin/credits").then(r => r.json()).then(setPlans).catch(console.error);
+  }, []);
 
   const reload = () => {
     listAllUsers(supabase, { page, pageSize: PAGE_SIZE })
@@ -89,6 +94,28 @@ export default function AdminUsers() {
     }
   };
 
+  const setPlan = async (u, planId) => {
+    await fetch("/api/admin/credits/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: u.id, action: "set_plan", planId })
+    });
+    reload();
+  };
+
+  const adjustUserCredits = async (u) => {
+    const amount = prompt(`Adjust credits for ${u.name || u.email}. Enter amount (e.g. 10 or -5):`);
+    if (!amount) return;
+    const parsed = parseInt(amount, 10);
+    if (isNaN(parsed)) return alert("Invalid amount");
+    await fetch("/api/admin/credits/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: u.id, action: "adjust", amount: parsed })
+    });
+    reload();
+  };
+
   return (
     <>
       <TopBar title="Users" action={null} />
@@ -118,6 +145,7 @@ export default function AdminUsers() {
               <TR>
                 <TH>User</TH>
                 <TH>Plan</TH>
+                <TH>Credits</TH>
                 <TH>Role</TH>
                 <TH>API Access</TH>
                 <TH>Joined</TH>
@@ -142,7 +170,14 @@ export default function AdminUsers() {
                     </div>
                   </TD>
                   <TD>
-                    <Badge tone={u.plan === "pro" ? "primary" : "neutral"}>{u.plan}</Badge>
+                    <Badge tone={u.user_credits?.credit_plans?.name || u.plan === "pro" ? "primary" : "neutral"}>
+                        {u.user_credits?.credit_plans?.name || u.plan}
+                    </Badge>
+                  </TD>
+                  <TD>
+                    <span className="text-xs font-mono">
+                      {u.user_credits?.credits_remaining === -1 ? "Unlimited" : (u.user_credits?.credits_remaining ?? "—")}
+                    </span>
                   </TD>
                   <TD>
                     <span className="text-xs text-muted-strong capitalize">{u.role}</span>
@@ -172,6 +207,20 @@ export default function AdminUsers() {
                         </DropdownItem>
                         <DropdownItem onClick={() => toggleApiAccess(u)}>
                           {u.api_access_allowed ? "Revoke API access" : "Grant API access"}
+                        </DropdownItem>
+                      </DropdownSection>
+                      {plans.length > 0 && (
+                        <DropdownSection label="Change Plan">
+                          {plans.map(p => (
+                            <DropdownItem key={p.id} onClick={() => setPlan(u, p.id)}>
+                              {p.name}
+                            </DropdownItem>
+                          ))}
+                        </DropdownSection>
+                      )}
+                      <DropdownSection label="Credits">
+                        <DropdownItem onClick={() => adjustUserCredits(u)}>
+                          Adjust balance
                         </DropdownItem>
                       </DropdownSection>
                     </Dropdown>

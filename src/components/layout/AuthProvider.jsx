@@ -48,6 +48,7 @@ function shapeUser(authUser, profile) {
     plan: profile?.plan || "free",
     avatarUrl: profile?.avatar_url || null,
     apiAccessAllowed: !!profile?.api_access_allowed,
+    credits: profile?.credits || null,
   };
 }
 
@@ -71,12 +72,15 @@ export function AuthProvider({ children }) {
       }
       setPendingProfile(true);
       try {
-        const { data } = await supabase
-          .from("profiles")
-          .select("id, name, email, role, plan, avatar_url, api_access_allowed")
-          .eq("id", authUserId)
-          .maybeSingle();
-        setProfile(data || null);
+        const [profileRes, creditsRes] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, name, email, role, plan, avatar_url, api_access_allowed")
+            .eq("id", authUserId)
+            .maybeSingle(),
+          fetch("/api/credits").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        ]);
+        setProfile(profileRes.data ? { ...profileRes.data, credits: creditsRes } : null);
       } finally {
         setPendingProfile(false);
       }

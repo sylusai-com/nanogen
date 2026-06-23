@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { Images, Sparkles, Trophy, Clock, ArrowRight, ImageIcon } from "lucide-react";
+import { Images, Sparkles, Trophy, Clock, ArrowRight, ImageIcon, Coins } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import TopBar from "@/components/dashboard/TopBar";
 import StatCard from "@/components/dashboard/StatCard";
@@ -48,9 +48,9 @@ export default function DashboardOverview() {
       icon: <Trophy className={iconCls} />,
     },
     {
-      label: "Median time",
-      value: stats?.p50ms ? `${(stats.p50ms / 1000).toFixed(1)}s` : "—",
-      icon: <Clock className={iconCls} />,
+      label: "Credits remaining",
+      value: user?.credits ? (user.credits.remaining === -1 ? "Unlimited" : user.credits.remaining) : "—",
+      icon: <Coins className={iconCls} />,
     },
   ];
 

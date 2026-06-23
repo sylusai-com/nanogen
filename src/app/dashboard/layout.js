@@ -8,6 +8,7 @@ import Sidebar from "@/components/dashboard/Sidebar";
 import Avatar from "@/components/ui/Avatar";
 import Link from "next/link";
 import GenerationProvider from "@/components/generate/GenerationProvider";
+import CreditsBadge from "@/components/ui/CreditsBadge";
 
 const iconCls = "h-4 w-4";
 
@@ -41,16 +42,21 @@ export default function DashboardLayout({ children }) {
   ];
 
   const footer = user && (
-    <Link
-      href="/dashboard/settings"
-      className="flex items-center gap-3 rounded-lg p-2 hover:bg-surface-2 transition-colors"
-    >
-      <Avatar name={user.name} size={32} />
-      <div className="min-w-0">
-        <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
-        <div className="truncate text-[11px] text-muted">{user.email}</div>
+    <div className="flex flex-col gap-1 pb-1">
+      <Link
+        href="/dashboard/settings"
+        className="flex items-center gap-3 rounded-lg p-2 hover:bg-surface-2 transition-colors"
+      >
+        <Avatar name={user.name} size={32} />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-foreground">{user.name}</div>
+          <div className="truncate text-[11px] text-muted">{user.email}</div>
+        </div>
+      </Link>
+      <div className="px-2">
+        <CreditsBadge credits={user.credits} />
       </div>
-    </Link>
+    </div>
   );
 
   return (

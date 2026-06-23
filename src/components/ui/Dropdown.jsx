@@ -12,6 +12,7 @@ export default function Dropdown({
   className,
 }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState("bottom");
   const wrapRef = useRef(null);
 
   useEffect(() => {
@@ -27,20 +28,35 @@ export default function Dropdown({
     };
   }, []);
 
+  const toggleOpen = (e) => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    if (wrapRef.current) {
+      const rect = wrapRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // If there is less than ~200px of space below the trigger, open upwards.
+      setPosition(spaceBelow < 200 ? "top" : "bottom");
+    }
+    setOpen(true);
+  };
+
   return (
     <div ref={wrapRef} className={cn("relative inline-block", className)}>
-      <span onClick={() => setOpen((o) => !o)}>{trigger}</span>
+      <span onClick={toggleOpen}>{trigger}</span>
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            initial={{ opacity: 0, y: position === "top" ? 6 : -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            exit={{ opacity: 0, y: position === "top" ? 6 : -6, scale: 0.98 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
             style={{ width }}
             className={cn(
-              "absolute z-50 mt-2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/30 backdrop-blur-xl",
+              "absolute z-50 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl shadow-black/30 backdrop-blur-xl",
               align === "end" ? "right-0" : "left-0",
+              position === "top" ? "bottom-full mb-2" : "top-full mt-2"
             )}
             onClick={() => setOpen(false)}
           >

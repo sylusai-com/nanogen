@@ -6,6 +6,8 @@ import AuthShowcase from "@/components/auth/AuthShowcase";
 export default function AuthLayout({ children }) {
   return (
     <div className="flex min-h-screen">
+      <AuthShowcase />
+
       <div className="relative flex w-full lg:w-1/2 flex-col bg-background">
         {/* Subtle background for the form side */}
         <div className="absolute inset-0 bg-grid pointer-events-none opacity-[0.15]" />
@@ -29,8 +31,6 @@ export default function AuthLayout({ children }) {
           </div>
         </main>
       </div>
-
-      <AuthShowcase />
     </div>
   );
 }

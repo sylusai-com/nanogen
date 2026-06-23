@@ -291,7 +291,6 @@ function InlineModelPicker({ models, loading, value, onChange }) {
             <Option
               key={m.id}
               label={m.label}
-              sub={`${m.provider} · ${m.modelId}`}
               icon={<Cpu className="h-3.5 w-3.5" />}
               badge={m.isDefault ? "Default" : null}
               selected={value === m.slug}

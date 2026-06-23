@@ -4,14 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Mail, Lock, User, ArrowRight } from "lucide-react";
-import { useAuth } from "@/components/layout/AuthProvider";
 import AuthCard from "@/components/auth/AuthCard";
 import SocialAuth from "@/components/auth/SocialAuth";
 import { Input, Label } from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 
 export default function SignupPage() {
-  const { signIn, supabase } = useAuth();
   const router = useRouter();
 
   const [name, setName] = useState("");
@@ -26,7 +24,7 @@ export default function SignupPage() {
     setSubmitting(true);
     setError(null);
     try {
-      // 1. Server-side create with email_confirm: true (bypasses confirmation).
+      // 1. Server-side create — sends verification email.
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -35,16 +33,8 @@ export default function SignupPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `Signup failed (${res.status})`);
 
-      // 2. Establish a browser session.
-      const { user } = await signIn({ email, password });
-
-      // 3. Route by role (admin_emails trigger may have already promoted us).
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .maybeSingle();
-      router.push(profile?.role === "admin" ? "/admin" : "/dashboard/banners");
+      // 2. Redirect to verify-email page (user must click the link first).
+      router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     } catch (e) {
       setError(e?.message || "Sign-up failed");
     } finally {

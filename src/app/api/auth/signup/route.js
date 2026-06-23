@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendVerificationEmail } from "@/lib/mail";
 import {
   readJson,
   originAllowed,
@@ -12,10 +13,9 @@ import {
 
 export const runtime = "nodejs";
 
-// Server-side signup that bypasses email confirmation. Uses the admin client
-// (SUPABASE_SECRET_KEY) so users are created with email_confirm = true and can
-// sign in immediately. The handle_new_user trigger still fires, so the
-// profile row + admin_emails check both work as before.
+// Server-side signup. Creates the user with email_confirm: false so they
+// must verify via the link we send through Resend. The handle_new_user
+// trigger still fires, so the profile row + admin_emails check work.
 export async function POST(req) {
   try {
     // 1. CSRF defence
@@ -61,10 +61,11 @@ export async function POST(req) {
       );
     }
 
+    // Create user WITHOUT email confirmation — they must click the link.
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true,
+      email_confirm: false,
       user_metadata: { name },
     });
 
@@ -72,8 +73,38 @@ export async function POST(req) {
       throw new ValidationError(error.message, 400);
     }
 
+    // Generate a signup verification magic link and send via Resend.
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    try {
+      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+        type: "signup",
+        email,
+        options: {
+          redirectTo: `${siteUrl}/auth/callback`,
+        },
+      });
+
+      if (linkError) {
+        console.error("[signup] Failed to generate verification link:", linkError.message);
+      } else if (linkData?.properties?.action_link) {
+        const mailResult = await sendVerificationEmail({
+          to: email,
+          name: name || "",
+          verificationUrl: linkData.properties.action_link,
+        });
+        if (!mailResult.success) {
+          console.warn("[signup] Verification email not sent:", mailResult.reason);
+        }
+      }
+    } catch (e) {
+      // Don't fail the signup — the user was created, they can request
+      // a resend from the verify-email page.
+      console.error("[signup] Error sending verification email:", e?.message || e);
+    }
+
     return NextResponse.json({
       user: { id: data.user.id, email: data.user.email },
+      requiresVerification: true,
     });
   } catch (e) {
     return errorResponse(e);

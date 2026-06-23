@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Mail, Lock, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/components/layout/AuthProvider";
 import AuthCard from "@/components/auth/AuthCard";
 import SocialAuth from "@/components/auth/SocialAuth";
@@ -29,6 +29,7 @@ function LoginForm() {
   // Surfaced to the user — populated by /auth/callback when OAuth fails
   // (provider denied consent, code exchange errored, etc).
   const callbackError = params.get("error");
+  const successMessage = params.get("message");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -75,7 +76,7 @@ function LoginForm() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="password">Password</Label>
-          <Link href="#" className="text-[11px] text-muted hover:text-foreground transition-colors">
+          <Link href="/forgot-password" className="text-[11px] text-muted hover:text-foreground transition-colors">
             Forgot?
           </Link>
         </div>
@@ -90,6 +91,20 @@ function LoginForm() {
           required
         />
       </div>
+
+      {successMessage === "password_reset" && (
+        <div className="flex items-start gap-2 rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-300">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Password reset successfully. Sign in with your new password.
+        </div>
+      )}
+
+      {successMessage === "email_verified" && (
+        <div className="flex items-start gap-2 rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-300">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Email verified! Sign in to continue.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">

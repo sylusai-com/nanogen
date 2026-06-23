@@ -47,7 +47,7 @@ export default function AdminPlans() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user?.id) reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [user?.id]);
 
   const onSave = async (form) => {

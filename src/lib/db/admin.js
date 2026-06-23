@@ -21,14 +21,37 @@ export async function listAllUsers(supabase, options = {}) {
   const paginated = pageSize != null;
   let query = supabase
     .from("profiles")
-    .select("id, name, email, role, plan, avatar_url, created_at, api_access_allowed, user_credits(credits_remaining, credits_used, credit_plans(name))", paginated ? { count: "exact" } : undefined)
+    .select("id, name, email, role, plan, avatar_url, created_at, api_access_allowed", paginated ? { count: "exact" } : undefined)
     .order("created_at", { ascending: false });
   if (paginated) query = query.range(from, to);
-  const { data, error, count } = await query;
+  
+  const { data: profiles, error, count } = await query;
   if (error) throw error;
-  if (!paginated) return data || [];
+  if (!profiles || profiles.length === 0) {
+    return paginated ? { rows: [], total: 0, page, pageSize, totalPages: 1 } : [];
+  }
+
+  const userIds = profiles.map((p) => p.id);
+  const { data: creditsData } = await supabase
+    .from("user_credits")
+    .select("user_id, credits_remaining, credits_used, credit_plans(name)")
+    .in("user_id", userIds);
+
+  const creditsByUserId = {};
+  if (creditsData) {
+    creditsData.forEach((c) => {
+      creditsByUserId[c.user_id] = c;
+    });
+  }
+
+  const rows = profiles.map((p) => ({
+    ...p,
+    user_credits: creditsByUserId[p.id] || null,
+  }));
+
   const total = count ?? 0;
-  return { rows: data || [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
+  if (!paginated) return rows;
+  return { rows, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
 
 // Pulls every banner across the platform with its creator profile embedded.

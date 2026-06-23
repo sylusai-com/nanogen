@@ -27,7 +27,7 @@ export default function PlanFormModal({ open, plan, onClose, onSubmit }) {
           is_default: !!plan.is_default,
         });
       } else {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setForm({
           name: "",
           slug: "",
@@ -36,7 +36,7 @@ export default function PlanFormModal({ open, plan, onClose, onSubmit }) {
           is_default: false,
         });
       }
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setError(null);
     }
   }, [open, plan]);

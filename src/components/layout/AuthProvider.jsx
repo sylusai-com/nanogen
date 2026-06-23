@@ -29,9 +29,9 @@ const AuthContext = createContext({
   isLoading: true,
   isAdmin: false,
   signIn: async () => {},
-  signUp: async () => {},
   signInWithOAuth: async () => {},
   signOut: async () => {},
+  refreshUser: async () => {},
 });
 
 function shapeUser(authUser, profile) {
@@ -214,6 +214,12 @@ export function AuthProvider({ children }) {
     clearCache();
   }, [supabase]);
 
+  const refreshUser = useCallback(async () => {
+    if (session?.user?.id) {
+      await loadProfile(session.user.id);
+    }
+  }, [session, loadProfile]);
+
   const user = shapeUser(session?.user, profile);
 
   // Bundle profile fetching into the public isLoading so callers (e.g.
@@ -231,8 +237,9 @@ export function AuthProvider({ children }) {
       signUp,
       signInWithOAuth,
       signOut,
+      refreshUser,
     }),
-    [user, supabase, session, loading, signIn, signUp, signInWithOAuth, signOut],
+    [user, supabase, session, loading, signIn, signUp, signInWithOAuth, signOut, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

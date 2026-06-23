@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { invalidateTags } from "@/lib/cache";
 import { GenerationSteps } from "@/lib/bannerGeneration";
 import GenerationPopup from "@/components/generate/GenerationPopup";
+import { useAuth } from "@/components/layout/AuthProvider";
 
 // Single source of truth for the floating GenerationPopup. Mounted ONCE
 // at the dashboard layout so the popup keeps running when the user
@@ -56,6 +57,7 @@ const INITIAL = {
 
 export default function GenerationProvider({ children }) {
   const router = useRouter();
+  const { refreshUser } = useAuth();
   const [gen, setGen] = useState(INITIAL);
 
   // Tracks the in-flight job so a second startGeneration call can ignore
@@ -157,6 +159,9 @@ export default function GenerationProvider({ children }) {
       const tags = ["banners", "generation_results"];
       if (payload?.regenerateFromId) tags.push(`banner:${payload.regenerateFromId}`);
       invalidateTags(tags);
+      
+      // Refresh credits
+      if (refreshUser) refreshUser();
 
       const banner = generation?.banner;
       const usedFallback = generation?.results?.usedFallback === true;

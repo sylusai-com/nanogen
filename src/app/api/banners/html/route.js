@@ -1,7 +1,9 @@
 // src/app/api/banners/html/route.js
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { generateBannerTemplate } from "@/lib/bannerTemplate";
+import { resetExpiredCredits, deductCredit } from "@/lib/db/credits";
 import {
   clientKey,
   errorResponse,
@@ -51,6 +53,17 @@ export async function POST(req) {
     style  = validateString(body.style,  { name: "style",  max: 60  }) || null;
     aspect = validateEnum(body.aspect, ALLOWED_ASPECTS, { name: "aspect" }) || "16:9";
   } catch (e) { return errorResponse(e); }
+
+  const adminClient = createAdminClient();
+  await resetExpiredCredits(adminClient, user?.id);
+  const creditRes = await deductCredit(adminClient, user?.id, null);
+  
+  if (!creditRes.success) {
+    return NextResponse.json(
+      { error: "Out of credits. Please upgrade your plan or wait for the monthly reset." },
+      { status: 402 }
+    );
+  }
 
   const template = await generateBannerTemplate({ supabase, prompt, style, aspect });
   const res = NextResponse.json(template);

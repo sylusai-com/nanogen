@@ -28,7 +28,7 @@ export default function CreditsBadge({ credits, className, compact = false }) {
         <Coins className="h-3.5 w-3.5" />
       </div>
       {!compact && (
-        <span>
+        <span className="font-semibold tracking-tight">
           {isUnlimited ? (
             <span className="flex items-center gap-1">
               Unlimited
@@ -36,7 +36,7 @@ export default function CreditsBadge({ credits, className, compact = false }) {
             </span>
           ) : (
             <span className="tabular-nums">
-              {remaining} <span className="opacity-60">/ {total}</span>
+              {remaining} {remaining === 1 ? "credit" : "credits"}
             </span>
           )}
         </span>

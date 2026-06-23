@@ -6,8 +6,11 @@ import { Input } from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import UserMenu from "./UserMenu";
+import CreditsBadge from "@/components/ui/CreditsBadge";
+import { useAuth } from "@/components/layout/AuthProvider";
 
 export default function TopBar({ title, action }) {
+  const { user } = useAuth();
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-border bg-[color-mix(in_oklab,var(--background)_72%,transparent)] pl-16 pr-3 backdrop-blur-xl sm:gap-4 md:pl-8 md:pr-8">
       <div className="flex min-w-0 items-center gap-3">
@@ -46,6 +49,7 @@ export default function TopBar({ title, action }) {
             leftIcon={<Plus className="h-3.5 w-3.5" strokeWidth={2.5} />}
           />
         )}
+        {user && <CreditsBadge credits={user.credits} compact className="hidden sm:flex" />}
         <ThemeToggle />
         <UserMenu />
       </div>

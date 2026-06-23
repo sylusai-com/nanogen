@@ -110,13 +110,17 @@ export async function validateApiKey(rawKey) {
 
   const { data, error } = await admin
     .from("api_keys")
-    .select("id, user_id, name, key_prefix, scopes, rate_limit_rpm, rate_limit_rpd, is_active, expires_at")
+    .select("id, user_id, name, key_prefix, scopes, rate_limit_rpm, rate_limit_rpd, is_active, expires_at, profiles(role, api_access_allowed)")
     .eq("key_hash", keyHash)
     .maybeSingle();
 
   if (error || !data) return null;
   if (!data.is_active) return null;
   if (data.expires_at && new Date(data.expires_at) < new Date()) return null;
+
+  const profile = data.profiles;
+  if (!profile) return null;
+  if (profile.role !== "admin" && !profile.api_access_allowed) return null;
 
   // Update last_used_at (best-effort, don't block)
   admin

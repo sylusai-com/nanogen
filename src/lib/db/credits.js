@@ -159,6 +159,12 @@ export async function createPlan(adminClient, payload) {
 }
 
 export async function updatePlan(adminClient, id, payload) {
+  const { data: oldPlan } = await adminClient
+    .from("credit_plans")
+    .select("credits")
+    .eq("id", id)
+    .single();
+
   const { data, error } = await adminClient
     .from("credit_plans")
     .update(payload)
@@ -166,6 +172,32 @@ export async function updatePlan(adminClient, id, payload) {
     .select()
     .single();
   if (error) throw error;
+
+  // Sync existing users if the total credits changed
+  if (payload.credits !== undefined && oldPlan && oldPlan.credits !== payload.credits) {
+    const newTotal = payload.credits;
+    if (newTotal === -1) {
+      await adminClient.from("user_credits").update({ credits_remaining: -1 }).eq("plan_id", id);
+    } else {
+      const { data: users } = await adminClient
+        .from("user_credits")
+        .select("user_id, credits_remaining")
+        .eq("plan_id", id);
+
+      if (users) {
+        for (const u of users) {
+          // If they were unlimited, or have more than the new limit, cap it down.
+          if (u.credits_remaining === -1 || u.credits_remaining > newTotal) {
+            await adminClient
+              .from("user_credits")
+              .update({ credits_remaining: newTotal })
+              .eq("user_id", u.user_id);
+          }
+        }
+      }
+    }
+  }
+
   return data;
 }
 

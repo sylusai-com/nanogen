@@ -28,6 +28,15 @@ export async function PATCH(req) {
         await adjustCredits(adminClient, userId, amount, reason || "admin_adjustment");
         return NextResponse.json({ success: true });
     }
+    else if (action === "toggle_api") {
+        if (body.allowed === undefined) return NextResponse.json({ error: "Missing allowed state" }, { status: 400 });
+        const { error } = await adminClient
+          .from("profiles")
+          .update({ api_access_allowed: body.allowed })
+          .eq("id", userId);
+        if (error) throw error;
+        return NextResponse.json({ success: true });
+    }
     
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (e) {

@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/Input";
 import Pagination from "@/components/ui/Pagination";
 import { TD, TH, THead, TR, Table } from "@/components/ui/Table";
 import Dropdown, { DropdownItem, DropdownSection } from "@/components/ui/Dropdown";
+import Modal from "@/components/ui/Modal";
+import Button from "@/components/ui/Button";
 import { listAllUsers } from "@/lib/db/admin";
 
 const PAGE_SIZE = 20;
@@ -31,6 +33,12 @@ export default function AdminUsers() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [plans, setPlans] = useState([]);
+  
+  // Modal states
+  const [planModalUser, setPlanModalUser] = useState(null);
+  const [balanceModalUser, setBalanceModalUser] = useState(null);
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetch("/api/admin/credits").then(r => r.json()).then(setPlans).catch(console.error);
@@ -68,52 +76,62 @@ export default function AdminUsers() {
     setPage(1);
   }, [query]);
 
-  const promote = async (u) => {
-    const next = u.role === "admin" ? "user" : "admin";
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: next })
-      .eq("id", u.id);
-    if (error) {
-      alert(error.message);
-    } else {
-      reload();
-    }
-  };
-
   const toggleApiAccess = async (u) => {
     const next = !u.api_access_allowed;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ api_access_allowed: next })
-      .eq("id", u.id);
-    if (error) {
-      alert(error.message);
-    } else {
+    try {
+      const res = await fetch("/api/admin/credits/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: u.id, action: "toggle_api", allowed: next })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to toggle API access");
+      }
       reload();
+    } catch (e) {
+      alert(e.message);
     }
   };
 
   const setPlan = async (u, planId) => {
-    await fetch("/api/admin/credits/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: u.id, action: "set_plan", planId })
-    });
-    reload();
+    setIsSubmitting(true);
+    try {
+      await fetch("/api/admin/credits/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: u.id, action: "set_plan", planId })
+      });
+      reload();
+      setPlanModalUser(null);
+    } catch (e) {
+      alert(e.message || "Failed to update plan");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const adjustUserCredits = async (u) => {
-    const amount = prompt(`Adjust credits for ${u.name || u.email}. Enter amount (e.g. 10 or -5):`);
-    if (!amount) return;
-    const parsed = parseInt(amount, 10);
+  const adjustUserCredits = async (e) => {
+    e.preventDefault();
+    if (!balanceModalUser || !adjustAmount) return;
+    const parsed = parseInt(adjustAmount, 10);
     if (isNaN(parsed)) return alert("Invalid amount");
-    await fetch("/api/admin/credits/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: u.id, action: "adjust", amount: parsed })
-    });
-    reload();
+    
+    setIsSubmitting(true);
+    try {
+      await fetch("/api/admin/credits/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: balanceModalUser.id, action: "adjust", amount: parsed })
+      });
+      reload();
+      setBalanceModalUser(null);
+      setAdjustAmount("");
+    } catch (e) {
+      alert(e.message || "Failed to adjust balance");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -202,24 +220,22 @@ export default function AdminUsers() {
                       }
                     >
                       <DropdownSection>
-                        <DropdownItem onClick={() => promote(u)}>
-                          {u.role === "admin" ? "Demote to user" : "Promote to admin"}
-                        </DropdownItem>
                         <DropdownItem onClick={() => toggleApiAccess(u)}>
                           {u.api_access_allowed ? "Revoke API access" : "Grant API access"}
                         </DropdownItem>
                       </DropdownSection>
                       {plans.length > 0 && (
-                        <DropdownSection label="Change Plan">
-                          {plans.map(p => (
-                            <DropdownItem key={p.id} onClick={() => setPlan(u, p.id)}>
-                              {p.name}
-                            </DropdownItem>
-                          ))}
+                        <DropdownSection>
+                          <DropdownItem onClick={() => setPlanModalUser(u)}>
+                            Change plan
+                          </DropdownItem>
                         </DropdownSection>
                       )}
-                      <DropdownSection label="Credits">
-                        <DropdownItem onClick={() => adjustUserCredits(u)}>
+                      <DropdownSection>
+                        <DropdownItem onClick={() => {
+                          setBalanceModalUser(u);
+                          setAdjustAmount("");
+                        }}>
                           Adjust balance
                         </DropdownItem>
                       </DropdownSection>
@@ -244,6 +260,75 @@ export default function AdminUsers() {
           <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         )}
       </div>
+
+      {/* Change Plan Modal */}
+      <Modal
+        open={!!planModalUser}
+        onClose={() => !isSubmitting && setPlanModalUser(null)}
+        title="Change user plan"
+        description={`Select a new plan for ${planModalUser?.name || planModalUser?.email || "this user"}.`}
+        size="sm"
+        footer={
+          <Button variant="secondary" onClick={() => setPlanModalUser(null)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+        }
+      >
+        <div className="space-y-2 pt-2">
+          {plans.map(p => (
+            <button
+              key={p.id}
+              onClick={() => setPlan(planModalUser, p.id)}
+              disabled={isSubmitting}
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-border bg-surface hover:bg-surface-2 transition-colors disabled:opacity-50 text-left"
+            >
+              <div>
+                <div className="text-sm font-medium text-foreground">{p.name}</div>
+                <div className="text-xs text-muted">{p.description}</div>
+              </div>
+              <div className="text-xs font-mono text-muted-strong">
+                {p.credits === -1 ? "Unlimited" : `${p.credits} credits`}
+              </div>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Adjust Balance Modal */}
+      <Modal
+        open={!!balanceModalUser}
+        onClose={() => !isSubmitting && setBalanceModalUser(null)}
+        title="Adjust credit balance"
+        description={`Add or subtract credits for ${balanceModalUser?.name || balanceModalUser?.email}.`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setBalanceModalUser(null)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button onClick={adjustUserCredits} disabled={!adjustAmount || isSubmitting} variant="primary">
+              {isSubmitting ? "Saving…" : "Adjust balance"}
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={adjustUserCredits} className="pt-2">
+          <label className="block text-xs font-medium text-muted-strong mb-1.5">
+            Adjustment Amount
+          </label>
+          <Input
+            autoFocus
+            type="number"
+            placeholder="e.g. 10 or -5"
+            value={adjustAmount}
+            onChange={(e) => setAdjustAmount(e.target.value)}
+            disabled={isSubmitting}
+          />
+          <p className="mt-2 text-[11px] text-muted">
+            Positive numbers add credits, negative numbers subtract. Current balance: {balanceModalUser?.user_credits?.credits_remaining === -1 ? "Unlimited" : (balanceModalUser?.user_credits?.credits_remaining ?? 0)}.
+          </p>
+        </form>
+      </Modal>
     </>
   );
 }

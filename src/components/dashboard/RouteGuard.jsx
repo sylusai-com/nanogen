@@ -16,7 +16,7 @@ export default function RouteGuard({ children, requireAdmin = false }) {
     if (!user) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     } else if (requireAdmin && !isAdmin) {
-      router.replace("/dashboard");
+      router.replace("/dashboard/banners");
     }
   }, [isLoading, user, isAdmin, requireAdmin, pathname, router]);
 

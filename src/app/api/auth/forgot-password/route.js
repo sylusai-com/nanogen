@@ -60,7 +60,7 @@ export async function POST(req) {
         type: "recovery",
         email,
         options: {
-          redirectTo: `${siteUrl}/auth/callback?next=/reset-password`,
+          redirectTo: `${siteUrl}/reset-password`,
         },
       });
 

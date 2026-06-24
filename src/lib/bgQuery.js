@@ -33,10 +33,12 @@ function fallbackQuery({ brief, referenceContext, subjectContext, textBrightness
     .filter(Boolean);
   
   let baseQuery = candidates[0] || "abstract background";
+  // The user explicitly requested we append "dark theme" or "light theme"
+  // to force the background provider to return high-contrast images.
   if (textBrightness === "dark") {
-    baseQuery = `light ${baseQuery}`;
+    baseQuery = `light theme ${baseQuery}`;
   } else if (textBrightness === "light") {
-    baseQuery = `dark ${baseQuery}`;
+    baseQuery = `dark theme ${baseQuery}`;
   }
   
   const query = baseQuery.slice(0, 60);
@@ -107,9 +109,18 @@ export async function buildBackgroundQuery({
       ],
     });
     const parsed = extractJson(content);
-    const query = typeof parsed?.query === "string" ? parsed.query.trim().slice(0, 60) : "";
+    let query = typeof parsed?.query === "string" ? parsed.query.trim().slice(0, 60) : "";
     const category = typeof parsed?.category === "string" ? parsed.category.trim().toLowerCase().slice(0, 30) : "";
     if (!query) return fallback;
+
+    // Enforce the theme explicitly as requested by the user, just in case
+    // the LLM ignored the textBrightness prompt instructions.
+    if (textBrightness === "dark" && !/(light|white|bright)/i.test(query)) {
+      query = `light theme ${query}`.slice(0, 60);
+    } else if (textBrightness === "light" && !/(dark|black|night)/i.test(query)) {
+      query = `dark theme ${query}`.slice(0, 60);
+    }
+
     return { query, category: category || fallback.category };
   } catch {
     return fallback;

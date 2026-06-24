@@ -397,7 +397,7 @@ export default function BannerDetail({ params }) {
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <DownloadMenu
-                    banner={banner}
+                    banner={previewBanner}
                     className="w-full"
                     buttonClassName="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full border border-border bg-surface px-4 text-xs font-medium text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50"
                   />

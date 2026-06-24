@@ -154,13 +154,18 @@ async function imglyBackgroundRemoval(imageUrlOrDataUri) {
     // (keeps cold-starts fast when admin providers handle the work).
     const { removeBackground } = await import("@imgly/background-removal-node");
 
-    // The library accepts a URL string, a Blob, or a Buffer.
-    // For data URIs we need to convert to a Blob first.
-    let input = imageUrlOrDataUri;
+    // Always convert to a Blob before passing to the library. Passing raw
+    // HTTP URLs can fail with Supabase storage or other hosts that set
+    // non-standard headers. Fetching the bytes ourselves is more reliable.
+    let input;
     if (imageUrlOrDataUri.startsWith("data:")) {
       const decoded = decodeDataUri(imageUrlOrDataUri);
       if (!decoded) return null;
       input = new Blob([decoded.bytes], { type: decoded.mime });
+    } else {
+      const bytes = await fetchBytes(imageUrlOrDataUri);
+      if (!bytes) return null;
+      input = new Blob([bytes], { type: "image/png" });
     }
 
     const resultBlob = await removeBackground(input);

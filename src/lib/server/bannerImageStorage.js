@@ -37,7 +37,11 @@ async function ensureBucket(adminClient, bucketName) {
   return created || { name: bucketName };
 }
 
-async function compressImageBuffer(buffer, mimeType) {
+// Compresses and resizes an image buffer. When `preserveAlpha` is true
+// (subject cutouts), the output is PNG so the transparent background
+// survives. Everything else (backgrounds, reference images, etc.) is
+// converted to JPEG for smaller file sizes.
+async function compressImageBuffer(buffer, mimeType, { preserveAlpha = false } = {}) {
   const pipeline = sharp(buffer).rotate().resize({
     width: DEFAULT_MAX_DIMENSION,
     height: DEFAULT_MAX_DIMENSION,
@@ -45,8 +49,9 @@ async function compressImageBuffer(buffer, mimeType) {
     withoutEnlargement: true,
   });
 
-  if (mimeType === "image/png" || mimeType === "image/webp") {
-    return pipeline.jpeg({ quality: DEFAULT_WEBP_QUALITY, mozjpeg: true }).toBuffer();
+  if (preserveAlpha) {
+    // PNG keeps the alpha channel intact — critical for subject cutouts.
+    return pipeline.png({ compressionLevel: 8 }).toBuffer();
   }
   return pipeline.jpeg({ quality: DEFAULT_WEBP_QUALITY, mozjpeg: true }).toBuffer();
 }
@@ -77,14 +82,18 @@ export async function storeBannerImageAsset({
   const client = adminClient || createAdminClient();
   await ensureBucket(client, bucketName);
 
+  // Subject cutouts carry transparency (alpha channel) — store as PNG so
+  // the transparent background is preserved. JPEG destroys alpha.
+  const isCutout = kind === "subject-cutout";
   const rawBuffer = Buffer.from(parsed.base64, "base64");
-  const compressed = await compressImageBuffer(rawBuffer, parsed.mimeType);
+  const compressed = await compressImageBuffer(rawBuffer, parsed.mimeType, { preserveAlpha: isCutout });
   const userPart = sanitizeSegment(userId || "user");
   const runPart = sanitizeSegment(bannerId || jobId || Date.now());
   const kindPart = sanitizeSegment(kind);
-  const filePath = `banners/${userPart}/${runPart}-${kindPart}.jpg`;
+  const ext = isCutout ? "png" : "jpg";
+  const filePath = `banners/${userPart}/${runPart}-${kindPart}.${ext}`;
 
-  const contentType = "image/jpeg";
+  const contentType = isCutout ? "image/png" : "image/jpeg";
   const { error } = await client.storage.from(bucketName).upload(filePath, compressed, {
     contentType,
     upsert: true,

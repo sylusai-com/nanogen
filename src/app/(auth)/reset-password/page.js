@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { Loader2, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
@@ -18,6 +18,27 @@ export default function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    // Supabase admin.generateLink creates implicit grant links with tokens in the hash.
+    // The SSR client might not automatically ingest these, so we do it manually.
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token=")) {
+      const params = new URLSearchParams(hash.substring(1));
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+      if (access_token && refresh_token) {
+        supabase.auth.setSession({ access_token, refresh_token }).then(({ error: sessionErr }) => {
+          if (sessionErr) {
+            console.error("Failed to set session from URL:", sessionErr);
+          } else {
+            // Clean up the URL hash
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          }
+        });
+      }
+    }
+  }, [supabase.auth]);
 
   const onSubmit = async (e) => {
     e.preventDefault();

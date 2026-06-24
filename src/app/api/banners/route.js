@@ -454,7 +454,18 @@ async function performBannerGeneration(job, userId, payload) {
         cleanedSubjectStoredUrl = cutoutResult.dataUrl;
       }
     }
+    // ONLY use the cleaned cutout for the subject_image overlay.
+    // If bg removal failed (cleanedSubjectStoredUrl is null), do NOT fall
+    // back to the original image — placing an image with its native
+    // background into the subject_image overlay causes visual conflicts
+    // (the original bg shows through on top of the banner bg). In that
+    // case the model's own CSS rendering of the subject (via bg_image)
+    // handles the display.
     const subjectImageForGeneration = cleanedSubjectStoredUrl || subjImageUrl || subjectImage;
+    // The cutout-only URL, used exclusively for the subject_image overlay
+    // field. null when bg-removal failed — we never put an original-with-
+    // background image into the subject overlay.
+    const subjectCutoutOnly = cleanedSubjectStoredUrl || null;
 
     // Photographic background fetching has MOVED to after model generation
     // and category detection (see "Step 6c" below). The text model writes
@@ -746,22 +757,40 @@ async function performBannerGeneration(job, userId, payload) {
       );
     }
 
-    // If the fetch succeeded, layer the bg onto the WINNER template only
-    // (other candidates stay as-is — they're cheap variants kept for the
-    // user to inspect). When a subject is also present we route bg →
-    // bg_image and subject → subject_image via applyLayeredImages; when
-    // there is no subject we route bg → bg_image via applySubjectImage.
+    // Layer the photographic bg and/or the subject cutout onto the
+    // WINNER template. Three cases:
+    //
+    //   A. bg + cutout → dual-layer: bg → bg_image, cutout → subject_image
+    //   B. bg only     → single-layer: bg → bg_image
+    //   C. cutout only → single-layer: cutout → subject_image (NOT bg_image,
+    //      because bg_image gets a brightness(0.4) + dark overlay which
+    //      would ruin the subject)
+    //
+    // We use `subjectCutoutOnly` (not `subjectImageForGeneration`) so the
+    // subject_image overlay ONLY receives the transparent cutout. If bg
+    // removal failed, no overlay is added — the model's own CSS rendering
+    // of the subject via bg_image (set during generateBannerTemplate)
+    // handles display instead.
     let appliedTemplate = template;
-    if (aiBackgroundImage) {
-      const hasSubject = !!subjectImageForGeneration;
-      appliedTemplate = hasSubject
-        ? applyLayeredImages(template, {
-            backgroundImage: aiBackgroundImage,
-            subjectImage: subjectImageForGeneration,
-          })
-        : applySubjectImage(template, aiBackgroundImage);
-      // Keep the winner reference in sync so all downstream writes see the
-      // mutated fields/css/html.
+    if (aiBackgroundImage && subjectCutoutOnly) {
+      // Case A: dual-layer
+      appliedTemplate = applyLayeredImages(template, {
+        backgroundImage: aiBackgroundImage,
+        subjectImage: subjectCutoutOnly,
+      });
+      winner.template = appliedTemplate;
+    } else if (aiBackgroundImage) {
+      // Case B: bg only (no cutout or bg-removal failed)
+      appliedTemplate = applySubjectImage(template, aiBackgroundImage);
+      winner.template = appliedTemplate;
+    } else if (subjectCutoutOnly && !aiBackgroundImage) {
+      // Case C: cutout only, no bg photo fetched.
+      // Put the cutout on the dedicated subject_image overlay so it
+      // doesn't get the bg_image brightness/blur/overlay filters.
+      appliedTemplate = applyLayeredImages(template, {
+        backgroundImage: null,
+        subjectImage: subjectCutoutOnly,
+      });
       winner.template = appliedTemplate;
     }
 

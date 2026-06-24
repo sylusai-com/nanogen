@@ -763,9 +763,9 @@ export async function generateBannerTemplate({
   // Layered images: the subject (transparent cutout when bg-removal ran)
   // sits on its own --subject-image variable so the photographic bg
   // (Unsplash / AI image) can render behind it via --bg-image. When only
-  // a subject is provided and no bg, we fall back to the legacy single-
-  // layer behavior — the subject lands on --bg-image so existing
-  // templates without a dedicated subject layer still display it.
+  // a subject is provided and no bg, we STILL use the subject_image field
+  // (not bg_image) because the renderer applies brightness(0.4) + dark
+  // overlay to bg_image which would ruin the subject cutout.
   const layered = subjectImage && backgroundImage
     ? { backgroundImage, subjectImage }
     : subjectImage
@@ -776,12 +776,13 @@ export async function generateBannerTemplate({
   const baseStyled = ensureBgImageField(
     applyAspectToTemplate(applyStyleRow(FALLBACK_TEMPLATE, styleRow), aspect),
   );
-  // Single-layer fallback path: subject only → bg_image (legacy)
-  // Dual-layer path: bg → bg_image, subject → subject_image
+  // Always use applyLayeredImages when we have a subject so the cutout
+  // goes to the dedicated subject_image field. applySubjectImage puts
+  // the image into bg_image which gets dark filters in the renderer.
   const styled = enforceStaticBanner(
-    layered.subjectImage && layered.backgroundImage
+    layered.subjectImage
       ? applyLayeredImages(baseStyled, layered)
-      : applySubjectImage(baseStyled, layered.subjectImage || layered.backgroundImage || null),
+      : applySubjectImage(baseStyled, layered.backgroundImage || null),
   );
 
   const adminClient = createAdminClient();
@@ -912,9 +913,9 @@ export async function generateBannerTemplate({
       const colorSafe   = enforceContrast(validated);
       const aspected    = applyAspectToTemplate(colorSafe, aspect);
       const withBgField = ensureBgImageField(aspected);
-      const imagesApplied = layered.subjectImage && layered.backgroundImage
+      const imagesApplied = layered.subjectImage
         ? applyLayeredImages(withBgField, layered)
-        : applySubjectImage(withBgField, layered.subjectImage || layered.backgroundImage || null);
+        : applySubjectImage(withBgField, layered.backgroundImage || null);
       const staticSafe = enforceStaticBanner(imagesApplied);
 
       // The model just generated successfully — its provider account can
